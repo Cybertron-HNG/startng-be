@@ -1,0 +1,42 @@
+name: Deploy (Coolify)
+
+# Runs only after the Malware Scan (CI Gate) workflow finishes successfully
+# on a push to main. Never deploys when the scan fails or is skipped.
+on:
+  workflow_run:
+    workflows: ["Malware Scan (CI Gate)"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger Coolify deployment
+        shell: bash
+        env:
+          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${COOLIFY_WEBHOOK_URL:-}" ]]; then
+            echo "COOLIFY_WEBHOOK_URL secret is not set"; exit 1
+          fi
+          if [[ -n "${COOLIFY_TOKEN:-}" ]]; then
+            curl --fail --silent --show-error --max-time 60 \
+              -H "Authorization: Bearer ${COOLIFY_TOKEN}" "${COOLIFY_WEBHOOK_URL}"
+          else
+            curl --fail --silent --show-error --max-time 60 "${COOLIFY_WEBHOOK_URL}"
+          fi
+          echo; echo "Deployment triggered"
