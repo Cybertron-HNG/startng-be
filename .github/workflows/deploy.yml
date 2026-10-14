@@ -29,14 +29,18 @@ jobs:
           COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [[ -z "${COOLIFY_WEBHOOK_URL:-}" ]]; then
             echo "COOLIFY_WEBHOOK_URL secret is not set"; exit 1
           fi
-          if [[ -n "${COOLIFY_TOKEN:-}" ]]; then
-            curl --fail --silent --show-error --max-time 60 \
-              -H "Authorization: Bearer ${COOLIFY_TOKEN}" "${COOLIFY_WEBHOOK_URL}"
-          else
-            curl --fail --silent --show-error --max-time 60 "${COOLIFY_WEBHOOK_URL}"
+          # Safe to log: scheme, host and path only (no query string, no token)
+          echo "Calling: ${COOLIFY_WEBHOOK_URL%%\?*}"
+          AUTH=()
+          if [[ -n "${COOLIFY_TOKEN:-}" ]]; then AUTH=(-H "Authorization: Bearer ${COOLIFY_TOKEN}"); fi
+          CODE=$(curl --silent --show-error --max-time 60 -X POST -o /tmp/resp.txt -w '%{http_code}'             "${AUTH[@]}" "${COOLIFY_WEBHOOK_URL}") || true
+          echo "HTTP status: ${CODE}"
+          cat /tmp/resp.txt; echo
+          if [[ "${CODE}" != 2* ]]; then
+            echo "Coolify did not accept the deploy request"; exit 1
           fi
-          echo; echo "Deployment triggered"
+          echo "Deployment triggered"
