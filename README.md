@@ -11,6 +11,10 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   one is checked and returns **202** with an `approve_url` (`<SITE_URL>/approve/<code>`): whoever opens it signs in
   with start.ng and approves, and it goes live on their account, linking the repo to it for good. Unapproved ones
   expire after 30 days; new ones are limited to 20 an hour per address
+- `POST /games/check`: `{repo_url, name?, branch?}` runs every publish check without publishing: 200 with `warnings`, or 422
+  with every problem. Publish and check refuse with `{ok: false, detail, errors: [{code, message, file}], warnings}`
+  (`app/checks.py` has the content checks: malware signatures, miners, hidden or obfuscated code, password fields,
+  redirects, disguised programs). A failed auto-update keeps the last version and shows the owner why in `/games/mine`
 - `GET /games/publish/{code}`: what's waiting at an approve link; `POST /games/publish/{code}/approve` (signed in): put it live
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
 - `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
