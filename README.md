@@ -47,6 +47,19 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 
 Tests: `pip install -r requirements-dev.txt`, then `pytest`.
 
+## API for games (game sessions)
+Games on `<name>.start.ng` call the API directly (CORS allows `*.start.ng`, and `*.start.localhost` for testing).
+They never get the player's sign-in token. Instead start.ng gives them a **game session**: a key that only works
+for that game's player API, expires after 2 hours, and is never a sign-in.
+
+- `POST /games/{name}/session` (start.ng sign-in): `{session, expires_in, player}`. start.ng calls this and hands
+  the session to the game (sign-in redirect `#startng_session=...`, or `/connect`).
+- `GET /games/{name}/player` (game session): `{id, name, style}`, never the email.
+- `POST /games/{name}/scores` (game session, or a start.ng sign-in): `{score}` → `{best, improved, rank}`.
+- `GET /games/{name}/leaderboard?limit=10` (public): `[{rank, player_id, name, color, score}]`.
+
+A session for one game is refused by every other game and by `/auth/*`.
+
 ## Games bucket (R2)
 `app/storage.py` reads and writes the private R2 bucket (`startng-games`) that the start.ng Worker serves.
 A game named `dave` is stored under `dave/` and served at `https://dave.start.ng`.

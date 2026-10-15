@@ -12,8 +12,8 @@ from ..db import get_db
 from ..game_store import GameStore, get_game_store
 from ..models import Game, Score, User
 from ..publish import PublishError, download_repo, game_name, parse_repo_url, read_game
-from ..schemas import GameOut, LeaderboardEntry, PublishIn, PublishOut, ScoreIn, ScoreOut
-from ..security import current_user
+from ..schemas import GameOut, GameSessionOut, LeaderboardEntry, PlayerOut, PublishIn, PublishOut, ScoreIn, ScoreOut
+from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player
 from ..storage import game_url
 
 log = logging.getLogger(__name__)
@@ -218,14 +218,34 @@ def remove_cover(
     return _game_out(game)
 
 
+def _player_out(user: User) -> PlayerOut:
+    return PlayerOut(id=user.id, name=_player_name(user), style=(user.character or {}).get("style"))
+
+
+@router.post("/{name}/session", response_model=GameSessionOut)
+def game_session(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A game session for the signed-in player: the key a game uses to call its player API.
+    It only works for this game, expires after GAME_SESSION_MINUTES, and is never a sign-in.
+    start.ng hands it to the game (sign-in redirect or /connect); games never see the real token."""
+    _game_or_404(db, name)
+    return GameSessionOut(session=create_game_session(user.id, name), expires_in=GAME_SESSION_MINUTES * 60, player=_player_out(user))
+
+
+@router.get("/{name}/player", response_model=PlayerOut)
+def game_player_info(name: str, user: User = Depends(game_player), db: Session = Depends(get_db)):
+    """Who the game session belongs to: id, character name and look (never the email)."""
+    _game_or_404(db, name)
+    return _player_out(user)
+
+
 @router.post("/{name}/scores", response_model=ScoreOut)
 def submit_score(
     name: str,
     body: ScoreIn,
-    user: User = Depends(current_user),
+    user: User = Depends(game_player),
     db: Session = Depends(get_db),
 ):
-    """Save a signed-in player's score. Only their best score per game is kept."""
+    """Save the player's score (game session or start.ng sign-in). Only their best score per game is kept."""
     _game_or_404(db, name)
     row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
     improved = row is None or body.score > row.best

@@ -100,3 +100,17 @@ class LeaderboardEntry(BaseModel):
     name: str  # the player's character name
     color: str | None  # their character's top colour, for a dot next to the name
     score: int
+
+
+class PlayerOut(BaseModel):
+    """What a game knows about its player: never the email."""
+
+    id: int
+    name: str
+    style: CharacterStyle | None = None
+
+
+class GameSessionOut(BaseModel):
+    session: str  # send as "Authorization: Bearer <session>" to this game's player API
+    expires_in: int  # seconds
+    player: PlayerOut
