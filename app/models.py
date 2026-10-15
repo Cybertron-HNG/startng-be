@@ -37,6 +37,8 @@ class Game(Base):
     # The card picture: a path in the game's folder (app.covers), and when it last changed.
     cover: Mapped[str | None] = mapped_column(String(200))
     cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The game's own leaderboard stats from its startng.json (app/leaderboard.py); None = plain score
+    leaderboard: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -55,7 +57,8 @@ class Score(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
-    best: Mapped[int] = mapped_column(BigInteger)
+    best: Mapped[int] = mapped_column(BigInteger)  # the first stat of the best run, for quick sorting
+    stats: Mapped[dict | None] = mapped_column(JSON)  # the best run's stats; None = a plain score
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     user: Mapped[User] = relationship()
