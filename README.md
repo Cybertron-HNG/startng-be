@@ -8,6 +8,21 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `PUT /auth/me/character`: save the signed-in user's character (`{name, style}`); `GET /auth/me` returns it as `character`
 - `POST /games/publish` (signed in): `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
+- `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
+- `POST /games/{name}/scores` (signed in): `{score}` saves a score; only each player's best per game is kept.
+  Returns `{best, improved, rank}`
+- `GET /games/{name}/leaderboard?limit=10`: a game's top players `[{rank, player_id, name, color, score}]`.
+  Games don't call these directly: they ask start.ng's `/connect` page, which adds the player's sign-in
+- `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
+  sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
+  `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
+
+## Game covers
+- An uploaded cover is opened, cropped to 640 x 400 and saved again as WebP (`app/covers.py`), so nothing
+  hidden in the file is kept. It goes in the game's folder as `startng-cover.webp` and the Worker serves it.
+- Without an upload, a `cover.png` / `.jpg` / `.jpeg` / `.webp` at the top of the published game is used.
+  An uploaded cover wins, and republishing never replaces it.
+- `cover_url` ends in `?v=<time>`, which changes with the cover, so nobody sees an old picture.
 
 ## Publishing games
 `POST /games/publish` downloads the repo as a zip from GitHub (nothing in it is run), finds a ready-to-play

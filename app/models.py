@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -34,7 +34,28 @@ class Game(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     repo_url: Mapped[str] = mapped_column(String(300))
     branch: Mapped[str | None] = mapped_column(String(100))
+    # The card picture: a path in the game's folder (app.covers), and when it last changed.
+    cover: Mapped[str | None] = mapped_column(String(200))
+    cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     owner: Mapped[User] = relationship()
+
+
+class Score(Base):
+    """A player's best score in a game: one row per player per game."""
+
+    __tablename__ = "scores"
+    __table_args__ = (
+        UniqueConstraint("user_id", "game_name", name="uq_scores_user_game"),
+        Index("ix_scores_game_best", "game_name", "best"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
+    best: Mapped[int] = mapped_column(BigInteger)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    user: Mapped[User] = relationship()

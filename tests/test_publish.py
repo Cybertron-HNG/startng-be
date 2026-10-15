@@ -238,3 +238,13 @@ def test_r2_store_uses_the_bucket_service(monkeypatch):
     assert store.paths("dave") == ["index.html"]
     store.delete_game("dave")
     assert calls == [("put", "dave", ["index.html", "save/index.html"]), ("delete", "dave")]
+
+
+def test_my_games_lists_only_your_own(env):
+    client, _, tokens, _ = env
+    assert client.get("/games/mine").status_code == 401
+    client.post("/games/publish", json={"repo_url": "https://github.com/ada/x", "name": "ada-one"}, headers=tokens["ada"])
+    client.post("/games/publish", json={"repo_url": "https://github.com/tunde/y", "name": "tunde-one"}, headers=tokens["tunde"])
+    client.post("/games/publish", json={"repo_url": "https://github.com/ada/z", "name": "ada-two"}, headers=tokens["ada"])
+    assert [g["name"] for g in client.get("/games/mine", headers=tokens["ada"]).json()] == ["ada-two", "ada-one"]
+    assert [g["name"] for g in client.get("/games/mine", headers=tokens["tunde"]).json()] == ["tunde-one"]
