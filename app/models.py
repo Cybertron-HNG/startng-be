@@ -62,3 +62,21 @@ class Score(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     user: Mapped[User] = relationship()
+
+
+class PendingGame(Base):
+    """A game sent to POST /games/publish without signing in, waiting to be approved.
+
+    The reply gave the publisher a link, <site_url>/approve/<code>. Whoever opens it signs in with
+    start.ng and approves, and the game goes live on their account; from then on that repo
+    updates straight away. Unapproved ones are removed when they expire.
+    """
+
+    __tablename__ = "pending_games"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    repo_url: Mapped[str] = mapped_column(String(300), index=True)
+    branch: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

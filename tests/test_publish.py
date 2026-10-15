@@ -163,9 +163,10 @@ def env(tmp_path, monkeypatch):
     app.dependency_overrides.clear()
 
 
-def test_publish_needs_sign_in(env):
+def test_a_bad_sign_in_is_refused(env):
     client, *_ = env
-    assert client.post("/games/publish", json={"repo_url": "https://github.com/a/b"}).status_code == 401
+    bad = {"Authorization": "Bearer not-a-token"}
+    assert client.post("/games/publish", json={"repo_url": "https://github.com/a/b"}, headers=bad).status_code == 401
 
 
 def test_publish_list_and_update(env):

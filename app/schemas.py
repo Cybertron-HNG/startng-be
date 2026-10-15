@@ -71,6 +71,30 @@ class PublishOut(BaseModel):
     skipped: list[str]  # files left out because the games host doesn't serve their type
 
 
+class PendingOut(BaseModel):
+    """POST /games/publish without signing in, for a repo that isn't live yet."""
+
+    status: str = "pending"
+    name: str
+    repo_url: str
+    approve_url: str  # open it, sign in with start.ng, approve: the game goes live on your account
+    expires_at: datetime
+    folder: str
+    files: int
+    size_bytes: int
+    skipped: list[str]
+    message: str
+
+
+class PendingInfo(BaseModel):
+    """What the approve page shows."""
+
+    name: str
+    repo_url: str
+    expires_at: datetime
+    available: bool  # false if the name was taken since; approving would fail
+
+
 class GameOut(BaseModel):
     name: str
     url: str

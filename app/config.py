@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # For trying POST /games/publish without the R2 keys: games are written to this folder
     # instead, which the Worker's dev-server.js can serve. Leave empty on the server.
     local_games_dir: str = ""
+    # The start.ng website, for links the API hands out (e.g. approving a game published
+    # without signing in: <site_url>/approve/<code>).
+    site_url: str = "https://start.ng"
 
 
 settings = Settings()

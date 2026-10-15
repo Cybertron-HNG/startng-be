@@ -6,7 +6,12 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `GET /health`
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/google` (`{id_token}`), `GET /auth/me`
 - `PUT /auth/me/character`: save the signed-in user's character (`{name, style}`); `GET /auth/me` returns it as `character`
-- `POST /games/publish` (signed in): `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`
+- `POST /games/publish`: `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`.
+  Signed in, it goes live on your account. Without signing in, a repo that's already live updates straight away; a new
+  one is checked and returns **202** with an `approve_url` (`<SITE_URL>/approve/<code>`): whoever opens it signs in
+  with start.ng and approves, and it goes live on their account, linking the repo to it for good. Unapproved ones
+  expire after 30 days; new ones are limited to 20 an hour per address
+- `GET /games/publish/{code}`: what's waiting at an approve link; `POST /games/publish/{code}/approve` (signed in): put it live
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
 - `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
 - `POST /games/{name}/scores` (signed in): `{score}` saves a score; only each player's best per game is kept.

@@ -45,3 +45,11 @@ def current_user(
     if user is None:
         raise unauthorized
     return user
+
+
+def optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """The signed-in user, or None when no token was sent. A token that's sent must be valid."""
+    return None if creds is None else current_user(creds, db)
