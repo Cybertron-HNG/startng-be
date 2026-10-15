@@ -6,6 +6,17 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `GET /health`
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/google` (`{id_token}`), `GET /auth/me`
 
+## Games bucket (R2)
+`app/storage.py` reads and writes the private R2 bucket (`startng-games`) that the start.ng Worker serves.
+A game named `dave` is stored under `dave/` and served at `https://dave.start.ng`.
+```python
+from app import storage
+storage.put_game("dave", {"index.html": b"<h1>hi</h1>", "save/index.html": b"..."})
+storage.list_files("dave"); storage.get_file("dave", "index.html"); storage.delete_game("dave")
+```
+Names and paths follow the Worker rules (lowercase letters/digits/hyphens, no `..`, no hidden files, reserved
+names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (see `.env.example`).
+
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
