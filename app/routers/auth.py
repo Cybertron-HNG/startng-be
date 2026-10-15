@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..models import User
-from ..schemas import GoogleIn, LoginIn, RegisterIn, TokenOut, UserOut
+from ..schemas import Character, GoogleIn, LoginIn, RegisterIn, TokenOut, UserOut
 from ..security import create_token, current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -64,4 +64,12 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)):
+    return user
+
+
+@router.put("/me/character", response_model=UserOut)
+def save_character(body: Character, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    user.character = body.model_dump()
+    db.commit()
+    db.refresh(user)
     return user
