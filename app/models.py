@@ -19,6 +19,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # When they last used start.ng (updated at most every few minutes). Picks who gets a bench
+    # in the Hangout.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 def _now() -> datetime:
