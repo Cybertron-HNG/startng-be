@@ -9,6 +9,10 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `POST /games/publish` (signed in): `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
 - `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
+- `POST /games/{name}/scores` (signed in): `{score}` saves a score; only each player's best per game is kept.
+  Returns `{best, improved, rank}`
+- `GET /games/{name}/leaderboard?limit=10`: a game's top players `[{rank, player_id, name, color, score}]`.
+  Games don't call these directly: they ask start.ng's `/connect` page, which adds the player's sign-in
 
 ## Publishing games
 `POST /games/publish` downloads the repo as a zip from GitHub (nothing in it is run), finds a ready-to-play

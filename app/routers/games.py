@@ -1,20 +1,31 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..game_store import GameStore, get_game_store
-from ..models import Game, User
+from ..models import Game, Score, User
 from ..publish import PublishError, download_repo, game_name, parse_repo_url, read_game
-from ..schemas import GameOut, PublishIn, PublishOut
+from ..schemas import GameOut, LeaderboardEntry, PublishIn, PublishOut, ScoreIn, ScoreOut
 from ..security import current_user
 from ..storage import game_url
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/games", tags=["games"])
+
+
+def _player_name(user: User, fallback: str = "Player") -> str:
+    return (user.character or {}).get("name") or user.name or fallback
+
+
+def _game_or_404(db: Session, name: str) -> Game:
+    game = db.get(Game, name)
+    if not game:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that name")
+    return game
 
 
 def require_store(store: GameStore | None = Depends(get_game_store)) -> GameStore:
@@ -90,7 +101,7 @@ def _game_out(g: Game) -> GameOut:
         name=g.name,
         url=game_url(g.name),
         repo_url=g.repo_url,
-        by=(g.owner.character or {}).get("name") or g.owner.name or "A builder",
+        by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
     )
 
@@ -114,13 +125,59 @@ def unpublish(
     db: Session = Depends(get_db),
     store: GameStore = Depends(require_store),
 ):
-    """Take your game offline and free its name."""
-    game = db.get(Game, name)
-    if not game:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that name")
+    """Take your game offline and free its name (its scores go with it)."""
+    game = _game_or_404(db, name)
     if game.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the game's owner can remove it")
     store.delete_game(name)
     db.delete(game)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{name}/scores", response_model=ScoreOut)
+def submit_score(
+    name: str,
+    body: ScoreIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Save a signed-in player's score. Only their best score per game is kept."""
+    _game_or_404(db, name)
+    row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+    improved = row is None or body.score > row.best
+    if row is None:
+        row = Score(user_id=user.id, game_name=name, best=body.score)
+        db.add(row)
+    elif improved:
+        row.best = body.score
+    try:
+        db.commit()
+    except IntegrityError:  # two first scores at once: keep the higher one
+        db.rollback()
+        row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+        improved = body.score > row.best
+        if improved:
+            row.best = body.score
+            db.commit()
+    ahead = db.scalar(select(func.count()).select_from(Score).where(Score.game_name == name, Score.best > row.best))
+    return ScoreOut(best=row.best, improved=improved, rank=ahead + 1)
+
+
+@router.get("/{name}/leaderboard", response_model=list[LeaderboardEntry])
+def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)):
+    """A game's top players by best score. Ties go to whoever got there first."""
+    _game_or_404(db, name)
+    rows = db.scalars(
+        select(Score).where(Score.game_name == name).order_by(Score.best.desc(), Score.updated_at.asc()).limit(limit)
+    ).all()
+    return [
+        LeaderboardEntry(
+            rank=i + 1,
+            player_id=s.user_id,
+            name=_player_name(s.user),
+            color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
+            score=s.best,
+        )
+        for i, s in enumerate(rows)
+    ]
