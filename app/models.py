@@ -34,6 +34,9 @@ class Game(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     repo_url: Mapped[str] = mapped_column(String(300))
     branch: Mapped[str | None] = mapped_column(String(100))
+    # The card picture: a path in the game's folder (app.covers), and when it last changed.
+    cover: Mapped[str | None] = mapped_column(String(200))
+    cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
