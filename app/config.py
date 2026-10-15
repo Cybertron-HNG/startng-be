@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     games_base_domain: str = "start.ng"
     # Subdomains that can never be a game name (must match RESERVED_NAMES on the Worker)
     reserved_game_names: str = "api,auth,login,www,3rdmainland"
+    # For trying POST /games/publish without the R2 keys: games are written to this folder
+    # instead, which the Worker's dev-server.js can serve. Leave empty on the server.
+    local_games_dir: str = ""
 
 
 settings = Settings()
