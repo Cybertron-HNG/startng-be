@@ -85,19 +85,26 @@ def publish(
     )
 
 
+def _game_out(g: Game) -> GameOut:
+    return GameOut(
+        name=g.name,
+        url=game_url(g.name),
+        repo_url=g.repo_url,
+        by=(g.owner.character or {}).get("name") or g.owner.name or "A builder",
+        updated_at=g.updated_at,
+    )
+
+
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)):
-    games = db.scalars(select(Game).order_by(Game.updated_at.desc())).all()
-    return [
-        GameOut(
-            name=g.name,
-            url=game_url(g.name),
-            repo_url=g.repo_url,
-            by=(g.owner.character or {}).get("name") or g.owner.name or "A builder",
-            updated_at=g.updated_at,
-        )
-        for g in games
-    ]
+    return [_game_out(g) for g in db.scalars(select(Game).order_by(Game.updated_at.desc())).all()]
+
+
+@router.get("/mine", response_model=list[GameOut])
+def my_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The signed-in builder's own games, newest first (for their profile)."""
+    query = select(Game).where(Game.owner_id == user.id).order_by(Game.updated_at.desc())
+    return [_game_out(g) for g in db.scalars(query).all()]
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)

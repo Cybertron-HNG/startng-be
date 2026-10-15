@@ -8,6 +8,7 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `PUT /auth/me/character`: save the signed-in user's character (`{name, style}`); `GET /auth/me` returns it as `character`
 - `POST /games/publish` (signed in): `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
+- `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
 
 ## Publishing games
 `POST /games/publish` downloads the repo as a zip from GitHub (nothing in it is run), finds a ready-to-play
