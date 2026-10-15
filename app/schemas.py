@@ -77,3 +77,25 @@ class GameOut(BaseModel):
     repo_url: str
     by: str
     updated_at: datetime
+
+
+# Highest score a game can save; anything above is treated as a bad request.
+MAX_SCORE = 1_000_000_000
+
+
+class ScoreIn(BaseModel):
+    score: int = Field(ge=0, le=MAX_SCORE)
+
+
+class ScoreOut(BaseModel):
+    best: int  # the player's best score in this game, after this one
+    improved: bool  # true when this score is their new best
+    rank: int  # their place on the game's leaderboard
+
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    player_id: int  # lets a game highlight the signed-in player's row
+    name: str  # the player's character name
+    color: str | None  # their character's top colour, for a dot next to the name
+    score: int
