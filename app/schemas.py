@@ -26,9 +26,10 @@ class CharacterStyle(BaseModel):
     secondaryColor: str = Hex
     skinColor: str = Hex
     hairColor: str = Hex
-    hair: Literal["short", "afro", "braids", "bun", "bald"]
+    body: Literal["female", "male"] = "female"
+    hair: Literal["short", "afro", "braids", "bun", "ponytail", "dreads", "bald"]
     hat: Literal["none", "cap", "beanie", "tophat", "crown"]
-    accessory: Literal["none", "glasses", "scarf", "backpack"]
+    accessory: Literal["none", "glasses", "earrings", "beard", "scarf", "backpack"]
 
 
 class Character(BaseModel):
