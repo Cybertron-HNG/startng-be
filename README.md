@@ -5,6 +5,7 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 ## Endpoints
 - `GET /health`
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/google` (`{id_token}`), `GET /auth/me`
+- `PUT /auth/me/character`: save the signed-in user's character (`{name, style}`); `GET /auth/me` returns it as `character`
 
 ## Run locally
 ```bash
