@@ -28,6 +28,12 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   An uploaded cover wins, and republishing never replaces it.
 - `cover_url` ends in `?v=<time>`, which changes with the cover, so nobody sees an old picture.
 
+## The Hangout
+start.ng's own multiplayer game runs inside the front end at `/hangout`, but its live room needs a `hangout`
+row in `games`. Migration `0006` adds it, owned by a start.ng system account (`system@start.invalid`) that
+nobody can sign in to, so the Hangout belongs to no person. It runs with the rest of the migrations on deploy.
+If someone already published a game called `hangout`, it is left alone. `GET /games` lists it as by "start.ng".
+
 ## Publishing games
 `POST /games/publish` downloads the repo as a zip from GitHub (nothing in it is run), finds a ready-to-play
 `index.html` (in `dist/`, `build/`, `docs/`, `out/` or the top), checks it and uploads it to `<name>/` in the bucket.
