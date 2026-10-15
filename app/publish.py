@@ -28,6 +28,9 @@ MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 20000
 
 # The file types the games Worker serves (its CONTENT_TYPES). Anything else is skipped.
+MANIFEST = "startng.json"  # the game's start.ng settings (app/leaderboard.py)
+MAX_MANIFEST_BYTES = 64 * 1024
+
 SERVED = {
     "html", "htm", "css", "js", "mjs", "json", "map", "txt", "svg", "png", "jpg", "jpeg", "gif", "webp",
     "avif", "ico", "woff", "woff2", "ttf", "otf", "mp3", "ogg", "wav", "mp4", "webm", "wasm",
@@ -68,6 +71,7 @@ class GameBundle:
     folder: str  # where in the repo the game was found ("" = the top)
     files: list[GameFile]
     skipped: list[str] = field(default_factory=list)
+    manifest: bytes | None = None  # startng.json (game folder first, then the top of the repo)
 
     @property
     def total_bytes(self) -> int:
@@ -174,6 +178,12 @@ def read_game(archive: bytes) -> GameBundle:
             if len(bundle.files) >= MAX_FILES:
                 raise PublishError(f"The game has more than {MAX_FILES} files")
             bundle.files.append(GameFile(rel, zf.read(info)))
+
+        for candidate in ([f"{prefix}{MANIFEST}"] if prefix else []) + [MANIFEST]:
+            info = entries.get(candidate)
+            if info and info.file_size <= MAX_MANIFEST_BYTES:
+                bundle.manifest = zf.read(info)
+                break
 
     _scan(bundle)
     return bundle

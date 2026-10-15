@@ -9,6 +9,7 @@ app = FastAPI(title="Start.ng API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_origin_regex=settings.game_origins_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

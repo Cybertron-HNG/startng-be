@@ -5,15 +5,16 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from .. import covers
 from ..db import get_db
 from ..game_store import GameStore, get_game_store
 from ..models import Game, Score, User
 from ..publish import PublishError, download_repo, game_name, parse_repo_url, read_game
-from ..schemas import GameOut, LeaderboardEntry, PublishIn, PublishOut, ScoreIn, ScoreOut
-from ..security import current_user
+from ..schemas import GameOut, GameSessionOut, LeaderboardEntry, PlayerOut, PublishIn, PublishOut, ScoreIn, ScoreOut
+from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player
+from .. import leaderboard as boards
 from ..storage import game_url
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,10 @@ def publish(
         bundle = read_game(download_repo(repo))
     except PublishError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(err))
+    try:
+        schema = boards.parse_manifest(bundle.manifest) if bundle.manifest else None
+    except boards.SchemaError as err:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"startng.json: {err}")
 
     created = game is None
     if created:
@@ -88,6 +93,7 @@ def publish(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't upload the game, try again")
 
     game.repo_url, game.branch = repo.url, repo.branch
+    game.leaderboard = schema
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
         game.cover = covers.repo_cover(list(files))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
@@ -112,7 +118,20 @@ def _game_out(g: Game) -> GameOut:
         by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
         cover_url=_cover_url(g),
+        leaderboard=_board_columns(g),
     )
+
+
+def _schema(g: Game) -> list[dict]:
+    return g.leaderboard or boards.DEFAULT
+
+
+def _board_columns(g: Game) -> list[dict] | None:
+    """Columns for the game's leaderboard; None when it has none (opt-in: a startng.json, or saved scores)."""
+    if g.leaderboard:
+        return g.leaderboard
+    has_scores = object_session(g).scalar(select(Score.id).where(Score.game_name == g.name).limit(1))
+    return boards.DEFAULT if has_scores else None
 
 
 def _cover_url(g: Game) -> str | None:
@@ -218,42 +237,83 @@ def remove_cover(
     return _game_out(game)
 
 
+def _player_out(user: User) -> PlayerOut:
+    return PlayerOut(id=user.id, name=_player_name(user), style=(user.character or {}).get("style"))
+
+
+@router.post("/{name}/session", response_model=GameSessionOut)
+def game_session(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A game session for the signed-in player: the key a game uses to call its player API.
+    It only works for this game, expires after GAME_SESSION_MINUTES, and is never a sign-in.
+    start.ng hands it to the game (sign-in redirect or /connect); games never see the real token."""
+    _game_or_404(db, name)
+    return GameSessionOut(session=create_game_session(user.id, name), expires_in=GAME_SESSION_MINUTES * 60, player=_player_out(user))
+
+
+@router.get("/{name}/player", response_model=PlayerOut)
+def game_player_info(name: str, user: User = Depends(game_player), db: Session = Depends(get_db)):
+    """Who the game session belongs to: id, character name and look (never the email)."""
+    _game_or_404(db, name)
+    return _player_out(user)
+
+
 @router.post("/{name}/scores", response_model=ScoreOut)
 def submit_score(
     name: str,
     body: ScoreIn,
-    user: User = Depends(current_user),
+    user: User = Depends(game_player),
     db: Session = Depends(get_db),
 ):
-    """Save a signed-in player's score. Only their best score per game is kept."""
-    _game_or_404(db, name)
+    """Save the player's run: their game's stats (startng.json) or a plain score. Only their best run is kept."""
+    game = _game_or_404(db, name)
+    schema = _schema(game)
+    if body.stats is not None:
+        try:
+            stats = boards.check_stats(schema, body.stats)
+        except ValueError as err:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(err))
+    elif body.score is not None and [s["key"] for s in schema] == ["score"]:
+        stats = {"score": body.score}
+    else:
+        keys = ", ".join(s["key"] for s in schema)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"send stats: {keys}")
+    first = stats[schema[0]["key"]]
+
     row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
-    improved = row is None or body.score > row.best
     if row is None:
-        row = Score(user_id=user.id, game_name=name, best=body.score)
+        row = Score(user_id=user.id, game_name=name, best=first, stats=stats)
         db.add(row)
-    elif improved:
-        row.best = body.score
-    try:
-        db.commit()
-    except IntegrityError:  # two first scores at once: keep the higher one
-        db.rollback()
-        row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
-        improved = body.score > row.best
-        if improved:
-            row.best = body.score
+        improved = True
+        try:
             db.commit()
-    ahead = db.scalar(select(func.count()).select_from(Score).where(Score.game_name == name, Score.best > row.best))
-    return ScoreOut(best=row.best, improved=improved, rank=ahead + 1)
+        except IntegrityError:  # two first runs at once: compare with the one that won
+            db.rollback()
+            row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+            improved = None
+    else:
+        improved = None
+    if improved is None:
+        improved = boards.is_better(schema, stats, boards.stats_of(schema, row.stats, row.best))
+        if improved:
+            row.best, row.stats = first, stats
+            db.commit()
+    best = boards.stats_of(schema, row.stats, row.best)
+    rows = _ranked(db, name, schema)
+    rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
+    return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best)
+
+
+def _ranked(db: Session, name: str, schema: list[dict]) -> list[Score]:
+    """A game's best runs, best first; ties go to whoever got there first."""
+    rows = db.scalars(select(Score).where(Score.game_name == name)).all()
+    return sorted(rows, key=lambda r: (boards.rank_key(schema, boards.stats_of(schema, r.stats, r.best)), r.updated_at))
 
 
 @router.get("/{name}/leaderboard", response_model=list[LeaderboardEntry])
 def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)):
-    """A game's top players by best score. Ties go to whoever got there first."""
-    _game_or_404(db, name)
-    rows = db.scalars(
-        select(Score).where(Score.game_name == name).order_by(Score.best.desc(), Score.updated_at.asc()).limit(limit)
-    ).all()
+    """A game's top players, ranked by its own stats (startng.json) or a plain score."""
+    game = _game_or_404(db, name)
+    schema = _schema(game)
     return [
         LeaderboardEntry(
             rank=i + 1,
@@ -261,6 +321,20 @@ def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = De
             name=_player_name(s.user),
             color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
             score=s.best,
+            stats=boards.stats_of(schema, s.stats, s.best),
         )
-        for i, s in enumerate(rows)
+        for i, s in enumerate(_ranked(db, name, schema)[:limit])
     ]
+
+
+@router.delete("/{name}/scores/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_score(name: str, player_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The game's owner removes a player's score (for example, an impossible one)."""
+    if _game_or_404(db, name).owner_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the game's owner can remove scores")
+    row = db.scalar(select(Score).where(Score.user_id == player_id, Score.game_name == name))
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That player has no score in this game")
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

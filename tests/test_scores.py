@@ -63,9 +63,9 @@ def test_refuses_silly_scores(env, score):
 
 def test_keeps_each_players_best(env):
     client, tokens, _ = env
-    assert post_score(client, tokens, "ada", 100).json() == {"best": 100, "improved": True, "rank": 1}
-    assert post_score(client, tokens, "ada", 50).json() == {"best": 100, "improved": False, "rank": 1}
-    assert post_score(client, tokens, "ada", 150).json() == {"best": 150, "improved": True, "rank": 1}
+    assert post_score(client, tokens, "ada", 100).json() == {"best": 100, "improved": True, "rank": 1, "stats": {"score": 100}}
+    assert post_score(client, tokens, "ada", 50).json() == {"best": 100, "improved": False, "rank": 1, "stats": {"score": 100}}
+    assert post_score(client, tokens, "ada", 150).json() == {"best": 150, "improved": True, "rank": 1, "stats": {"score": 150}}
     assert [e["score"] for e in client.get("/games/lanedash/leaderboard").json()] == [150]
 
 
