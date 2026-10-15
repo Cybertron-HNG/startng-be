@@ -15,6 +15,8 @@ from .config import settings
 class GameStore(Protocol):
     def paths(self, game: str) -> list[str]: ...
     def put_game(self, game: str, files: dict[str, bytes]) -> None: ...
+    def put_file(self, game: str, path: str, data: bytes, content_type: str) -> None: ...
+    def delete_file(self, game: str, path: str) -> None: ...
     def delete_game(self, game: str) -> None: ...
 
 
@@ -24,6 +26,12 @@ class R2GameStore:
 
     def put_game(self, game: str, files: dict[str, bytes]) -> None:
         storage.put_game(game, files)
+
+    def put_file(self, game: str, path: str, data: bytes, content_type: str) -> None:
+        storage.put_file(game, path, data, content_type)
+
+    def delete_file(self, game: str, path: str) -> None:
+        storage.delete_file(game, path)
 
     def delete_game(self, game: str) -> None:
         storage.delete_game(game)
@@ -49,6 +57,12 @@ class LocalGameStore:
             target = folder / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+
+    def put_file(self, game: str, path: str, data: bytes, content_type: str) -> None:
+        self.put_game(game, {path: data})
+
+    def delete_file(self, game: str, path: str) -> None:
+        (self._dir(game) / storage.clean_path(path)).unlink(missing_ok=True)
 
     def delete_game(self, game: str) -> None:
         shutil.rmtree(self._dir(game), ignore_errors=True)

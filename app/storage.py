@@ -149,3 +149,9 @@ def delete_game(game: str) -> int:
             _client().delete_objects(Bucket=settings.r2_bucket, Delete={"Objects": list(keys)})
             removed += len(keys)
     return removed
+
+
+def delete_file(game: str, path: str) -> None:
+    """Delete one file of a game (no error if it isn't there)."""
+    key = f"{validate_game_name(game)}/{clean_path(path)}"
+    _client().delete_object(Bucket=settings.r2_bucket, Key=key)

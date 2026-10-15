@@ -77,6 +77,7 @@ class GameOut(BaseModel):
     repo_url: str
     by: str
     updated_at: datetime
+    cover_url: str | None = None  # the card picture; None means show the letter tile
 
 
 # Highest score a game can save; anything above is treated as a bad request.
