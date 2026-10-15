@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import covers
+from .. import auto_update, covers
 from ..config import settings
 from ..db import get_db
 from ..game_store import GameStore, get_game_store
@@ -90,6 +90,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't upload the game, try again")
 
     game.repo_url, game.branch = repo.url, repo.branch
+    auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
         game.cover = covers.repo_cover(list(files))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None

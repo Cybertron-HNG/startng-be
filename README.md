@@ -26,6 +26,15 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
 
+## Keeping games up to date
+- While the server runs it checks each game's branch on GitHub and republishes the game when there's a new commit
+  (`app/auto_update.py`), so a push is all a builder needs to do. Games updated in the last day are checked every
+  minute, the last 30 days every 5 minutes (`UPDATE_CHECK_SECONDS`), older ones hourly
+- Each check asks only for the latest commit id and sends GitHub's fingerprint (ETag) of the last answer, so an
+  unchanged repo costs nothing. Set `GITHUB_TOKEN` (read-only, public repos) for 5,000 checks an hour instead of 60
+- A commit that doesn't publish (no `index.html`, too big, ...) is logged and skipped; the live game stays as it was
+- `AUTO_UPDATE=false` turns it off (tests do)
+
 ## Game covers
 - An uploaded cover is opened, cropped to 640 x 400 and saved again as WebP (`app/covers.py`), so nothing
   hidden in the file is kept. It goes in the game's folder as `startng-cover.webp` and the Worker serves it.

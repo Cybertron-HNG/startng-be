@@ -40,6 +40,11 @@ class Game(Base):
     # The card picture: a path in the game's folder (app.covers), and when it last changed.
     cover: Mapped[str | None] = mapped_column(String(200))
     cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Keeping it up to date (app/auto_update.py): the commit that's live, GitHub's fingerprint of
+    # that answer (so unchanged repos cost nothing to check), and when it was last checked.
+    last_commit: Mapped[str | None] = mapped_column(String(40))
+    commit_etag: Mapped[str | None] = mapped_column(String(200))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

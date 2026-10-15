@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # The start.ng website, for links the API hands out (e.g. approving a game published
     # without signing in: <site_url>/approve/<code>).
     site_url: str = "https://start.ng"
+    # Keeping games up to date: the server checks each game's GitHub branch for new commits and
+    # republishes when it changes (app/auto_update.py). A read-only GitHub token lifts GitHub's
+    # limit from 60 checks an hour to 5,000; without one it still works, slowly.
+    auto_update: bool = True
+    github_token: str = ""
+    update_check_seconds: int = 300  # games updated in the last 30 days (newer: every minute; older: hourly)
 
 
 settings = Settings()

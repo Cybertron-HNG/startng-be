@@ -1,10 +1,28 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import auto_update
 from .config import settings
 from .routers import auth, games, live
 
-app = FastAPI(title="Start.ng API")
+# Show the app's own messages (e.g. "Updated lane-dash to ...") next to uvicorn's.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Keeps live games in step with their GitHub repos while the server runs.
+    task = asyncio.create_task(auto_update.run_forever()) if settings.auto_update else None
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(title="Start.ng API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
