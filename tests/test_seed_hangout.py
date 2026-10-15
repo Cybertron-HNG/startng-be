@@ -15,7 +15,7 @@ from app.models import Game, User
 from app.security import create_token
 
 # alembic/versions isn't a package, so load the migration from its file.
-_path = Path(__file__).parent.parent / "alembic" / "versions" / "0006_seed_hangout.py"
+_path = Path(__file__).parent.parent / "alembic" / "versions" / "0007_seed_hangout.py"
 _spec = importlib.util.spec_from_file_location("seed_hangout", _path)
 seed = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(seed)

@@ -30,7 +30,7 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 
 ## The Hangout
 start.ng's own multiplayer game runs inside the front end at `/hangout`, but its live room needs a `hangout`
-row in `games`. Migration `0006` adds it, owned by a start.ng system account (`system@start.invalid`) that
+row in `games`. Migration `0007` adds it, owned by a start.ng system account (`system@start.invalid`) that
 nobody can sign in to, so the Hangout belongs to no person. It runs with the rest of the migrations on deploy.
 If someone already published a game called `hangout`, it is left alone. `GET /games` lists it as by "start.ng".
 
