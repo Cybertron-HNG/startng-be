@@ -45,6 +45,9 @@ class Game(Base):
     last_commit: Mapped[str | None] = mapped_column(String(40))
     commit_etag: Mapped[str | None] = mapped_column(String(200))
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the latest push couldn't go live ({commit, at, detail, errors}); cleared by the
+    # next successful publish. Shown to the owner in Your games.
+    update_problem: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import auto_update
 from .config import settings
+from .errors import ApiError, api_error_handler
 from .routers import auth, games, live
 
 # Show the app's own messages (e.g. "Updated lane-dash to ...") next to uvicorn's.
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Start.ng API", lifespan=lifespan)
+app.add_exception_handler(ApiError, api_error_handler)
 
 app.add_middleware(
     CORSMiddleware,

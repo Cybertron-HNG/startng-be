@@ -9,11 +9,11 @@ import re
 import stat
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import requests
 
 from . import storage
+from .checks import Problem, inspect
 
 MAX_NAME = 40  # the games table's limit; app.storage applies the Worker's name rules
 REPO_RE = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([\w./-]+?))?/?$")
@@ -32,13 +32,32 @@ SERVED = {
     "html", "htm", "css", "js", "mjs", "json", "map", "txt", "svg", "png", "jpg", "jpeg", "gif", "webp",
     "avif", "ico", "woff", "woff2", "ttf", "otf", "mp3", "ogg", "wav", "mp4", "webm", "wasm",
 }
-# Scanned for malware signatures: text files, and fonts (a known place to hide a payload).
-SCANNED = {"html", "htm", "css", "js", "mjs", "json", "map", "txt", "svg", "woff", "woff2", "ttf", "otf"}
-PATTERNS_FILE = Path(__file__).resolve().parent.parent / "malware-patterns.txt"
 
 
 class PublishError(Exception):
-    """A problem the builder can fix. The message is shown to them."""
+    """A problem the builder can fix. The message is shown to them; the code is for scripts."""
+
+    def __init__(self, message: str, code: str = "invalid"):
+        super().__init__(message)
+        self.code = code
+        self.warnings: list[Problem] = []
+
+    @property
+    def errors(self) -> list[Problem]:
+        return [Problem(self.code, str(self))]
+
+
+class GameRejected(PublishError):
+    """The game was read but has problems: all of them, so they can be fixed in one go."""
+
+    def __init__(self, errors: list[Problem], warnings: list[Problem]):
+        more = f" (and {len(errors) - 1} more problem{'s' if len(errors) > 2 else ''})" if len(errors) > 1 else ""
+        super().__init__(errors[0].message + more, errors[0].code)
+        self._errors, self.warnings = errors, warnings
+
+    @property
+    def errors(self) -> list[Problem]:
+        return self._errors
 
 
 def _extension(path: str) -> str:
@@ -68,6 +87,7 @@ class GameBundle:
     folder: str  # where in the repo the game was found ("" = the top)
     files: list[GameFile]
     skipped: list[str] = field(default_factory=list)
+    warnings: list[Problem] = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -77,10 +97,10 @@ class GameBundle:
 def parse_repo_url(url: str, branch: str | None = None) -> Repo:
     m = REPO_RE.match(url.strip())
     if not m:
-        raise PublishError("Use a public GitHub repo link, like https://github.com/you/your-game")
+        raise PublishError("Use a public GitHub repo link, like https://github.com/you/your-game", "bad_link")
     branch = branch or m.group(3)
     if branch and (not BRANCH_RE.match(branch) or ".." in branch):
-        raise PublishError(f'"{branch}" is not a valid branch name')
+        raise PublishError(f'"{branch}" is not a valid branch name', "bad_branch")
     return Repo(owner=m.group(1), name=m.group(2), branch=branch)
 
 
@@ -91,8 +111,8 @@ def game_name(raw: str) -> str:
         return storage.validate_game_name(name)
     except storage.StorageError:
         if name in storage.reserved_names():
-            raise PublishError(f'"{name}" is reserved, pick another name')
-        raise PublishError(f'"{raw}" can\'t be used as a game name: use letters, numbers and hyphens')
+            raise PublishError(f'"{name}" is reserved, pick another name', "reserved_name")
+        raise PublishError(f'"{raw}" can\'t be used as a game name: use letters, numbers and hyphens', "bad_name")
 
 
 def download_repo(repo: Repo) -> bytes:
@@ -102,17 +122,17 @@ def download_repo(repo: Repo) -> bytes:
     try:
         with requests.get(url, stream=True, timeout=30) as res:
             if res.status_code == 404:
-                raise PublishError("Repo or branch not found. Is the repo public?")
+                raise PublishError("Repo or branch not found. Is the repo public?", "repo_not_found")
             res.raise_for_status()
             chunks, size = [], 0
             for chunk in res.iter_content(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_DOWNLOAD_BYTES:
-                    raise PublishError(f"The repo is over {MAX_DOWNLOAD_BYTES // 1048576} MB to download")
+                    raise PublishError(f"The repo is over {MAX_DOWNLOAD_BYTES // 1048576} MB to download", "repo_too_big")
                 chunks.append(chunk)
             return b"".join(chunks)
     except requests.RequestException as err:
-        raise PublishError("Couldn't download the repo from GitHub, try again") from err
+        raise PublishError("Couldn't download the repo from GitHub, try again", "download_failed") from err
 
 
 def _safe_path(name: str) -> str | None:
@@ -140,11 +160,11 @@ def read_game(archive: bytes) -> GameBundle:
     try:
         zf = zipfile.ZipFile(io.BytesIO(archive))
     except zipfile.BadZipFile as err:
-        raise PublishError("GitHub sent a broken download, try again") from err
+        raise PublishError("GitHub sent a broken download, try again", "download_failed") from err
     with zf:
         infos = zf.infolist()
         if len(infos) > MAX_ARCHIVE_ENTRIES:
-            raise PublishError(f"The repo has more than {MAX_ARCHIVE_ENTRIES} files")
+            raise PublishError(f"The repo has more than {MAX_ARCHIVE_ENTRIES} files", "too_many_files")
         entries: dict[str, zipfile.ZipInfo] = {}
         for info in infos:
             if info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
@@ -156,7 +176,8 @@ def read_game(archive: bytes) -> GameBundle:
         folder = _find_game_folder(zf, entries)
         prefix = f"{folder}/" if folder else ""
         bundle = GameBundle(folder=folder, files=[])
-        total = 0
+        errors: list[Problem] = []
+        total = count = 0
         for path, info in sorted(entries.items()):
             if not path.startswith(prefix):
                 continue
@@ -166,16 +187,21 @@ def read_game(archive: bytes) -> GameBundle:
                 continue
             # Check sizes before reading anything (zip bombs claim small and unpack huge;
             # zipfile never returns more than the size an entry declares).
-            if info.file_size > MAX_FILE_BYTES:
-                raise PublishError(f"{rel} is over {MAX_FILE_BYTES // 1048576} MB")
+            count += 1
             total += info.file_size
-            if total > MAX_TOTAL_BYTES:
-                raise PublishError(f"The game is over {MAX_TOTAL_BYTES // 1048576} MB")
-            if len(bundle.files) >= MAX_FILES:
-                raise PublishError(f"The game has more than {MAX_FILES} files")
-            bundle.files.append(GameFile(rel, zf.read(info)))
+            if info.file_size > MAX_FILE_BYTES:
+                errors.append(Problem("file_too_big", f"{rel} is over {MAX_FILE_BYTES // 1048576} MB", rel))
+            elif total <= MAX_TOTAL_BYTES and count <= MAX_FILES:
+                bundle.files.append(GameFile(rel, zf.read(info)))
+        if total > MAX_TOTAL_BYTES:
+            errors.append(Problem("game_too_big", f"The game is over {MAX_TOTAL_BYTES // 1048576} MB"))
+        if count > MAX_FILES:
+            errors.append(Problem("too_many_files", f"The game has more than {MAX_FILES} files"))
 
-    _scan(bundle)
+    found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])
+    errors += found
+    if errors:
+        raise GameRejected(errors, bundle.warnings)
     return bundle
 
 
@@ -186,28 +212,14 @@ def _find_game_folder(zf: zipfile.ZipFile, entries: dict[str, zipfile.ZipInfo]) 
         if not index:
             continue
         if index.file_size > MAX_FILE_BYTES:
-            raise PublishError("index.html is too big")
+            raise PublishError("index.html is too big", "file_too_big")
         if _looks_built(zf.read(index).decode("utf-8", "replace")):
             return folder
         needs_build = True
     if needs_build:
         raise PublishError(
             "This repo needs building first. Commit your built game (for example a dist/ folder), "
-            "or publish a plain HTML/CSS/JS game."
+            "or publish a plain HTML/CSS/JS game.",
+            "needs_build",
         )
-    raise PublishError("No index.html found at the top of the repo or in dist/, build/, docs/ or out/")
-
-
-def _patterns() -> list[re.Pattern[bytes]]:
-    lines = PATTERNS_FILE.read_text(encoding="utf-8").splitlines()
-    return [re.compile(line.strip().encode()) for line in lines if line.strip() and not line.lstrip().startswith("#")]
-
-
-def _scan(bundle: GameBundle) -> None:
-    """Refuse games that match the same malware signatures the team's CI and Docker build use."""
-    patterns = _patterns()
-    for f in bundle.files:
-        if _extension(f.path) not in SCANNED:
-            continue
-        if any(p.search(f.data) for p in patterns):
-            raise PublishError(f"{f.path} matches a known malware pattern, so the game can't be published")
+    raise PublishError("No index.html found at the top of the repo or in dist/, build/, docs/ or out/", "no_index")

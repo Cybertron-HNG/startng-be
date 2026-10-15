@@ -28,6 +28,7 @@ from .config import settings
 from .db import SessionLocal
 from .game_store import GameStore, get_game_store
 from .models import Game
+from .checks import Problem
 from .publish import PublishError, parse_repo_url
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ log = logging.getLogger(__name__)
 TICK_SECONDS = 30  # how often to look for games that are due
 PER_TICK = 50  # at most this many checks per look, so one look never runs long
 ACTIVE, RECENT = timedelta(days=1), timedelta(days=30)
+# Failures that aren't the game's fault: the same commit is tried again on the next check.
+TRY_AGAIN = {"download_failed", "upload_failed", "not_set_up"}
 
 
 @dataclass
@@ -127,7 +130,7 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
                 log.warning("GitHub's limit is used up; checking again at %s. Set GITHUB_TOKEN for more.", found.retry_at)
                 break
             summary.checked += 1
-            republished = False
+            republished = retry = False
             if found.status == "fresh":
                 if game.last_commit is None:
                     game.last_commit = found.sha  # first look: this is what's live
@@ -139,10 +142,27 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
                         republished = True
                         log.info("Updated %s to %s", game.name, found.sha)
                     except (HTTPException, PublishError) as err:
-                        # Not retried until the next new commit: a broken commit stays broken.
-                        log.warning("Couldn't update %s to %s: %s", game.name, found.sha, getattr(err, "detail", err))
-                    game.last_commit = found.sha
-                game.commit_etag = found.etag
+                        errors = getattr(err, "errors", None) or [Problem("invalid", str(getattr(err, "detail", err)))]
+                        if errors[0].code in TRY_AGAIN:
+                            # A GitHub or storage hiccup: keep the old commit and fingerprint, so
+                            # the next check sees this commit as new again and retries it.
+                            log.warning("Couldn't update %s to %s yet: %s", game.name, found.sha, errors[0].message)
+                            retry = True
+                        else:
+                            # Not retried until the next new commit: a broken commit stays broken.
+                            # The owner sees why in Your games.
+                            detail = str(getattr(err, "detail", err))
+                            log.warning("Couldn't update %s to %s: %s", game.name, found.sha, detail)
+                            game.update_problem = {
+                                "commit": found.sha,
+                                "at": now.isoformat(),
+                                "detail": detail,
+                                "errors": [p.as_dict() for p in errors],
+                            }
+                    if not retry:
+                        game.last_commit = found.sha
+                if not retry:
+                    game.commit_etag = found.etag
             elif found.status == "missing":
                 log.info("%s: its repo or branch is gone or private; the game stays as it is", game.name)
             if not republished:
