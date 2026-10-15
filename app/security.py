@@ -35,6 +35,10 @@ def current_user(
         raise unauthorized
     try:
         payload = jwt.decode(creds.credentials, settings.jwt_secret, algorithms=["HS256"])
+        # Live-room tickets (app/live.py) are signed with the same secret but only open a
+        # game's live room; they never count as a sign-in.
+        if payload.get("typ"):
+            raise unauthorized
         user = db.get(User, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
         raise unauthorized

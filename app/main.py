@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import auth, games
+from .routers import auth, games, live
 
 app = FastAPI(title="Start.ng API")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(games.router)
+app.include_router(live.router)
 
 
 @app.get("/health")
