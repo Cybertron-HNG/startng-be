@@ -60,6 +60,23 @@ for that game's player API, expires after 2 hours, and is never a sign-in.
 
 A session for one game is refused by every other game and by `/auth/*`.
 
+### Game-defined leaderboards (opt-in)
+A game gets a leaderboard by shipping a `startng.json` (in its game folder, or at the top of the repo), read on publish:
+```json
+{"leaderboard": {"stats": [
+  {"key": "waves", "label": "Waves survived", "order": "highest"},
+  {"key": "kills", "label": "Enemies killed"},
+  {"key": "time", "label": "Time", "order": "lowest", "format": "time"}
+]}}
+```
+- 1–5 stats; `key` lowercase letters/digits/_ ; `order` `highest` (default) or `lowest`; `format` `number` (default) or `time` (seconds).
+- Ranked by the first stat, then the next ones break ties, then whoever got there first. Each player's best run is kept.
+- Games send `POST /games/{name}/scores` `{"stats": {"waves": 5, "kills": 10, "time": 312}}`: exactly the declared stats,
+  whole numbers 0–1,000,000,000. Nothing else is stored (no text).
+- `GET /games` returns each game's `leaderboard` columns, or `null` when it has none (no `startng.json` and no scores).
+  Games without a `startng.json` keep the plain `{"score": n}` board.
+- `DELETE /games/{name}/scores/{player_id}` (owner): remove a player's score.
+
 ## Games bucket (R2)
 `app/storage.py` reads and writes the private R2 bucket (`startng-games`) that the start.ng Worker serves.
 A game named `dave` is stored under `dave/` and served at `https://dave.start.ng`.

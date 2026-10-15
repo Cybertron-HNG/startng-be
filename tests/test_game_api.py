@@ -71,9 +71,9 @@ def test_game_saves_scores_with_its_session(env):
     client, tokens, ids = env
     ada, _ = session_for(client, tokens, "ada")
     tunde, _ = session_for(client, tokens, "tunde")
-    assert client.post("/games/relic-hunter/scores", json={"score": 3400}, headers=ada).json() == {"best": 3400, "improved": True, "rank": 1}
+    assert client.post("/games/relic-hunter/scores", json={"score": 3400}, headers=ada).json() == {"best": 3400, "improved": True, "rank": 1, "stats": {"score": 3400}}
     assert client.post("/games/relic-hunter/scores", json={"score": 2400}, headers=tunde).json()["rank"] == 2
-    assert client.post("/games/relic-hunter/scores", json={"score": 100}, headers=ada).json() == {"best": 3400, "improved": False, "rank": 1}
+    assert client.post("/games/relic-hunter/scores", json={"score": 100}, headers=ada).json() == {"best": 3400, "improved": False, "rank": 1, "stats": {"score": 3400}}
     board = client.get("/games/relic-hunter/leaderboard").json()
     assert [(e["name"], e["score"]) for e in board] == [("Trini", 3400), ("Tunde", 2400)]
 

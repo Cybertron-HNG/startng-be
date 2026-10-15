@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -78,6 +78,8 @@ class GameOut(BaseModel):
     by: str
     updated_at: datetime
     cover_url: str | None = None  # the card picture; None means show the letter tile
+    # The game's leaderboard columns, or None when the game has no leaderboard (no startng.json, no scores)
+    leaderboard: list[dict] | None = None
 
 
 # Highest score a game can save; anything above is treated as a bad request.
@@ -85,13 +87,17 @@ MAX_SCORE = 1_000_000_000
 
 
 class ScoreIn(BaseModel):
-    score: int = Field(ge=0, le=MAX_SCORE)
+    # A plain score, for games without a startng.json ...
+    score: int | None = Field(default=None, ge=0, le=MAX_SCORE)
+    # ... or the game's own stats, exactly as its startng.json lists them: {"stage": 8, "kills": 100}
+    stats: dict[str, Any] | None = None  # checked exactly by app/leaderboard.check_stats (numbers only)
 
 
 class ScoreOut(BaseModel):
     best: int  # the player's best score in this game, after this one
     improved: bool  # true when this score is their new best
     rank: int  # their place on the game's leaderboard
+    stats: dict[str, int | None]  # the best run's stats (games with a startng.json)
 
 
 class LeaderboardEntry(BaseModel):
@@ -99,7 +105,8 @@ class LeaderboardEntry(BaseModel):
     player_id: int  # lets a game highlight the signed-in player's row
     name: str  # the player's character name
     color: str | None  # their character's top colour, for a dot next to the name
-    score: int
+    score: int  # the first stat (the plain score for games without a startng.json)
+    stats: dict[str, int | None]  # every stat, keyed like the game's startng.json
 
 
 class PlayerOut(BaseModel):
