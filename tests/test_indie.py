@@ -115,3 +115,15 @@ def test_too_many_submissions(env, monkeypatch):
     for i in range(2):
         assert client.post("/indie", json=game(url=f"https://ada.itch.io/g{i}"), headers=tokens["ada"]).status_code == 201
     assert client.post("/indie", json=game(url="https://ada.itch.io/g9"), headers=tokens["ada"]).status_code == 429
+
+
+def test_most_clicked_first(env):
+    client, _, tokens, _ = env
+    ids = [client.post("/indie", json=game(name=f"Game {i}", url=f"https://ada.itch.io/g{i}"), headers=tokens["ada"]).json()["id"] for i in range(3)]
+    for ua in ["a", "b", "c"]:
+        client.post(f"/indie/{ids[0]}/plays", headers={"user-agent": ua})
+    client.post(f"/indie/{ids[1]}/plays", headers={"user-agent": "a"})
+    client.post(f"/indie/{ids[1]}/plays", headers={"user-agent": "a"})  # same person again: counts once
+    popular = client.get("/indie", params={"sort": "popular", "limit": 3}).json()
+    assert [(g["name"], g["plays"]) for g in popular] == [("Game 0", 3), ("Game 1", 1), ("Game 2", 0)]
+    assert client.post("/indie/999/plays").status_code == 404

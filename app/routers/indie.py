@@ -8,19 +8,21 @@ import base64
 import binascii
 import re
 from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .. import covers
 from ..db import get_db
 from ..errors import ApiError
-from ..models import IndieGame, User
+from ..models import IndieGame, IndiePlay, User
 from ..schemas import IndieGameIn, IndieGameOut
 from ..security import current_user, optional_user
-from .games import _player_name, _rate_limit
+from .games import PLAY_AGAIN_MINUTES, PLAYS_DAYS, PLAYS_KEPT_DAYS, _player_name, _rate_limit, visitor_of
 
 router = APIRouter(prefix="/indie", tags=["indie"])
 
@@ -69,22 +71,47 @@ def _cover(data_url: str) -> bytes:
         raise _bad("bad_cover", str(err))
 
 
-def _out(g: IndieGame, user: User | None = None) -> IndieGameOut:
+def _recent_plays(db: Session) -> dict[int, int]:
+    since = datetime.now(timezone.utc) - timedelta(days=PLAYS_DAYS)
+    rows = db.execute(select(IndiePlay.indie_id, func.count()).where(IndiePlay.at >= since).group_by(IndiePlay.indie_id))
+    return {gid: count for gid, count in rows}
+
+
+def _out(g: IndieGame, user: User | None = None, plays: int = 0) -> IndieGameOut:
     return IndieGameOut(
         id=g.id, name=g.name, url=g.url, description=g.description, by=_player_name(g.owner, "A creator"),
-        cover_path=f"/indie/{g.id}/cover.webp", created_at=g.created_at, mine=bool(user and user.id == g.owner_id),
+        cover_path=f"/indie/{g.id}/cover.webp", created_at=g.created_at, mine=bool(user and user.id == g.owner_id), plays=plays,
     )
 
 
 @router.get("", response_model=list[IndieGameOut])
 def list_indie_games(
     limit: int = Query(200, ge=1, le=200),
+    sort: Literal["newest", "popular"] = "newest",
     user: User | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ):
-    """Newest first. The homepage asks for 4; the page with every game asks for all."""
-    games = db.scalars(select(IndieGame).order_by(IndieGame.created_at.desc(), IndieGame.id.desc()).limit(limit)).all()
-    return [_out(g, user) for g in games]
+    """Newest first, or most opened this week first (sort=popular; ties: newest first)."""
+    plays = _recent_plays(db)
+    games = db.scalars(select(IndieGame).order_by(IndieGame.created_at.desc(), IndieGame.id.desc())).all()
+    if sort == "popular":
+        games = sorted(games, key=lambda g: -plays.get(g.id, 0))
+    return [_out(g, user, plays.get(g.id, 0)) for g in games[:limit]]
+
+
+@router.post("/{game_id}/plays", status_code=status.HTTP_204_NO_CONTENT)
+def count_indie_play(game_id: int, request: Request, db: Session = Depends(get_db)):
+    """start.ng calls this when someone opens the game, to rank the most clicked. No sign-in needed."""
+    if not db.get(IndieGame, game_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that id")
+    visitor, now = visitor_of(request), datetime.now(timezone.utc)
+    again = db.scalar(select(IndiePlay.id).where(
+        IndiePlay.indie_id == game_id, IndiePlay.visitor == visitor, IndiePlay.at >= now - timedelta(minutes=PLAY_AGAIN_MINUTES),
+    ).limit(1))
+    if again is None:
+        db.add(IndiePlay(indie_id=game_id, visitor=visitor, at=now))
+    db.execute(delete(IndiePlay).where(IndiePlay.at < now - timedelta(days=PLAYS_KEPT_DAYS)))
+    db.commit()
 
 
 @router.post("", response_model=IndieGameOut, status_code=status.HTTP_201_CREATED)

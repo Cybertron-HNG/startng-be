@@ -208,3 +208,4 @@ class IndieGameOut(BaseModel):
     cover_path: str  # served by this API, e.g. /indie/3/cover.webp
     created_at: datetime
     mine: bool = False  # the signed-in user submitted it (they can remove it)
+    plays: int = 0  # opened from start.ng in the last 7 days

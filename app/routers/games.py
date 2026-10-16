@@ -357,6 +357,12 @@ PLAYS_KEPT_DAYS = 30
 PLAY_AGAIN_MINUTES = 30  # the same person opening the same game again within this counts once
 
 
+def visitor_of(request: Request) -> str:
+    """A one-way fingerprint of who's asking (never the address itself), to count each person once."""
+    raw = f"{settings.jwt_secret}|{_client_address(request)}|{request.headers.get('user-agent', '')}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
 def _recent_plays(db: Session) -> dict[str, int]:
     since = datetime.now(timezone.utc) - timedelta(days=PLAYS_DAYS)
     rows = db.execute(select(GamePlay.game_name, func.count()).where(GamePlay.at >= since).group_by(GamePlay.game_name))
@@ -373,8 +379,7 @@ def list_games(db: Session = Depends(get_db)):
 def count_play(name: str, request: Request, db: Session = Depends(get_db)):
     """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed."""
     _game_or_404(db, name)
-    raw = f"{settings.jwt_secret}|{_client_address(request)}|{request.headers.get('user-agent', '')}"
-    visitor = hashlib.sha256(raw.encode()).hexdigest()[:32]
+    visitor = visitor_of(request)
     now = datetime.now(timezone.utc)
     again = db.scalar(select(GamePlay.id).where(
         GamePlay.game_name == name, GamePlay.visitor == visitor, GamePlay.at >= now - timedelta(minutes=PLAY_AGAIN_MINUTES),

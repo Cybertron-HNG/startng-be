@@ -127,3 +127,15 @@ class GamePlay(Base):
     game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
     visitor: Mapped[str] = mapped_column(String(32))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class IndiePlay(Base):
+    """Someone opened a game by an independent creator from start.ng (see GamePlay)."""
+
+    __tablename__ = "indie_plays"
+    __table_args__ = (Index("ix_indie_plays_game_at", "indie_id", "at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    indie_id: Mapped[int] = mapped_column(ForeignKey("indie_games.id", ondelete="CASCADE"))
+    visitor: Mapped[str] = mapped_column(String(32))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
