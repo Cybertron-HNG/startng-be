@@ -25,7 +25,8 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `POST /games/{name}/ticket` (signed in): a one-minute ticket into the game's live room (games get it through `/connect`).
   A ticket only opens that room; it never works as a sign-in
 - `WS /games/{name}/live?ticket=…`: the live room for multiplayer games (e.g. the Hangout). Players see each other
-  join, move and wave; names and looks come from the database. Messages are described in `app/live.py`
+  join, move, wave and chat; names and looks come from the database. A room remembers its last 50 chat
+  messages for players who come in later. Messages are described in `app/live.py`
 - `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)

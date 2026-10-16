@@ -11,20 +11,28 @@ when they leave they're back in it. Seat numbers stay put for as long as the ser
 everyone sees each person in the same seat. Only a player moves their own character.
 
 Messages (JSON text):
-  server -> you     {type: "welcome", you, players: [player], seats: [resident]}
+  server -> you     {type: "welcome", you, players: [player], seats: [resident], chat: [chat]}
   server -> others  {type: "join", player} | {type: "move", id, x, z, ry, moving}
                     {type: "wave", id} | {type: "leave", id, seat}
-  you -> server     {type: "move", x, z, ry, moving} | {type: "wave"}
+  server -> all     {type: "chat", id, name, text, at}   (everyone in the room, the sender too)
+  you -> server     {type: "move", x, z, ry, moving} | {type: "wave"} | {type: "chat", text}
   player            {id, name, style, seat, x, z, ry, moving}
                     (x and z are null until they first move: they're standing at their seat)
   resident          {id, name, style, seat}   everyone with a seat, in the room or not
+  chat              {id, name, text, at}   (at: milliseconds since 1970, set by the server)
   style null means: use start.ng's starting look for that id.
+
+Chat: the room keeps its last 50 messages and sends them in the welcome, so a player who comes in
+sees what was said. Text is trimmed, cut to 200 characters and has control characters removed;
+an empty message, or one sent too soon after the last (0.7 s), is dropped.
 """
 import asyncio
 import json
 import math
 import random
+import re
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -39,7 +47,12 @@ MAX_SEATS = 60
 WORLD = 60.0  # players stay within this many metres of the middle, on both axes
 MOVE_EVERY = 0.04  # seconds; faster moves from one player are dropped
 WAVE_EVERY = 1.0
+CHAT_EVERY = 0.7  # seconds; faster messages from one player are dropped
+MAX_CHAT = 200  # characters in one chat message
+CHAT_HISTORY = 50  # messages a room remembers for players who come in later
 MAX_MESSAGE = 512  # characters
+
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 # WebSocket close codes the game understands.
 BAD_TICKET = 4401
@@ -61,6 +74,13 @@ def read_ticket(ticket: str, game: str) -> int | None:
         return int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None
+
+
+def clean_chat(value) -> str:
+    """A chat message ready to send: no control characters, trimmed, at most MAX_CHAT characters. Empty if nothing is left."""
+    if not isinstance(value, str):
+        return ""
+    return CONTROL_CHARS.sub(" ", value).strip()[:MAX_CHAT].strip()
 
 
 def number(value) -> float | None:
@@ -91,6 +111,7 @@ class Player:
     moving: bool = False
     last_move: float = 0.0
     last_wave: float = 0.0
+    last_chat: float = 0.0
 
     def public(self) -> dict:
         return {
@@ -102,6 +123,7 @@ class Player:
 class Room:
     def __init__(self):
         self.players: dict[int, Player] = {}
+        self.chat: deque[dict] = deque(maxlen=CHAT_HISTORY)
         self.seats: dict[int, int] = {}  # user id -> seat number
         self.residents: dict[int, Resident] = {}
 
@@ -173,6 +195,7 @@ async def run_player(room: Room, player: Player, residents: list[Resident]) -> N
         "you": player.id,
         "players": [p.public() for p in room.players.values()],
         "seats": room.seat_list(),
+        "chat": list(room.chat),
     }))
     await room.broadcast({"type": "join", "player": player.public()}, skip=player.id)
     try:
@@ -206,6 +229,14 @@ async def run_player(room: Room, player: Player, residents: list[Resident]) -> N
             elif msg.get("type") == "wave" and now - player.last_wave >= WAVE_EVERY:
                 player.last_wave = now
                 await room.broadcast({"type": "wave", "id": player.id}, skip=player.id)
+            elif msg.get("type") == "chat":
+                text = clean_chat(msg.get("text"))
+                if not text or now - player.last_chat < CHAT_EVERY:
+                    continue
+                player.last_chat = now
+                said = {"id": player.id, "name": player.name, "text": text, "at": int(time.time() * 1000)}
+                room.chat.append(said)
+                await room.broadcast({"type": "chat", **said})  # to everyone, so the sender's own screen shows the same thing
     except (WebSocketDisconnect, RuntimeError):
         pass  # gone, or closed by us when they joined again elsewhere
     finally:
