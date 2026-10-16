@@ -5,20 +5,20 @@ ticket (POST /games/{name}/ticket), then opens the WebSocket /games/{name}/live?
 The server reads the ticket and attaches the player's real name and look from the database,
 so nobody can pretend to be someone else. Rooms live in this process's memory.
 
-Seats: the most recently active start.ng users (up to MAX_SEATS) each get a numbered seat. A
-seat holder who isn't in the room sits there; when they come in, they stand up from it, and
-when they leave they're back in it. Seat numbers stay put for as long as the server runs, so
-everyone sees each person in the same seat. Only a player moves their own character.
+Only people who are connected are in the room: nobody who has left, or never came in, is shown.
+Each player gets a numbered bench seat while they're here (up to MAX_SEATS; after that they start
+mid-park) and starts standing in front of it. When they leave, the seat is free for the next
+person. Only a player moves their own character.
 
 Messages (JSON text):
   server -> you     {type: "welcome", you, players: [player], seats: [resident], chat: [chat]}
   server -> others  {type: "join", player} | {type: "move", id, x, z, ry, moving}
-                    {type: "wave", id} | {type: "leave", id, seat}
+                    {type: "wave", id} | {type: "leave", id, seat: null}
   server -> all     {type: "chat", id, name, text, at}   (everyone in the room, the sender too)
   you -> server     {type: "move", x, z, ry, moving} | {type: "wave"} | {type: "chat", text}
   player            {id, name, style, seat, x, z, ry, moving}
                     (x and z are null until they first move: they're standing at their seat)
-  resident          {id, name, style, seat}   everyone with a seat, in the room or not
+  resident          {id, name, style, seat}   a player in the room and their seat
   chat              {id, name, text, at}   (at: milliseconds since 1970, set by the server)
   style null means: use start.ng's starting look for that id.
 
@@ -127,12 +127,6 @@ class Room:
         self.seats: dict[int, int] = {}  # user id -> seat number
         self.residents: dict[int, Resident] = {}
 
-    def seat_residents(self, residents: list[Resident]) -> None:
-        """Gives the listed users (most recently active first) seats while there are free ones."""
-        for r in residents:
-            self.residents[r.id] = r
-            self.take_seat(r.id)
-
     def take_seat(self, user_id: int) -> int | None:
         if user_id not in self.seats:
             free = sorted(set(range(MAX_SEATS)) - set(self.seats.values()))
@@ -141,11 +135,16 @@ class Room:
         return self.seats.get(user_id)
 
     def seat_list(self) -> list[dict]:
+        """The seats of the people in the room (nobody else has one)."""
         return [
             {"id": uid, "name": self.residents[uid].name, "style": self.residents[uid].style, "seat": seat}
             for uid, seat in sorted(self.seats.items(), key=lambda kv: kv[1])
-            if uid in self.residents
+            if uid in self.residents and uid in self.players
         ]
+
+    def free_seat(self, user_id: int) -> None:
+        self.seats.pop(user_id, None)
+        self.residents.pop(user_id, None)
 
     async def broadcast(self, message: dict, skip: int | None = None) -> None:
         data = json.dumps(message)
@@ -174,10 +173,9 @@ def room_for(game: str) -> Room:
     return rooms.setdefault(game, Room())
 
 
-async def run_player(room: Room, player: Player, residents: list[Resident]) -> None:
+async def run_player(room: Room, player: Player) -> None:
     """Joins the room, relays this player's moves and waves until they leave."""
     ws = player.ws
-    room.seat_residents(residents)
     room.residents[player.id] = Resident(player.id, player.name, player.style)  # their latest name and look
     player.seat = room.take_seat(player.id)
     if player.seat is None:
@@ -242,4 +240,5 @@ async def run_player(room: Room, player: Player, residents: list[Resident]) -> N
     finally:
         if room.players.get(player.id) is player:  # not already replaced by a newer connection
             del room.players[player.id]
-            await room.broadcast({"type": "leave", "id": player.id, "seat": player.seat})
+            room.free_seat(player.id)  # gone from the park, seat and all
+            await room.broadcast({"type": "leave", "id": player.id, "seat": None})

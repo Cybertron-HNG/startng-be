@@ -118,7 +118,7 @@ def test_two_players_see_each_other(env):
             assert tunde.receive_json() == {"type": "wave", "id": ids["ada"]}
 
         left = ada.receive_json()
-        assert left["type"] == "leave" and left["id"] == ids["tunde"] and left["seat"] is not None  # back to their seat
+        assert left == {"type": "leave", "id": ids["tunde"], "seat": None}  # gone, seat and all
 
 
 def test_joining_again_replaces_the_old_connection(env):
@@ -132,35 +132,41 @@ def test_joining_again_replaces_the_old_connection(env):
             assert closed.value.code == REPLACED
 
 
-def test_seats_for_the_most_recently_active(env, monkeypatch):
+def test_only_people_in_the_room_are_shown(env, monkeypatch):
     client, ids = env
     monkeypatch.setattr(live, "MAX_SEATS", 2)
-    monkeypatch.setattr(live_router, "MAX_SEATS", 2)
     Session = app.dependency_overrides[get_sessionmaker]()
     now = datetime.now(timezone.utc)
     with Session() as db:
+        # Active on start.ng a moment ago, but not in the Hangout: not shown, no seat.
         chioma = User(email="chioma@example.com", name="Chioma", last_seen_at=now)
-        musa = User(email="musa@example.com", name="Musa", last_seen_at=now - timedelta(days=30))
+        musa = User(email="musa@example.com", name="Musa")
         db.add_all([chioma, musa])
-        db.get(User, ids["ada"]).last_seen_at = now - timedelta(hours=1)
         db.commit()
         ids["chioma"], ids["musa"] = chioma.id, musa.id
 
     with client.websocket_connect(url(ids["ada"])) as ada:
         welcome = ada.receive_json()
-        seats = {r["name"]: r["seat"] for r in welcome["seats"]}
-        # Chioma (seen just now) and Ada (an hour ago) get the two seats; Musa and Tunde don't.
-        assert seats == {"Chioma": 0, "Runner Ada": 1}
+        assert [p["name"] for p in welcome["players"]] == ["Runner Ada"]
+        assert welcome["seats"] == [{"id": ids["ada"], "name": "Runner Ada", "style": STYLE, "seat": 0}]
         me = welcome["players"][0]
-        assert me["seat"] == 1 and me["x"] is None and me["z"] is None  # standing at their seat
+        assert me["seat"] == 0 and me["x"] is None and me["z"] is None  # standing at their seat
 
-        with client.websocket_connect(url(ids["musa"])) as musa:
-            joined = musa.receive_json()["players"]
-            musa_me = next(p for p in joined if p["id"] == ids["musa"])
-            assert musa_me["seat"] is None and musa_me["x"] is not None  # no seat left: starts mid-park
-            assert ada.receive_json()["type"] == "join"
-        left = ada.receive_json()
-        assert left == {"type": "leave", "id": ids["musa"], "seat": None}
+        with client.websocket_connect(url(ids["tunde"])) as tunde:
+            assert {r["name"]: r["seat"] for r in tunde.receive_json()["seats"]} == {"Runner Ada": 0, "Tunde": 1}
+            ada.receive_json()  # Tunde joined
+            with client.websocket_connect(url(ids["musa"])) as musa:
+                musa_me = next(p for p in musa.receive_json()["players"] if p["id"] == ids["musa"])
+                assert musa_me["seat"] is None and musa_me["x"] is not None  # no seat left: starts mid-park
+                ada.receive_json()  # Musa joined
+            assert ada.receive_json() == {"type": "leave", "id": ids["musa"], "seat": None}
+        assert ada.receive_json() == {"type": "leave", "id": ids["tunde"], "seat": None}
+
+        # Tunde's seat is free again, and people who left aren't listed.
+        with client.websocket_connect(url(ids["chioma"])) as chioma:
+            welcome = chioma.receive_json()
+            assert {p["name"] for p in welcome["players"]} == {"Runner Ada", "Chioma"}
+            assert {r["name"]: r["seat"] for r in welcome["seats"]} == {"Runner Ada": 0, "Chioma": 1}
 
 
 def test_activity_is_recorded(env):
