@@ -144,6 +144,8 @@ class GameOut(BaseModel):
     updates_paused_until: datetime | None = None  # set while GitHub's limit has paused all checking
     # The game's leaderboard columns, or None when the game has no leaderboard (no startng.json, no scores)
     leaderboard: list[dict] | None = None
+    # How many people opened it from start.ng in the last 7 days (the homepage shows the most played)
+    plays: int = 0
 
 
 # Highest score a game can save; anything above is treated as a bad request.

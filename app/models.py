@@ -111,3 +111,19 @@ class IndieGame(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
     owner: Mapped[User] = relationship()
+
+
+class GamePlay(Base):
+    """Someone opened a game from start.ng. Counted to show the most played games on the homepage.
+
+    visitor is a one-way fingerprint (never the address itself), so the same person opening the
+    same game again within a short while counts once. Plays older than PLAYS_KEPT_DAYS are removed.
+    """
+
+    __tablename__ = "game_plays"
+    __table_args__ = (Index("ix_game_plays_game_at", "game_name", "at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
+    visitor: Mapped[str] = mapped_column(String(32))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
