@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -91,3 +91,23 @@ class PendingGame(Base):
     branch: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class IndieGame(Base):
+    """Indie Spotlight: a game an independent creator made and hosts somewhere else.
+
+    start.ng only lists it: its name, a link to play it, a short description and a cover. The
+    cover is stored here (a small card-sized WebP made by app.covers) and served by the API.
+    """
+
+    __tablename__ = "indie_games"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    url: Mapped[str] = mapped_column(String(300), unique=True)
+    description: Mapped[str] = mapped_column(Text)
+    cover: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+    owner: Mapped[User] = relationship()
