@@ -90,6 +90,15 @@ def test_missing_cover_and_player_are_warnings():
     assert errors == [] and codes(warnings) == ["no_cover", "no_start_ng_player"]
 
 
+def test_a_broken_startng_json_is_reported_with_everything_else():
+    files = {**GOOD, "startng.json": '{"leaderboard": {"stats": []}}', "src/a.js": MINER}
+    with pytest.raises(GameRejected) as caught:
+        read_game(make_zip(files))
+    assert codes(caught.value.errors) == ["bad_startng_json", "crypto_miner"]
+    good = {**GOOD, "startng.json": '{"leaderboard": {"stats": [{"key": "waves", "label": "Waves"}]}}'}
+    assert read_game(make_zip(good)).leaderboard[0]["key"] == "waves"
+
+
 def test_every_problem_is_reported_at_once():
     files = {**GOOD, "src/a.js": MINER, "src/b.js": HIDDEN_RUN, "index2.html": '<input type="password">'}
     with pytest.raises(GameRejected) as caught:

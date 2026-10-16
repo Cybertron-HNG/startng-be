@@ -1,13 +1,13 @@
 """add user last_seen_at
 
-Revision ID: 0006
-Revises: 0005
+Revision ID: 0008
+Revises: 0007
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0006"
-down_revision = "0005"
+revision = "0008"
+down_revision = "0007"
 branch_labels = None
 depends_on = None
 

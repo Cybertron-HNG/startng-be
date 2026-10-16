@@ -1,13 +1,13 @@
 """create pending_games
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0009
+Revises: 0008
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0007"
-down_revision = "0006"
+revision = "0009"
+down_revision = "0008"
 branch_labels = None
 depends_on = None
 

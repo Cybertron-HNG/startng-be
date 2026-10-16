@@ -46,6 +46,12 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   An uploaded cover wins, and republishing never replaces it.
 - `cover_url` ends in `?v=<time>`, which changes with the cover, so nobody sees an old picture.
 
+## The Hangout
+start.ng's own multiplayer game runs inside the front end at `/hangout`, but its live room needs a `hangout`
+row in `games`. Migration `0007` adds it, owned by a start.ng system account (`system@start.invalid`) that
+nobody can sign in to, so the Hangout belongs to no person. It runs with the rest of the migrations on deploy.
+If someone already published a game called `hangout`, it is left alone. `GET /games` lists it as by "start.ng".
+
 ## Publishing games
 `POST /games/publish` downloads the repo as a zip from GitHub (nothing in it is run), finds a ready-to-play
 `index.html` (in `dist/`, `build/`, `docs/`, `out/` or the top), checks it and uploads it to `<name>/` in the bucket.
@@ -64,6 +70,36 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   Worker's `dev-server.js` can serve. With neither set, publishing answers 503.
 
 Tests: `pip install -r requirements-dev.txt`, then `pytest`.
+
+## API for games (game sessions)
+Games on `<name>.start.ng` call the API directly (CORS allows `*.start.ng`, and `*.start.localhost` for testing).
+They never get the player's sign-in token. Instead start.ng gives them a **game session**: a key that only works
+for that game's player API, expires after 2 hours, and is never a sign-in.
+
+- `POST /games/{name}/session` (start.ng sign-in): `{session, expires_in, player}`. start.ng calls this and hands
+  the session to the game (sign-in redirect `#startng_session=...`, or `/connect`).
+- `GET /games/{name}/player` (game session): `{id, name, style}`, never the email.
+- `POST /games/{name}/scores` (game session, or a start.ng sign-in): `{score}` → `{best, improved, rank}`.
+- `GET /games/{name}/leaderboard?limit=10` (public): `[{rank, player_id, name, color, score}]`.
+
+A session for one game is refused by every other game and by `/auth/*`.
+
+### Game-defined leaderboards (opt-in)
+A game gets a leaderboard by shipping a `startng.json` (in its game folder, or at the top of the repo), read on publish:
+```json
+{"leaderboard": {"stats": [
+  {"key": "waves", "label": "Waves survived", "order": "highest"},
+  {"key": "kills", "label": "Enemies killed"},
+  {"key": "time", "label": "Time", "order": "lowest", "format": "time"}
+]}}
+```
+- 1–5 stats; `key` lowercase letters/digits/_ ; `order` `highest` (default) or `lowest`; `format` `number` (default) or `time` (seconds).
+- Ranked by the first stat, then the next ones break ties, then whoever got there first. Each player's best run is kept.
+- Games send `POST /games/{name}/scores` `{"stats": {"waves": 5, "kills": 10, "time": 312}}`: exactly the declared stats,
+  whole numbers 0–1,000,000,000. Nothing else is stored (no text).
+- `GET /games` returns each game's `leaderboard` columns, or `null` when it has none (no `startng.json` and no scores).
+  Games without a `startng.json` keep the plain `{"score": n}` board.
+- `DELETE /games/{name}/scores/{player_id}` (owner): remove a player's score.
 
 ## Games bucket (R2)
 `app/storage.py` reads and writes the private R2 bucket (`startng-games`) that the start.ng Worker serves.

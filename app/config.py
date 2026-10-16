@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440
     google_client_id: str = ""
     cors_origins: str = "http://localhost:5173"
+    # Games call the API from their own address (<name>.start.ng; <name>.start.localhost while testing)
+    game_origins_regex: str = r"^https://[a-z0-9-]+\.start\.ng$|^http://[a-z0-9-]+\.start\.localhost(:\d+)?$"
 
     # Cloudflare R2 games bucket (S3 API). Games are served by the Worker at <name>.<games_base_domain>
     r2_account_id: str = ""

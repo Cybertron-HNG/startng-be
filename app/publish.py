@@ -14,6 +14,7 @@ import requests
 
 from . import storage
 from .checks import Problem, inspect
+from .leaderboard import SchemaError, parse_manifest
 
 MAX_NAME = 40  # the games table's limit; app.storage applies the Worker's name rules
 REPO_RE = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([\w./-]+?))?/?$")
@@ -28,6 +29,9 @@ MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 20000
 
 # The file types the games Worker serves (its CONTENT_TYPES). Anything else is skipped.
+MANIFEST = "startng.json"  # the game's start.ng settings (app/leaderboard.py)
+MAX_MANIFEST_BYTES = 64 * 1024
+
 SERVED = {
     "html", "htm", "css", "js", "mjs", "json", "map", "txt", "svg", "png", "jpg", "jpeg", "gif", "webp",
     "avif", "ico", "woff", "woff2", "ttf", "otf", "mp3", "ogg", "wav", "mp4", "webm", "wasm",
@@ -88,6 +92,8 @@ class GameBundle:
     files: list[GameFile]
     skipped: list[str] = field(default_factory=list)
     warnings: list[Problem] = field(default_factory=list)
+    manifest: bytes | None = None  # startng.json (game folder first, then the top of the repo)
+    leaderboard: list[dict] | None = None  # its leaderboard stats (app/leaderboard.py); None = plain score
 
     @property
     def total_bytes(self) -> int:
@@ -198,6 +204,17 @@ def read_game(archive: bytes) -> GameBundle:
         if count > MAX_FILES:
             errors.append(Problem("too_many_files", f"The game has more than {MAX_FILES} files"))
 
+        for candidate in ([f"{prefix}{MANIFEST}"] if prefix else []) + [MANIFEST]:
+            info = entries.get(candidate)
+            if info and info.file_size <= MAX_MANIFEST_BYTES:
+                bundle.manifest = zf.read(info)
+                break
+
+    if bundle.manifest is not None:
+        try:
+            bundle.leaderboard = parse_manifest(bundle.manifest)
+        except SchemaError as err:
+            errors.append(Problem("bad_startng_json", f"startng.json: {err}", MANIFEST))
     found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])
     errors += found
     if errors:

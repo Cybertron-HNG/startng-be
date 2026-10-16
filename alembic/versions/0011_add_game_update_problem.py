@@ -1,13 +1,13 @@
 """add game update_problem
 
-Revision ID: 0009
-Revises: 0008
+Revision ID: 0011
+Revises: 0010
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0009"
-down_revision = "0008"
+revision = "0011"
+down_revision = "0010"
 branch_labels = None
 depends_on = None
 
