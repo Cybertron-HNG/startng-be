@@ -1,19 +1,28 @@
 import logging
-from datetime import datetime, timezone
+import secrets
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import covers
+from .. import auto_update, covers
+from ..config import settings
 from ..db import get_db
+from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
-from ..models import Game, Score, User
-from ..publish import PublishError, download_repo, game_name, parse_repo_url, read_game
-from ..schemas import GameOut, GameSessionOut, LeaderboardEntry, PlayerOut, PublishIn, PublishOut, ScoreIn, ScoreOut
-from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player
+from ..models import Game, PendingGame, Score, User
+from ..checks import Problem
+from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
+from ..schemas import (
+    CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
+    ScoreIn, ScoreOut,
+)
+from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, optional_user
 from .. import leaderboard as boards
 from ..storage import game_url
 
@@ -34,50 +43,44 @@ def _game_or_404(db: Session, name: str) -> Game:
 
 def require_store(store: GameStore | None = Depends(get_game_store)) -> GameStore:
     if store is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Publishing isn't set up on this server yet")
+        raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "not_set_up", "Publishing isn't set up on this server yet")
     return store
 
 
-@router.post("/publish", response_model=PublishOut)
-def publish(
-    body: PublishIn,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-    store: GameStore = Depends(require_store),
-):
-    """Publish (or update) a client-side game from a public GitHub repo at <name>.start.ng."""
-    try:
-        repo = parse_repo_url(body.repo_url, body.branch)
-        name = game_name(body.name or repo.name)
-    except PublishError as err:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(err))
+def _linked_game(db: Session, repo_url: str) -> Game | None:
+    """The live game a repo is linked to (GitHub links ignore case)."""
+    return db.scalar(select(Game).where(func.lower(Game.repo_url) == repo_url.lower()))
 
-    # The first person to publish a name owns it. Folders already in the bucket without an
-    # owner here (uploaded by hand, like dave/) are taken too.
+
+def _check_name_free(db: Session, store: GameStore, name: str, owner_id: int | None) -> Game | None:
+    """The game with this name if it's this owner's, None if the name is free; otherwise 409."""
     game = db.get(Game, name)
-    if game and game.owner_id != user.id:
-        raise HTTPException(status.HTTP_409_CONFLICT, f'"{name}" is taken, pick another name')
+    if game and (owner_id is None or game.owner_id != owner_id):
+        raise ApiError(status.HTTP_409_CONFLICT, "name_taken", f'"{name}" is taken, pick another name')
+    # Folders already in the bucket without an owner here (uploaded by hand, like dave/) are taken too.
     if not game and store.paths(name):
-        raise HTTPException(status.HTTP_409_CONFLICT, f'"{name}" is already in use, pick another name')
+        raise ApiError(status.HTTP_409_CONFLICT, "name_taken", f'"{name}" is already in use, pick another name')
+    return game
 
+
+def _download_and_check(repo: Repo) -> GameBundle:
     try:
-        bundle = read_game(download_repo(repo))
+        return read_game(download_repo(repo))
     except PublishError as err:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(err))
-    try:
-        schema = boards.parse_manifest(bundle.manifest) if bundle.manifest else None
-    except boards.SchemaError as err:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"startng.json: {err}")
+        raise ApiError.rejected(err)
 
+
+def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner_id: int, repo: Repo, bundle: GameBundle) -> PublishOut:
+    """Uploads a checked game under its name and records it, owned by owner_id."""
     created = game is None
     if created:
-        game = Game(name=name, owner_id=user.id, repo_url=repo.url, branch=repo.branch)
+        game = Game(name=name, owner_id=owner_id, repo_url=repo.url, branch=repo.branch)
         db.add(game)
         try:
             db.commit()  # claim the name before uploading, so two people can't both get it
         except IntegrityError:
             db.rollback()
-            raise HTTPException(status.HTTP_409_CONFLICT, f'"{name}" was just taken, pick another name')
+            raise ApiError(status.HTTP_409_CONFLICT, "name_taken", f'"{name}" was just taken, pick another name')
 
     # Files a new version no longer has stay in the bucket; the Worker only serves what the
     # game links to, so they're harmless (same as the Worker's publish-game.js).
@@ -90,10 +93,12 @@ def publish(
         if created:
             db.delete(game)
             db.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't upload the game, try again")
+        raise ApiError(status.HTTP_502_BAD_GATEWAY, "upload_failed", "Couldn't upload the game, try again")
 
     game.repo_url, game.branch = repo.url, repo.branch
-    game.leaderboard = schema
+    game.leaderboard = bundle.leaderboard
+    game.update_problem = None  # this version made it
+    auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
         game.cover = covers.repo_cover(list(files))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
@@ -107,11 +112,210 @@ def publish(
         files=len(bundle.files),
         size_bytes=bundle.total_bytes,
         skipped=bundle.skipped,
+        warnings=[p.as_dict() for p in bundle.warnings],
     )
 
 
-def _game_out(g: Game) -> GameOut:
+# Publishing without signing in: at most this many new (waiting) games per address per hour.
+ANONYMOUS_PER_HOUR = 20
+PENDING_DAYS = 30
+_recent: dict[str, deque] = defaultdict(deque)
+
+
+def _client_address(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
+def _rate_limit(request: Request, recent: dict[str, deque] | None = None, per_hour: int | None = None,
+                message: str = "Too many new games from here, try again in an hour") -> None:
+    """At most per_hour hits an hour per address (default: new games published without signing in)."""
+    recent = _recent if recent is None else recent
+    per_hour = ANONYMOUS_PER_HOUR if per_hour is None else per_hour
+    now = time.monotonic()
+    hits = recent[_client_address(request)]
+    while hits and now - hits[0] > 3600:
+        hits.popleft()
+    if len(hits) >= per_hour:
+        raise ApiError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited", message)
+    hits.append(now)
+
+
+def _expired(when: datetime) -> bool:
+    if when.tzinfo is None:  # SQLite drops the zone
+        when = when.replace(tzinfo=timezone.utc)
+    return when <= datetime.now(timezone.utc)
+
+
+def _remove_expired(db: Session) -> None:
+    db.execute(delete(PendingGame).where(PendingGame.expires_at <= datetime.now(timezone.utc)))
+    db.commit()
+
+
+@router.post("/publish", response_model=PublishOut | PendingOut)
+def publish(
+    body: PublishIn,
+    request: Request,
+    response: Response,
+    user: User | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+    store: GameStore = Depends(require_store),
+):
+    """Publish (or update) a client-side game from a public GitHub repo at <name>.start.ng.
+
+    Signed in: it goes live on your account. Not signed in: a repo that's already live updates
+    straight away; a new one is checked and waits (202) until someone opens approve_url, signs in
+    with start.ng and approves it, which puts it live on their account.
+    """
+    try:
+        repo = parse_repo_url(body.repo_url, body.branch)
+        name = game_name(body.name or repo.name)
+    except PublishError as err:
+        raise ApiError.rejected(err, status.HTTP_400_BAD_REQUEST)
+
+    linked = _linked_game(db, repo.url)
+    if user is not None:
+        if linked is None:
+            game = _check_name_free(db, store, name, user.id)
+            return _put_live(db, store, game, name, user.id, repo, _download_and_check(repo))
+        # A repo is one game: uploading it again updates that game, never makes a second one.
+        if linked.owner_id != user.id:
+            raise ApiError(status.HTTP_409_CONFLICT, "repo_linked", "This repo is already live on another start.ng account")
+        if body.name and name != linked.name:
+            raise ApiError(status.HTTP_409_CONFLICT, "repo_linked", f'This repo is live as "{linked.name}"; it can only update that game')
+        return _put_live(db, store, linked, linked.name, user.id, repo, _download_and_check(repo))
+
+    if linked is not None:
+        # Already approved: this repo is that game, on its owner's account.
+        if body.name and name != linked.name:
+            raise ApiError(status.HTTP_409_CONFLICT, "repo_linked", f'This repo is live as "{linked.name}"; it can only update that game')
+        return _put_live(db, store, linked, linked.name, linked.owner_id, repo, _download_and_check(repo))
+
+    _rate_limit(request)
+    _check_name_free(db, store, name, None)
+    bundle = _download_and_check(repo)  # report problems now, before anyone approves
+    _remove_expired(db)
+    pending = PendingGame(
+        code=secrets.token_urlsafe(12),
+        name=name,
+        repo_url=repo.url,
+        branch=repo.branch,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=PENDING_DAYS),
+    )
+    db.add(pending)
+    db.commit()
+    response.status_code = status.HTTP_202_ACCEPTED
+    approve_url = f"{settings.site_url.rstrip('/')}/approve/{pending.code}"
+    return PendingOut(
+        name=name,
+        repo_url=repo.url,
+        approve_url=approve_url,
+        expires_at=pending.expires_at,
+        folder=bundle.folder,
+        files=len(bundle.files),
+        size_bytes=bundle.total_bytes,
+        skipped=bundle.skipped,
+        warnings=[p.as_dict() for p in bundle.warnings],
+        message=(
+            f"Checked and ready. Open {approve_url} to sign in with start.ng and put it live on your account. "
+            "After that, publishing this repo again updates the game straight away."
+        ),
+    )
+
+
+# Checking a repo downloads it, so it has its own hourly budget per address.
+CHECKS_PER_HOUR = 30
+_recent_checks: dict[str, deque] = defaultdict(deque)
+
+
+@router.post("/check", response_model=CheckOut)
+def check_game(
+    body: PublishIn,
+    request: Request,
+    user: User | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+    store: GameStore | None = Depends(get_game_store),
+):
+    """Everything POST /games/publish checks, without publishing: 200 when the game would go live
+    (with any warnings), 422 with every problem when it wouldn't."""
+    try:
+        repo = parse_repo_url(body.repo_url, body.branch)
+        name = game_name(body.name or repo.name)
+    except PublishError as err:
+        raise ApiError.rejected(err, status.HTTP_400_BAD_REQUEST)
+    _rate_limit(request, _recent_checks, CHECKS_PER_HOUR, "Too many checks from here, try again in an hour")
+
+    errors: list[Problem] = []
+    linked = _linked_game(db, repo.url)
+    if linked is not None:
+        if user is not None and linked.owner_id != user.id:
+            errors.append(Problem("repo_linked", "This repo is already live on another start.ng account"))
+        elif body.name and name != linked.name:
+            errors.append(Problem("repo_linked", f'This repo is live as "{linked.name}"; it can only update that game'))
+        name = linked.name
+    else:
+        taken = db.get(Game, name)
+        if (taken and (user is None or taken.owner_id != user.id)) or (not taken and store and store.paths(name)):
+            errors.append(Problem("name_taken", f'"{name}" is taken, pick another name'))
+    try:
+        bundle = read_game(download_repo(repo))
+    except PublishError as err:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, err.code, str(err), errors + err.errors, err.warnings)
+    if errors:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, errors[0].code, errors[0].message, errors, bundle.warnings)
+    return CheckOut(
+        name=name,
+        url=game_url(name),
+        repo_url=repo.url,
+        update=linked is not None,
+        folder=bundle.folder,
+        files=len(bundle.files),
+        size_bytes=bundle.total_bytes,
+        skipped=bundle.skipped,
+        warnings=[p.as_dict() for p in bundle.warnings],
+    )
+
+
+def _pending_or_404(db: Session, code: str) -> PendingGame:
+    pending = db.get(PendingGame, code)
+    if pending is None or _expired(pending.expires_at):
+        raise ApiError(status.HTTP_404_NOT_FOUND, "link_expired", "This link has expired or was already used")
+    return pending
+
+
+@router.get("/publish/{code}", response_model=PendingInfo)
+def pending_game(code: str, db: Session = Depends(get_db)):
+    """What the approve page shows about a game waiting to be approved."""
+    pending = _pending_or_404(db, code)
+    taken = db.get(Game, pending.name) is not None and _linked_game(db, pending.repo_url) is None
+    return PendingInfo(name=pending.name, repo_url=pending.repo_url, expires_at=pending.expires_at, available=not taken)
+
+
+@router.post("/publish/{code}/approve", response_model=PublishOut)
+def approve_game(
+    code: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    store: GameStore = Depends(require_store),
+):
+    """Put a waiting game live on your account. Its repo is then linked to you for good."""
+    pending = _pending_or_404(db, code)
+    repo = parse_repo_url(pending.repo_url, pending.branch)
+    linked = _linked_game(db, repo.url)
+    if linked is not None and linked.owner_id != user.id:
+        raise ApiError(status.HTTP_409_CONFLICT, "repo_linked", "This repo is already live on another start.ng account")
+    name = linked.name if linked is not None else pending.name
+    game = _check_name_free(db, store, name, user.id)
+    out = _put_live(db, store, game, name, user.id, repo, _download_and_check(repo))
+    # Every link for this repo is spent now: the repo belongs to this account.
+    db.execute(delete(PendingGame).where(func.lower(PendingGame.repo_url) == repo.url.lower()))
+    db.commit()
+    return out
+
+
+def _game_out(g: Game, owner_view: bool = False) -> GameOut:
     return GameOut(
+        update_problem=g.update_problem if owner_view else None,
         name=g.name,
         url=game_url(g.name),
         repo_url=g.repo_url,
@@ -152,7 +356,7 @@ def list_games(db: Session = Depends(get_db)):
 def my_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The signed-in builder's own games, newest first (for their profile)."""
     query = select(Game).where(Game.owner_id == user.id).order_by(Game.updated_at.desc())
-    return [_game_out(g) for g in db.scalars(query).all()]
+    return [_game_out(g, owner_view=True) for g in db.scalars(query).all()]
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)

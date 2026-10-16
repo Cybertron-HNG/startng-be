@@ -47,6 +47,14 @@ def current_user(
     return user
 
 
+def optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """The signed-in user, or None when no token was sent. A token that's sent must be valid."""
+    return None if creds is None else current_user(creds, db)
+
+
 # ---- game sessions: what a game on <name>.start.ng uses to call the API for its player
 GAME_SESSION_MINUTES = 120
 

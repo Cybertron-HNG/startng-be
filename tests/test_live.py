@@ -7,7 +7,10 @@ from starlette.websockets import WebSocketDisconnect
 
 from app import live
 from app.db import Base, get_db
+from datetime import datetime, timedelta, timezone
+
 from app.live import BAD_TICKET, REPLACED, create_ticket
+from app.routers import live as live_router
 from app.main import app
 from app.models import Game, User
 from app.routers.live import get_sessionmaker
@@ -114,7 +117,8 @@ def test_two_players_see_each_other(env):
             ada.send_json({"type": "wave"})
             assert tunde.receive_json() == {"type": "wave", "id": ids["ada"]}
 
-        assert ada.receive_json() == {"type": "leave", "id": ids["tunde"]}
+        left = ada.receive_json()
+        assert left["type"] == "leave" and left["id"] == ids["tunde"] and left["seat"] is not None  # back to their seat
 
 
 def test_joining_again_replaces_the_old_connection(env):
@@ -126,3 +130,106 @@ def test_joining_again_replaces_the_old_connection(env):
             with pytest.raises(WebSocketDisconnect) as closed:
                 first.receive_json()
             assert closed.value.code == REPLACED
+
+
+def test_seats_for_the_most_recently_active(env, monkeypatch):
+    client, ids = env
+    monkeypatch.setattr(live, "MAX_SEATS", 2)
+    monkeypatch.setattr(live_router, "MAX_SEATS", 2)
+    Session = app.dependency_overrides[get_sessionmaker]()
+    now = datetime.now(timezone.utc)
+    with Session() as db:
+        chioma = User(email="chioma@example.com", name="Chioma", last_seen_at=now)
+        musa = User(email="musa@example.com", name="Musa", last_seen_at=now - timedelta(days=30))
+        db.add_all([chioma, musa])
+        db.get(User, ids["ada"]).last_seen_at = now - timedelta(hours=1)
+        db.commit()
+        ids["chioma"], ids["musa"] = chioma.id, musa.id
+
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        welcome = ada.receive_json()
+        seats = {r["name"]: r["seat"] for r in welcome["seats"]}
+        # Chioma (seen just now) and Ada (an hour ago) get the two seats; Musa and Tunde don't.
+        assert seats == {"Chioma": 0, "Runner Ada": 1}
+        me = welcome["players"][0]
+        assert me["seat"] == 1 and me["x"] is None and me["z"] is None  # standing at their seat
+
+        with client.websocket_connect(url(ids["musa"])) as musa:
+            joined = musa.receive_json()["players"]
+            musa_me = next(p for p in joined if p["id"] == ids["musa"])
+            assert musa_me["seat"] is None and musa_me["x"] is not None  # no seat left: starts mid-park
+            assert ada.receive_json()["type"] == "join"
+        left = ada.receive_json()
+        assert left == {"type": "leave", "id": ids["musa"], "seat": None}
+
+
+def test_activity_is_recorded(env):
+    client, ids = env
+    auth = {"Authorization": f"Bearer {create_token(ids['tunde'])}"}
+    Session = app.dependency_overrides[get_sessionmaker]()
+
+    def seen():
+        with Session() as db:
+            return db.get(User, ids["tunde"]).last_seen_at
+
+    assert seen() is None
+    client.get("/auth/me", headers=auth)
+    first = seen()
+    assert first is not None
+    client.get("/auth/me", headers=auth)
+    assert seen() == first  # not rewritten on every request
+    client.post("/games/hangout/ticket", headers=auth)
+    assert seen() > first  # coming into the Hangout always counts
+
+def test_chat_reaches_everyone_and_late_joiners_see_it(env):
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        assert ada.receive_json()["chat"] == []
+        with client.websocket_connect(url(ids["tunde"])) as tunde:
+            tunde.receive_json()
+            ada.receive_json()  # tunde joined
+
+            tunde.send_json({"type": "chat", "text": "  hello\x00world  "})
+            said = ada.receive_json()
+            assert tunde.receive_json() == said  # the sender gets it too
+            assert said["type"] == "chat" and said["id"] == ids["tunde"]
+            assert said["name"] == "Tunde" and said["text"] == "hello world"
+            assert isinstance(said["at"], int)
+        left = ada.receive_json()
+        assert left["type"] == "leave" and left["id"] == ids["tunde"]
+
+        with client.websocket_connect(url(ids["tunde"])) as again:
+            history = again.receive_json()["chat"]
+            assert [(m["name"], m["text"]) for m in history] == [("Tunde", "hello world")]
+
+
+def test_chat_is_cleaned_and_rate_limited(env):
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        with client.websocket_connect(url(ids["tunde"])) as tunde:
+            tunde.receive_json()
+            ada.receive_json()
+
+            tunde.send_json({"type": "chat", "text": "   "})  # nothing to say
+            tunde.send_json({"type": "chat", "text": 123})  # not text
+            tunde.send_json({"type": "chat"})
+            tunde.send_json({"type": "chat", "text": "x" * 300})  # cut to the limit
+            tunde.send_json({"type": "chat", "text": "too soon"})  # right after the last: dropped
+            tunde.send_json({"type": "wave"})  # marks where the dropped ones would have been
+            said = ada.receive_json()
+            assert said["type"] == "chat" and said["text"] == "x" * live.MAX_CHAT
+            assert ada.receive_json() == {"type": "wave", "id": ids["tunde"]}
+
+
+def test_a_room_remembers_only_its_last_messages(env, monkeypatch):
+    monkeypatch.setattr(live, "CHAT_EVERY", 0)
+    monkeypatch.setattr(live, "CHAT_HISTORY", 2)
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        for text in ("one", "two", "three"):
+            ada.send_json({"type": "chat", "text": text})
+            assert ada.receive_json()["text"] == text
+    with client.websocket_connect(url(ids["tunde"])) as tunde:
+        assert [m["text"] for m in tunde.receive_json()["chat"]] == ["two", "three"]

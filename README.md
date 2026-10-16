@@ -6,7 +6,16 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `GET /health`
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/google` (`{id_token}`), `GET /auth/me`
 - `PUT /auth/me/character`: save the signed-in user's character (`{name, style}`); `GET /auth/me` returns it as `character`
-- `POST /games/publish` (signed in): `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`
+- `POST /games/publish`: `{repo_url, name?, branch?}` publishes a game from a public GitHub repo at `<name>.start.ng`.
+  Signed in, it goes live on your account. Without signing in, a repo that's already live updates straight away; a new
+  one is checked and returns **202** with an `approve_url` (`<SITE_URL>/approve/<code>`): whoever opens it signs in
+  with start.ng and approves, and it goes live on their account, linking the repo to it for good. Unapproved ones
+  expire after 30 days; new ones are limited to 20 an hour per address
+- `POST /games/check`: `{repo_url, name?, branch?}` runs every publish check without publishing: 200 with `warnings`, or 422
+  with every problem. Publish and check refuse with `{ok: false, detail, errors: [{code, message, file}], warnings}`
+  (`app/checks.py` has the content checks: malware signatures, miners, hidden or obfuscated code, password fields,
+  redirects, disguised programs). A failed auto-update keeps the last version and shows the owner why in `/games/mine`
+- `GET /games/publish/{code}`: what's waiting at an approve link; `POST /games/publish/{code}/approve` (signed in): put it live
 - `GET /games`: published games; `DELETE /games/{name}` (owner only): take a game offline
 - `GET /games/mine` (signed in): your own games, newest first (the profile's "Your games")
 - `POST /games/{name}/scores` (signed in): `{score}` saves a score; only each player's best per game is kept.
@@ -16,10 +25,20 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `POST /games/{name}/ticket` (signed in): a one-minute ticket into the game's live room (games get it through `/connect`).
   A ticket only opens that room; it never works as a sign-in
 - `WS /games/{name}/live?ticket=…`: the live room for multiplayer games (e.g. the Hangout). Players see each other
-  join, move and wave; names and looks come from the database. Messages are described in `app/live.py`
+  join, move, wave and chat; names and looks come from the database. A room remembers its last 50 chat
+  messages for players who come in later. Messages are described in `app/live.py`
 - `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
+
+## Keeping games up to date
+- While the server runs it checks each game's branch on GitHub and republishes the game when there's a new commit
+  (`app/auto_update.py`), so a push is all a builder needs to do. Games updated in the last day are checked every
+  minute, the last 30 days every 5 minutes (`UPDATE_CHECK_SECONDS`), older ones hourly
+- Each check asks only for the latest commit id and sends GitHub's fingerprint (ETag) of the last answer, so an
+  unchanged repo costs nothing. Set `GITHUB_TOKEN` (read-only, public repos) for 5,000 checks an hour instead of 60
+- A commit that doesn't publish (no `index.html`, too big, ...) is logged and skipped; the live game stays as it was
+- `AUTO_UPDATE=false` turns it off (tests do)
 
 ## Game covers
 - An uploaded cover is opened, cropped to 640 x 400 and saved again as WebP (`app/covers.py`), so nothing
