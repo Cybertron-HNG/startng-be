@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -91,3 +91,23 @@ class PendingGame(Base):
     branch: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ExploreGame(Base):
+    """A game hosted on someone else's site, listed on start.ng's Explore page (app/explore.py)."""
+
+    __tablename__ = "explore_games"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    creator: Mapped[str] = mapped_column(String(40))
+    url: Mapped[str] = mapped_column(String(300))  # tidied: lowercase host, no fragment
+    host: Mapped[str] = mapped_column(String(255))  # shown on the card, so players see where they are going
+    description: Mapped[str] = mapped_column(String(600))  # up to 500 characters
+    cover: Mapped[bytes] = mapped_column(LargeBinary)  # a card-sized WebP, always drawn again by start.ng
+    cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # "approved" shows in the list; "pending" waits for a moderator (only when EXPLORE_AUTO_APPROVE is off)
+    status: Mapped[str] = mapped_column(String(10), default="approved", server_default="approved", index=True)
+    # Anyone can list a game without an account, so the creator gets a removal key once. Only its hash is kept.
+    manage_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

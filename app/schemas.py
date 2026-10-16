@@ -185,3 +185,25 @@ class GameSessionOut(BaseModel):
     session: str  # send as "Authorization: Bearer <session>" to this game's player API
     expires_in: int  # seconds
     player: PlayerOut
+
+
+# ---- Explore games (app/explore.py)
+class ExploreGameOut(BaseModel):
+    id: int
+    name: str
+    creator: str
+    url: str
+    host: str  # the site the game is on, so players see where they are going
+    description: str
+    cover_url: str  # a path on this API: /explore/games/<id>/cover?v=<version>
+    created_at: datetime
+
+
+class ExplorePendingOut(ExploreGameOut):
+    status: str
+
+
+class ExploreSubmitOut(BaseModel):
+    game: ExploreGameOut
+    status: str  # "approved": it is in the list now; "pending": a moderator has to approve it first
+    manage_key: str  # shown once. With it the creator can remove the listing: DELETE /explore/games/<id>

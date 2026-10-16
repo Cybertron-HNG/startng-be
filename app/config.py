@@ -33,5 +33,14 @@ class Settings(BaseSettings):
     github_token: str = ""
     update_check_seconds: int = 300  # games updated in the last 30 days (newer: every minute; older: hourly)
 
+    # Explore games: games other people host on their own sites, listed on start.ng (app/explore.py).
+    # Anyone can submit one without signing in, so these keep the list clean.
+    explore_auto_approve: bool = True  # new games show at once; False = hidden until a moderator approves
+    explore_per_hour: int = 5  # games one address can list an hour
+    explore_total_per_hour: int = 60  # games anyone can list an hour, in total
+    explore_max_listed: int = 500  # the most games the list returns
+    # Lets a moderator remove or approve listings (header X-Admin-Token). Empty = there are no moderators.
+    explore_admin_token: str = ""
+
 
 settings = Settings()

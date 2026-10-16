@@ -30,6 +30,26 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
+- `GET /explore/games?q=`: games other people host on their own sites, newest first (`q` keeps the ones whose name or
+  creator contains every word you typed). `POST /explore/games` (no sign-in): `{name, creator, url, description, cover}`
+  lists one, with `cover` as a base64 PNG, JPEG or WebP (up to 2 MB, at least 640 x 400). It returns `{game, status,
+  manage_key}`: the key is shown once, and `DELETE /explore/games/{id}` with it (header `X-Manage-Key`) removes the
+  listing. `GET /explore/games/{id}/cover` is the card picture. See "Explore games" below
+
+## Explore games
+Games that are not on start.ng: their creators host them and start.ng only lists them, and players open them in a new
+tab. Anyone can submit one without signing in, so the server checks everything itself (`app/explore.py`):
+- The link must be a public `http` or `https` address: no passwords in it, nothing on a private network, and no
+  start.ng games (those are published with the API instead)
+- Text has hidden and look-alike characters removed; names are 2 to 40 characters, the description 20 to 500
+- The cover is opened, checked and drawn again as a 640 x 400 WebP (`app/covers.py`), so nothing hidden in an upload
+  is stored. It is kept in the database, not in the games bucket
+- Limits: `EXPLORE_PER_HOUR` games an hour per address, `EXPLORE_TOTAL_PER_HOUR` in total, and 30 tries an hour per address
+- Refusals use the usual `{ok: false, detail, errors, warnings}` shape. For this form each error has a `field`
+  (`name`, `creator`, `url`, `description` or `cover`) so the website can show it next to that field
+- With no accounts there is no owner, so the creator gets a removal key once. A moderator can use `EXPLORE_ADMIN_TOKEN`
+  (header `X-Admin-Token`) to remove a game, or approve one when `EXPLORE_AUTO_APPROVE=false` (new games then wait, and
+  `GET /explore/games/pending` lists them). With no token set there are no moderators
 
 ## Keeping games up to date
 - While the server runs it checks each game's branch on GitHub and republishes the game when there's a new commit
