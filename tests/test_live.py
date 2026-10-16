@@ -126,3 +126,56 @@ def test_joining_again_replaces_the_old_connection(env):
             with pytest.raises(WebSocketDisconnect) as closed:
                 first.receive_json()
             assert closed.value.code == REPLACED
+
+
+def test_chat_reaches_everyone_and_late_joiners_see_it(env):
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        assert ada.receive_json()["chat"] == []
+        with client.websocket_connect(url(ids["tunde"])) as tunde:
+            tunde.receive_json()
+            ada.receive_json()  # tunde joined
+
+            tunde.send_json({"type": "chat", "text": "  hello\x00world  "})
+            said = ada.receive_json()
+            assert tunde.receive_json() == said  # the sender gets it too
+            assert said["type"] == "chat" and said["id"] == ids["tunde"]
+            assert said["name"] == "Tunde" and said["text"] == "hello world"
+            assert isinstance(said["at"], int)
+        assert ada.receive_json() == {"type": "leave", "id": ids["tunde"]}
+
+        with client.websocket_connect(url(ids["tunde"])) as again:
+            history = again.receive_json()["chat"]
+            assert [(m["name"], m["text"]) for m in history] == [("Tunde", "hello world")]
+
+
+def test_chat_is_cleaned_and_rate_limited(env):
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        with client.websocket_connect(url(ids["tunde"])) as tunde:
+            tunde.receive_json()
+            ada.receive_json()
+
+            tunde.send_json({"type": "chat", "text": "   "})  # nothing to say
+            tunde.send_json({"type": "chat", "text": 123})  # not text
+            tunde.send_json({"type": "chat"})
+            tunde.send_json({"type": "chat", "text": "x" * 300})  # cut to the limit
+            tunde.send_json({"type": "chat", "text": "too soon"})  # right after the last: dropped
+            tunde.send_json({"type": "wave"})  # marks where the dropped ones would have been
+            said = ada.receive_json()
+            assert said["type"] == "chat" and said["text"] == "x" * live.MAX_CHAT
+            assert ada.receive_json() == {"type": "wave", "id": ids["tunde"]}
+
+
+def test_a_room_remembers_only_its_last_messages(env, monkeypatch):
+    monkeypatch.setattr(live, "CHAT_EVERY", 0)
+    monkeypatch.setattr(live, "CHAT_HISTORY", 2)
+    client, ids = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        for text in ("one", "two", "three"):
+            ada.send_json({"type": "chat", "text": text})
+            assert ada.receive_json()["text"] == text
+    with client.websocket_connect(url(ids["tunde"])) as tunde:
+        assert [m["text"] for m in tunde.receive_json()["chat"]] == ["two", "three"]
