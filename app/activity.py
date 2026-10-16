@@ -1,4 +1,4 @@
-"""When people last used start.ng (users.last_seen_at). The Hangout seats the most recent ones."""
+"""When people last used start.ng (users.last_seen_at)."""
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
