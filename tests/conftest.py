@@ -1,0 +1,12 @@
+import pytest
+
+from app.config import settings
+
+
+@pytest.fixture(autouse=True)
+def test_settings(monkeypatch):
+    """Every test sees the same settings, whatever the local .env says, and never calls GitHub."""
+    monkeypatch.setattr(settings, "auto_update", False)  # publishing doesn't look up the live commit
+    monkeypatch.setattr(settings, "site_url", "https://start.ng")
+    monkeypatch.setattr(settings, "games_base_domain", "start.ng")
+    monkeypatch.setattr(settings, "github_token", "")

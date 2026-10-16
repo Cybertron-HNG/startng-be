@@ -60,6 +60,38 @@ class PublishIn(BaseModel):
     branch: str | None = Field(default=None, max_length=100)
 
 
+class ProblemOut(BaseModel):
+    """Something start.ng found while checking a game. code is for scripts, message for people."""
+
+    code: str
+    message: str
+    file: str | None = None
+
+
+class CheckOut(BaseModel):
+    """POST /games/check: the game would go live like this."""
+
+    ok: bool = True
+    name: str
+    url: str
+    repo_url: str
+    update: bool  # true when the repo is already live: publishing updates that game
+    folder: str
+    files: int
+    size_bytes: int
+    skipped: list[str]
+    warnings: list[ProblemOut] = []
+
+
+class UpdateProblem(BaseModel):
+    """Why the latest push to a live game's repo didn't go live (the game kept its last version)."""
+
+    commit: str
+    at: datetime
+    detail: str
+    errors: list[ProblemOut] = []
+
+
 class PublishOut(BaseModel):
     name: str
     url: str
@@ -69,6 +101,32 @@ class PublishOut(BaseModel):
     files: int
     size_bytes: int
     skipped: list[str]  # files left out because the games host doesn't serve their type
+    warnings: list[ProblemOut] = []  # things worth fixing that didn't stop the game going live
+
+
+class PendingOut(BaseModel):
+    """POST /games/publish without signing in, for a repo that isn't live yet."""
+
+    status: str = "pending"
+    name: str
+    repo_url: str
+    approve_url: str  # open it, sign in with start.ng, approve: the game goes live on your account
+    expires_at: datetime
+    folder: str
+    files: int
+    size_bytes: int
+    skipped: list[str]
+    warnings: list[ProblemOut] = []
+    message: str
+
+
+class PendingInfo(BaseModel):
+    """What the approve page shows."""
+
+    name: str
+    repo_url: str
+    expires_at: datetime
+    available: bool  # false if the name was taken since; approving would fail
 
 
 class GameOut(BaseModel):
@@ -78,6 +136,8 @@ class GameOut(BaseModel):
     by: str
     updated_at: datetime
     cover_url: str | None = None  # the card picture; None means show the letter tile
+    # Only in /games/mine: the latest push didn't go live, and why. None when it's all fine.
+    update_problem: UpdateProblem | None = None
     # The game's leaderboard columns, or None when the game has no leaderboard (no startng.json, no scores)
     leaderboard: list[dict] | None = None
 

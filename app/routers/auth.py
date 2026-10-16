@@ -4,6 +4,7 @@ from google.oauth2 import id_token as g_id_token
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..activity import mark_seen
 from ..config import settings
 from ..db import get_db
 from ..models import User
@@ -63,7 +64,8 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(current_user)):
+def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    mark_seen(db, user)  # start.ng and its games call this on every visit
     return user
 
 
