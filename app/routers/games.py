@@ -316,6 +316,9 @@ def approve_game(
 def _game_out(g: Game, owner_view: bool = False) -> GameOut:
     return GameOut(
         update_problem=g.update_problem if owner_view else None,
+        checked_at=g.checked_at if owner_view else None,
+        live_commit=(g.last_commit or None) and g.last_commit[:7] if owner_view else None,
+        updates_paused_until=auto_update.paused_until() if owner_view else None,
         name=g.name,
         url=game_url(g.name),
         repo_url=g.repo_url,

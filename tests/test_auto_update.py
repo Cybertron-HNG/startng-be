@@ -60,12 +60,61 @@ def test_how_often_games_are_checked():
     assert is_due(g, NOW)
 
 
-def test_first_look_records_whats_live(setup):
-    run, game, set_game, answers, _, _, _ = setup
+def test_a_game_with_no_recorded_commit_is_republished_on_its_first_look(setup):
+    run, game, set_game, answers, _, storage, archives = setup
+    # Published before auto-update existed: nobody knows which version is live, so put up the latest.
+    assert game().last_commit is None
+    archives["zip"] = make_zip({"index.html": "<h1>latest</h1>"})
     answers["https://github.com/ada/lane-dash"] = Commit("fresh", sha="a" * 40, etag='"e1"')
     summary = run()
-    assert summary.checked == 1 and summary.updated == []
+    assert summary.checked == 1 and summary.updated == ["lane-dash"]
+    assert (storage.root / "lane-dash" / "index.html").read_text() == "<h1>latest</h1>"
     assert game().last_commit == "a" * 40 and game().commit_etag == '"e1"'
+    # And only once: the next look sees the same commit and leaves it alone.
+    assert run(NOW + timedelta(minutes=2)).updated == []
+
+
+def test_a_broken_first_version_is_reported_not_retried(setup):
+    run, game, set_game, answers, _, storage, archives = setup
+    archives["zip"] = make_zip({"README.md": "oops, no game"})
+    answers["https://github.com/ada/lane-dash"] = Commit("fresh", sha="c" * 40, etag='"e3"')
+    assert run().updated == []
+    assert game().last_commit == "c" * 40 and game().update_problem["errors"][0]["code"] == "no_index"
+
+
+def test_only_a_few_downloads_per_look(setup, monkeypatch):
+    run, game, set_game, answers, asked, storage, archives = setup
+    from app.models import Game as GameRow
+
+    monkeypatch.setattr(auto_update, "MAX_REPUBLISH_PER_TICK", 2)
+    with sessionmaker(bind=next(app.dependency_overrides[get_db]()).get_bind())() as db:
+        for n in range(4):
+            db.add(GameRow(name=f"extra-{n}", owner_id=game().owner_id, repo_url=f"https://github.com/ada/extra-{n}"))
+        db.commit()
+    for n in range(4):
+        answers[f"https://github.com/ada/extra-{n}"] = Commit("fresh", sha=f"{n}" * 40, etag='"x"')
+    answers["https://github.com/ada/lane-dash"] = Commit("same")
+    first = run()
+    assert len(first.updated) == 2  # the rest wait
+    second = run(NOW + timedelta(seconds=30))
+    assert len(second.updated) == 2
+    assert len(run(NOW + timedelta(seconds=60)).updated) == 0  # all caught up
+
+
+def test_owners_can_see_whether_updates_are_running(setup, env):
+    client, _, tokens, _ = env
+    run, game, set_game, answers, _, _, _ = setup
+    answers["https://github.com/ada/lane-dash"] = Commit("fresh", sha="a" * 40, etag='"e1"')
+    run()
+    mine = client.get("/games/mine", headers=tokens["ada"]).json()[0]
+    assert mine["live_commit"] == "aaaaaaa" and mine["checked_at"] is not None and mine["updates_paused_until"] is None
+    assert client.get("/games").json()[0]["live_commit"] is None  # only the owner sees it
+
+    later = NOW + timedelta(hours=1, minutes=20)
+    answers["https://github.com/ada/lane-dash"] = Commit("limited", retry_at=later)
+    run(NOW + timedelta(hours=1))
+    assert auto_update.paused_until(NOW + timedelta(hours=1)) == later
+    assert auto_update.paused_until(later + timedelta(minutes=1)) is None  # over by then
 
 
 def test_unchanged_repos_are_left_alone_and_send_their_fingerprint(setup):
@@ -80,9 +129,9 @@ def test_unchanged_repos_are_left_alone_and_send_their_fingerprint(setup):
 def test_a_check_isnt_an_update(setup):
     run, game, set_game, answers, _, _, _ = setup
     old = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    set_game(updated_at=old)
+    set_game(updated_at=old, last_commit="a" * 40, commit_etag='"e1"')
     run()
-    answers["https://github.com/ada/lane-dash"] = Commit("fresh", sha="a" * 40, etag='"e1"')
+    answers["https://github.com/ada/lane-dash"] = Commit("same")
     run(NOW + timedelta(hours=2))
     assert game().updated_at.replace(tzinfo=timezone.utc) == old  # list order and check rate unchanged
 

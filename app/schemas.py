@@ -138,6 +138,10 @@ class GameOut(BaseModel):
     cover_url: str | None = None  # the card picture; None means show the letter tile
     # Only in /games/mine: the latest push didn't go live, and why. None when it's all fine.
     update_problem: UpdateProblem | None = None
+    # Only in /games/mine: how start.ng is keeping the game up to date from its repo.
+    checked_at: datetime | None = None  # when the repo was last checked for a new push (None: not yet)
+    live_commit: str | None = None  # the first 7 characters of the commit that's live (None: not known yet)
+    updates_paused_until: datetime | None = None  # set while GitHub's limit has paused all checking
     # The game's leaderboard columns, or None when the game has no leaderboard (no startng.json, no scores)
     leaderboard: list[dict] | None = None
 
