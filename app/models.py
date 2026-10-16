@@ -19,6 +19,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # When they last used start.ng (updated at most every few minutes). Picks who gets a bench
+    # in the Hangout.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 def _now() -> datetime:
@@ -37,6 +40,14 @@ class Game(Base):
     # The card picture: a path in the game's folder (app.covers), and when it last changed.
     cover: Mapped[str | None] = mapped_column(String(200))
     cover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Keeping it up to date (app/auto_update.py): the commit that's live, GitHub's fingerprint of
+    # that answer (so unchanged repos cost nothing to check), and when it was last checked.
+    last_commit: Mapped[str | None] = mapped_column(String(40))
+    commit_etag: Mapped[str | None] = mapped_column(String(200))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the latest push couldn't go live ({commit, at, detail, errors}); cleared by the
+    # next successful publish. Shown to the owner in Your games.
+    update_problem: Mapped[dict | None] = mapped_column(JSON)
     # The game's own leaderboard stats from its startng.json (app/leaderboard.py); None = plain score
     leaderboard: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -62,3 +73,21 @@ class Score(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     user: Mapped[User] = relationship()
+
+
+class PendingGame(Base):
+    """A game sent to POST /games/publish without signing in, waiting to be approved.
+
+    The reply gave the publisher a link, <site_url>/approve/<code>. Whoever opens it signs in with
+    start.ng and approves, and the game goes live on their account; from then on that repo
+    updates straight away. Unapproved ones are removed when they expire.
+    """
+
+    __tablename__ = "pending_games"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    repo_url: Mapped[str] = mapped_column(String(300), index=True)
+    branch: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
