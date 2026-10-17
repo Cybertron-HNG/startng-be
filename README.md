@@ -38,6 +38,8 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - Each check asks only for the latest commit id and sends GitHub's fingerprint (ETag) of the last answer, so an
   unchanged repo costs nothing. Set `GITHUB_TOKEN` (read-only, public repos) for 5,000 checks an hour instead of 60
 - A commit that doesn't publish (no `index.html`, too big, ...) is logged and skipped; the live game stays as it was
+- A game with no recorded commit (published before auto-update existed, or its lookup failed) is republished the first time it's checked, once, so it can't stay stale. At most 5 games are downloaded per 30-second pass
+- `GET /games/mine` also gives the owner `checked_at`, `live_commit` (7 characters) and `updates_paused_until` (set while GitHub's limit has paused checking), shown on each game card in Your games
 - `AUTO_UPDATE=false` turns it off (tests do)
 
 ## Game covers

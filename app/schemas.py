@@ -138,8 +138,14 @@ class GameOut(BaseModel):
     cover_url: str | None = None  # the card picture; None means show the letter tile
     # Only in /games/mine: the latest push didn't go live, and why. None when it's all fine.
     update_problem: UpdateProblem | None = None
+    # Only in /games/mine: how start.ng is keeping the game up to date from its repo.
+    checked_at: datetime | None = None  # when the repo was last checked for a new push (None: not yet)
+    live_commit: str | None = None  # the first 7 characters of the commit that's live (None: not known yet)
+    updates_paused_until: datetime | None = None  # set while GitHub's limit has paused all checking
     # The game's leaderboard columns, or None when the game has no leaderboard (no startng.json, no scores)
     leaderboard: list[dict] | None = None
+    # How many people opened it from start.ng in the last 7 days (the homepage shows the most played)
+    plays: int = 0
 
 
 # Highest score a game can save; anything above is treated as a bad request.
@@ -181,3 +187,25 @@ class GameSessionOut(BaseModel):
     session: str  # send as "Authorization: Bearer <session>" to this game's player API
     expires_in: int  # seconds
     player: PlayerOut
+
+
+# ---- Indie Spotlight: games by independent creators, hosted elsewhere and listed on start.ng
+
+
+class IndieGameIn(BaseModel):
+    name: str
+    url: str
+    description: str
+    cover: str  # the picture as a data URL: data:image/png;base64,... (PNG, JPEG or WebP, 2 MB or less)
+
+
+class IndieGameOut(BaseModel):
+    id: int
+    name: str
+    url: str
+    description: str
+    by: str
+    cover_path: str  # served by this API, e.g. /indie/3/cover.webp
+    created_at: datetime
+    mine: bool = False  # the signed-in user submitted it (they can remove it)
+    plays: int = 0  # opened from start.ng in the last 7 days
