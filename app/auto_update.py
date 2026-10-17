@@ -11,7 +11,13 @@ when they've changed recently:
 A check asks GitHub only for the branch's latest commit id, sending the fingerprint (ETag) of
 the last answer: an unchanged repo gets "304 Not Modified", which costs nothing against GitHub's
 limit when a token is set. With GITHUB_TOKEN that limit is 5,000 checks an hour, without it 60.
-When GitHub says the limit is used up, checking pauses until it resets.
+When GitHub says the limit is used up, checking pauses until it resets (owners can see that in
+Your games: see paused_until()).
+
+A game with no recorded commit (published before this existed, or its lookup failed) is
+republished the first time it's checked: nobody knows which version is live, and the latest one
+is always safe to put up. Without this, a game that had changes waiting when auto-update shipped
+would stay stale until its next push.
 """
 import asyncio
 import logging
@@ -35,6 +41,7 @@ log = logging.getLogger(__name__)
 
 TICK_SECONDS = 30  # how often to look for games that are due
 PER_TICK = 50  # at most this many checks per look, so one look never runs long
+MAX_REPUBLISH_PER_TICK = 5  # downloads are the slow part; the rest wait for the next look (30 s later)
 ACTIVE, RECENT = timedelta(days=1), timedelta(days=30)
 # Failures that aren't the game's fault: the same commit is tried again on the next check.
 TRY_AGAIN = {"download_failed", "upload_failed", "not_set_up"}
@@ -105,6 +112,20 @@ def is_due(game: Game, now: datetime) -> bool:
 
 
 @dataclass
+class _State:
+    paused_until: datetime | None = None  # set while GitHub's limit is used up
+
+
+_state = _State()
+
+
+def paused_until(now: datetime | None = None) -> datetime | None:
+    """When checking resumes, if GitHub's limit has paused it; None when it's running."""
+    when = _aware(_state.paused_until)
+    return when if when is not None and when > (now or datetime.now(timezone.utc)) else None
+
+
+@dataclass
 class Summary:
     checked: int = 0
     updated: list[str] | None = None
@@ -117,24 +138,27 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
 
     now = now or datetime.now(timezone.utc)
     summary = Summary(updated=[])
+    _state.paused_until = None  # set again below if GitHub says no
     store = store or get_game_store()
     if store is None:
         return summary
     with make_session() as db:
         games = db.scalars(select(Game)).all()
         due = sorted((g for g in games if is_due(g, now)), key=lambda g: _aware(g.checked_at) or datetime.min.replace(tzinfo=timezone.utc))
+        downloads = 0
         for game in due[:PER_TICK]:
+            if downloads >= MAX_REPUBLISH_PER_TICK:
+                break  # the rest are still due, so the next look picks them up
             found = latest_commit(game.repo_url, game.branch, game.commit_etag)
             if found.status == "limited":
-                summary.paused_until = found.retry_at
+                summary.paused_until = _state.paused_until = found.retry_at
                 log.warning("GitHub's limit is used up; checking again at %s. Set GITHUB_TOKEN for more.", found.retry_at)
                 break
             summary.checked += 1
             republished = retry = False
             if found.status == "fresh":
-                if game.last_commit is None:
-                    game.last_commit = found.sha  # first look: this is what's live
-                elif found.sha != game.last_commit:
+                if found.sha != game.last_commit:  # a new commit, or no commit recorded yet
+                    downloads += 1
                     try:
                         repo = parse_repo_url(game.repo_url, game.branch)
                         _put_live(db, store, game, game.name, game.owner_id, repo, _download_and_check(repo))

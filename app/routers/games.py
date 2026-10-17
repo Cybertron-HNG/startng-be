@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import secrets
 import time
@@ -15,7 +16,7 @@ from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
-from ..models import Game, PendingGame, Score, User
+from ..models import Game, GamePlay, PendingGame, Score, User
 from ..checks import Problem
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
@@ -313,9 +314,13 @@ def approve_game(
     return out
 
 
-def _game_out(g: Game, owner_view: bool = False) -> GameOut:
+def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
     return GameOut(
+        plays=plays,
         update_problem=g.update_problem if owner_view else None,
+        checked_at=g.checked_at if owner_view else None,
+        live_commit=(g.last_commit or None) and g.last_commit[:7] if owner_view else None,
+        updates_paused_until=auto_update.paused_until() if owner_view else None,
         name=g.name,
         url=game_url(g.name),
         repo_url=g.repo_url,
@@ -347,16 +352,57 @@ def _cover_url(g: Game) -> str | None:
     return f"{game_url(g.name)}/{quote(g.cover)}?v={version}"
 
 
+PLAYS_DAYS = 7  # "most played" means the last week
+PLAYS_KEPT_DAYS = 30
+PLAY_AGAIN_MINUTES = 30  # the same person opening the same game again within this counts once
+PLAYS_PER_HOUR = 300  # a separate budget per address, so the repeat check above can't be dodged by changing headers
+_plays: dict[str, deque] = defaultdict(deque)
+
+
+def visitor_of(request: Request) -> str:
+    """A one-way fingerprint of the address (never the address itself), to count each person once.
+
+    Only the server-seen address goes in: a header the caller controls (like User-Agent) would let
+    one person look like many.
+    """
+    raw = f"{settings.jwt_secret}|{_client_address(request)}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def _recent_plays(db: Session) -> dict[str, int]:
+    since = datetime.now(timezone.utc) - timedelta(days=PLAYS_DAYS)
+    rows = db.execute(select(GamePlay.game_name, func.count()).where(GamePlay.at >= since).group_by(GamePlay.game_name))
+    return {name: count for name, count in rows}
+
+
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)):
-    return [_game_out(g) for g in db.scalars(select(Game).order_by(Game.updated_at.desc())).all()]
+    plays = _recent_plays(db)
+    return [_game_out(g, plays=plays.get(g.name, 0)) for g in db.scalars(select(Game).order_by(Game.updated_at.desc())).all()]
+
+
+@router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
+def count_play(name: str, request: Request, db: Session = Depends(get_db)):
+    """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed."""
+    _game_or_404(db, name)
+    _rate_limit(request, _plays, PLAYS_PER_HOUR, "Too many plays from here, try again later")
+    visitor = visitor_of(request)
+    now = datetime.now(timezone.utc)
+    again = db.scalar(select(GamePlay.id).where(
+        GamePlay.game_name == name, GamePlay.visitor == visitor, GamePlay.at >= now - timedelta(minutes=PLAY_AGAIN_MINUTES),
+    ).limit(1))
+    if again is None:
+        db.add(GamePlay(game_name=name, visitor=visitor, at=now))
+    db.execute(delete(GamePlay).where(GamePlay.at < now - timedelta(days=PLAYS_KEPT_DAYS)))
+    db.commit()
 
 
 @router.get("/mine", response_model=list[GameOut])
 def my_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The signed-in builder's own games, newest first (for their profile)."""
     query = select(Game).where(Game.owner_id == user.id).order_by(Game.updated_at.desc())
-    return [_game_out(g, owner_view=True) for g in db.scalars(query).all()]
+    plays = _recent_plays(db)
+    return [_game_out(g, owner_view=True, plays=plays.get(g.name, 0)) for g in db.scalars(query).all()]
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
