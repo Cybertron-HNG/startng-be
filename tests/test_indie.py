@@ -120,10 +120,50 @@ def test_too_many_submissions(env, monkeypatch):
 def test_most_clicked_first(env):
     client, _, tokens, _ = env
     ids = [client.post("/indie", json=game(name=f"Game {i}", url=f"https://ada.itch.io/g{i}"), headers=tokens["ada"]).json()["id"] for i in range(3)]
-    for ua in ["a", "b", "c"]:
-        client.post(f"/indie/{ids[0]}/plays", headers={"user-agent": ua})
-    client.post(f"/indie/{ids[1]}/plays", headers={"user-agent": "a"})
-    client.post(f"/indie/{ids[1]}/plays", headers={"user-agent": "a"})  # same person again: counts once
+    for ip in ["10.0.0.1", "10.0.0.2", "10.0.0.3"]:
+        client.post(f"/indie/{ids[0]}/plays", headers={"x-forwarded-for": ip})
+    client.post(f"/indie/{ids[1]}/plays", headers={"x-forwarded-for": "10.0.0.1"})
+    client.post(f"/indie/{ids[1]}/plays", headers={"x-forwarded-for": "10.0.0.1"})  # same person again: counts once
     popular = client.get("/indie", params={"sort": "popular", "limit": 3}).json()
     assert [(g["name"], g["plays"]) for g in popular] == [("Game 0", 3), ("Game 1", 1), ("Game 2", 0)]
     assert client.post("/indie/999/plays").status_code == 404
+
+
+def test_changing_the_user_agent_does_not_inflate_indie_plays(env):
+    client, _, tokens, _ = env
+    gid = client.post("/indie", json=game(), headers=tokens["ada"]).json()["id"]
+    for ua in ["a", "b", "c"]:
+        client.post(f"/indie/{gid}/plays", headers={"user-agent": ua})
+    assert client.get("/indie").json()[0]["plays"] == 1
+
+
+def test_indie_plays_have_their_own_budget_per_address(env, monkeypatch):
+    client, _, tokens, _ = env
+    from app.routers import indie as indie_router
+    gid = client.post("/indie", json=game(), headers=tokens["ada"]).json()["id"]
+    monkeypatch.setattr(indie_router, "PLAYS_PER_HOUR", 2)
+    indie_router._plays.clear()
+    assert [client.post(f"/indie/{gid}/plays").status_code for _ in range(3)] == [204, 204, 429]
+    indie_router._plays.clear()
+
+
+def test_the_listing_does_not_load_covers_and_respects_the_limit(env):
+    client, _, tokens, _ = env
+    for i in range(3):
+        client.post("/indie", json=game(name=f"Game {i}", url=f"https://ada.itch.io/g{i}"), headers=tokens["ada"])
+    newest = client.get("/indie", params={"limit": 2}).json()
+    assert [g["name"] for g in newest] == ["Game 2", "Game 1"]
+    assert all(g["by"] for g in newest)
+
+
+def test_two_requests_for_the_same_link_get_409_not_500(env, monkeypatch):
+    client, _, tokens, _ = env
+    from sqlalchemy.orm import Session
+    assert client.post("/indie", json=game(), headers=tokens["ada"]).status_code == 201
+    # Make the "already listed?" check miss, as it does when two requests run at once:
+    # only the database's unique constraint is left to stop the second one.
+    real = Session.scalar
+    monkeypatch.setattr(Session, "scalar", lambda self, stmt, *a, **k: None if "indie_games.url" in str(stmt) else real(self, stmt, *a, **k))
+    res = client.post("/indie", json=game(), headers=tokens["ada"])
+    assert res.status_code == 409
+    assert "already listed" in res.text

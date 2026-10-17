@@ -14,7 +14,8 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, defer, selectinload
 
 from .. import covers
 from ..db import get_db
@@ -22,7 +23,7 @@ from ..errors import ApiError
 from ..models import IndieGame, IndiePlay, User
 from ..schemas import IndieGameIn, IndieGameOut
 from ..security import current_user, optional_user
-from .games import PLAY_AGAIN_MINUTES, PLAYS_DAYS, PLAYS_KEPT_DAYS, _player_name, _rate_limit, visitor_of
+from .games import PLAY_AGAIN_MINUTES, PLAYS_DAYS, PLAYS_KEPT_DAYS, PLAYS_PER_HOUR, _player_name, _rate_limit, visitor_of
 
 router = APIRouter(prefix="/indie", tags=["indie"])
 
@@ -31,6 +32,7 @@ DESCRIPTION_LEN = (10, 600)
 MAX_URL = 300
 SUBMITS_PER_HOUR = 10
 _submits: dict[str, deque] = defaultdict(deque)  # recent submissions per address
+_plays: dict[str, deque] = defaultdict(deque)  # recent play counts per address
 DATA_URL = re.compile(r"^data:image/(png|jpeg|webp);base64,(.+)$", re.S)
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -93,7 +95,16 @@ def list_indie_games(
 ):
     """Newest first, or most opened this week first (sort=popular; ties: newest first)."""
     plays = _recent_plays(db)
-    games = db.scalars(select(IndieGame).order_by(IndieGame.created_at.desc(), IndieGame.id.desc())).all()
+    # Leave the cover pictures in the database (they are served from /indie/{id}/cover.webp) and
+    # fetch the creators in one go instead of one query per game.
+    query = (
+        select(IndieGame)
+        .options(defer(IndieGame.cover), selectinload(IndieGame.owner))
+        .order_by(IndieGame.created_at.desc(), IndieGame.id.desc())
+    )
+    if sort == "newest":
+        query = query.limit(limit)
+    games = db.scalars(query).all()
     if sort == "popular":
         games = sorted(games, key=lambda g: -plays.get(g.id, 0))
     return [_out(g, user, plays.get(g.id, 0)) for g in games[:limit]]
@@ -104,6 +115,7 @@ def count_indie_play(game_id: int, request: Request, db: Session = Depends(get_d
     """start.ng calls this when someone opens the game, to rank the most clicked. No sign-in needed."""
     if not db.get(IndieGame, game_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that id")
+    _rate_limit(request, _plays, PLAYS_PER_HOUR, "Too many plays from here, try again later")
     visitor, now = visitor_of(request), datetime.now(timezone.utc)
     again = db.scalar(select(IndiePlay.id).where(
         IndiePlay.indie_id == game_id, IndiePlay.visitor == visitor, IndiePlay.at >= now - timedelta(minutes=PLAY_AGAIN_MINUTES),
@@ -130,7 +142,11 @@ def submit_indie_game(
     cover = _cover(body.cover)
     game = IndieGame(owner_id=user.id, name=name, url=url, description=description, cover=cover)
     db.add(game)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # someone listed the same link between the check above and now
+        db.rollback()
+        raise ApiError(status.HTTP_409_CONFLICT, "already_listed", "That game is already listed") from None
     db.refresh(game)
     return _out(game, user)
 

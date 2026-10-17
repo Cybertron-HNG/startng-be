@@ -355,11 +355,17 @@ def _cover_url(g: Game) -> str | None:
 PLAYS_DAYS = 7  # "most played" means the last week
 PLAYS_KEPT_DAYS = 30
 PLAY_AGAIN_MINUTES = 30  # the same person opening the same game again within this counts once
+PLAYS_PER_HOUR = 300  # a separate budget per address, so the repeat check above can't be dodged by changing headers
+_plays: dict[str, deque] = defaultdict(deque)
 
 
 def visitor_of(request: Request) -> str:
-    """A one-way fingerprint of who's asking (never the address itself), to count each person once."""
-    raw = f"{settings.jwt_secret}|{_client_address(request)}|{request.headers.get('user-agent', '')}"
+    """A one-way fingerprint of the address (never the address itself), to count each person once.
+
+    Only the server-seen address goes in: a header the caller controls (like User-Agent) would let
+    one person look like many.
+    """
+    raw = f"{settings.jwt_secret}|{_client_address(request)}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -379,6 +385,7 @@ def list_games(db: Session = Depends(get_db)):
 def count_play(name: str, request: Request, db: Session = Depends(get_db)):
     """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed."""
     _game_or_404(db, name)
+    _rate_limit(request, _plays, PLAYS_PER_HOUR, "Too many plays from here, try again later")
     visitor = visitor_of(request)
     now = datetime.now(timezone.utc)
     again = db.scalar(select(GamePlay.id).where(
@@ -394,7 +401,8 @@ def count_play(name: str, request: Request, db: Session = Depends(get_db)):
 def my_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The signed-in builder's own games, newest first (for their profile)."""
     query = select(Game).where(Game.owner_id == user.id).order_by(Game.updated_at.desc())
-    return [_game_out(g, owner_view=True) for g in db.scalars(query).all()]
+    plays = _recent_plays(db)
+    return [_game_out(g, owner_view=True, plays=plays.get(g.name, 0)) for g in db.scalars(query).all()]
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
