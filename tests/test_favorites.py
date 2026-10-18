@@ -42,6 +42,7 @@ def test_bad_keys_are_refused(env):
     ada = tokens["ada"]
     for bad in ["x:1", "g:", "g:Has Caps", "i:abc", "g:" + "a" * 41]:
         assert client.put(f"/favorites/{bad}", headers=ada).status_code == 422, bad
+    assert client.post("/favorites/sync", json={"keys": ["g:moon-garden\n"]}, headers=ada).status_code == 422  # no trailing newline
     assert client.post("/favorites/sync", json={"keys": ["g:ok", "nope"]}, headers=ada).status_code == 422
     assert client.get("/favorites", headers=ada).json() == []  # nothing half-saved
 
