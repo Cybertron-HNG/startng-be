@@ -27,7 +27,7 @@ class FavoritesSync(BaseModel):
 
 
 def _key(key: str) -> str:
-    if not KEY.match(key):
+    if not KEY.fullmatch(key):
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, "bad_favorite", "That isn't a game you can favorite")
     return key
 
@@ -38,6 +38,8 @@ def _keys(db: Session, user: User) -> list[str]:
 
 
 def _add(db: Session, user: User, keys: list[str]) -> None:
+    # Lock the player's row so two saves at once can't both pass the limit check (or insert the same key).
+    db.execute(select(User.id).where(User.id == user.id).with_for_update())
     have = set(db.scalars(select(Favorite.key).where(Favorite.user_id == user.id)))
     new = [k for k in dict.fromkeys(keys) if k not in have]
     if len(have) + len(new) > MAX_FAVORITES:
