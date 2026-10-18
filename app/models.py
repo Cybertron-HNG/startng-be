@@ -139,3 +139,17 @@ class IndiePlay(Base):
     indie_id: Mapped[int] = mapped_column(ForeignKey("indie_games.id", ondelete="CASCADE"))
     visitor: Mapped[str] = mapped_column(String(32))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class Favorite(Base):
+    """A game a player saved. The key says which one: "g:<name>" for a game on start.ng, "i:<id>"
+    for a game by an independent creator. Kept as a key (not a foreign key) so a favorite saved
+    on a device before sign-in can be sent over even if the game has since gone."""
+
+    __tablename__ = "favorites"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_favorites_user_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
