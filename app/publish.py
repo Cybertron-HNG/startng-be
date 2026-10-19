@@ -14,7 +14,7 @@ import requests
 
 from . import storage
 from .checks import Problem, inspect
-from .leaderboard import SchemaError, parse_manifest
+from .leaderboard import SchemaError, parse_description, parse_manifest
 
 MAX_NAME = 40  # the games table's limit; app.storage applies the Worker's name rules
 REPO_RE = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([\w./-]+?))?/?$")
@@ -94,6 +94,7 @@ class GameBundle:
     warnings: list[Problem] = field(default_factory=list)
     manifest: bytes | None = None  # startng.json (game folder first, then the top of the repo)
     leaderboard: list[dict] | None = None  # its leaderboard stats (app/leaderboard.py); None = plain score
+    description: str | None = None  # its one-line description, for the game's page on start.ng
 
     @property
     def total_bytes(self) -> int:
@@ -213,6 +214,7 @@ def read_game(archive: bytes) -> GameBundle:
     if bundle.manifest is not None:
         try:
             bundle.leaderboard = parse_manifest(bundle.manifest)
+            bundle.description = parse_description(bundle.manifest)
         except SchemaError as err:
             errors.append(Problem("bad_startng_json", f"startng.json: {err}", MANIFEST))
     found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])

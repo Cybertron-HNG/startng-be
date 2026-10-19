@@ -99,3 +99,24 @@ def rank_key(schema: list[dict], stats: dict) -> tuple:
 
 def is_better(schema: list[dict], new: dict, old: dict) -> bool:
     return rank_key(schema, new) < rank_key(schema, old)
+
+
+DESCRIPTION_MAX = 300
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+
+
+def parse_description(raw: bytes) -> str | None:
+    """The game's one-line description from its startng.json ({"description": "..."}), cleaned up, or None.
+
+    Never an error: a missing or odd description just means the page writes its own. It's plain text
+    (the website escapes it), cut to DESCRIPTION_MAX characters.
+    """
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    text = data.get("description") if isinstance(data, dict) else None
+    if not isinstance(text, str):
+        return None
+    text = " ".join(_CONTROL.sub(" ", text).split())
+    return text[:DESCRIPTION_MAX] or None
