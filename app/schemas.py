@@ -210,3 +210,70 @@ class IndieGameOut(BaseModel):
     created_at: datetime
     mine: bool = False  # the signed-in user submitted it (they can remove it)
     plays: int = 0  # opened from start.ng in the last 7 days
+
+
+# ---- Daily tournaments (app/tournaments.py)
+
+
+class TournamentRun(BaseModel):
+    """One player's best run on a tournament game."""
+
+    rank: int
+    player_id: int
+    name: str
+    color: str | None
+    stats: dict[str, int | None]
+    points: int  # what this place is worth (10, 7, 5, 3, then 1)
+
+
+class TournamentGameOut(BaseModel):
+    name: str
+    url: str
+    cover_url: str | None = None
+    description: str | None = None
+    leaderboard: list[dict]  # the game's columns, for showing the runs
+    players: int  # entered players who have a run on it
+    top: list[TournamentRun]  # the best runs so far (top 3)
+
+
+class TournamentStanding(BaseModel):
+    place: int
+    player_id: int
+    name: str
+    color: str | None
+    points: int
+    firsts: int  # games they're first in
+
+
+class TournamentOut(BaseModel):
+    id: int
+    starts_at: datetime
+    ends_at: datetime
+    finished: bool
+    games: list[TournamentGameOut]
+    entrants: int
+    entered: bool = False  # the signed-in player has entered (always false when signed out)
+    standings: list[TournamentStanding]  # the day's points so far (top 20); final once finished
+    me: TournamentStanding | None = None  # the signed-in player's own row, when they have points
+    winner: TournamentStanding | None = None  # once finished
+
+
+class TournamentSummary(BaseModel):
+    """A finished tournament, for the list of past winners."""
+
+    id: int
+    starts_at: datetime
+    ends_at: datetime
+    games: list[str]
+    winner: TournamentStanding | None
+    podium: list[TournamentStanding]  # the top 3
+
+
+class OverallEntry(BaseModel):
+    rank: int
+    player_id: int
+    name: str
+    color: str | None
+    points: int
+    wins: int  # days won
+    firsts: int  # tournament games won

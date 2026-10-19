@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -52,6 +52,9 @@ class Game(Base):
     leaderboard: Mapped[list | None] = mapped_column(JSON)
     # One line about the game from its startng.json, shown on its page at start.ng/games/<name> (None: the page writes one)
     description: Mapped[str | None] = mapped_column(String(300))
+    # Whether the live version meets the game standards (app/checks.standards), checked on every publish and
+    # update. None = published before the standards existed; such games still take part in tournaments for now.
+    meets_standards: Mapped[bool | None] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -155,3 +158,79 @@ class Favorite(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     key: Mapped[str] = mapped_column(String(60))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# ---- Daily tournaments (app/tournaments.py): a few random games, 24 hours, points for the best players
+
+
+class Tournament(Base):
+    """One day's tournament. Its own start and end, so a future admin page can move or change one."""
+
+    __tablename__ = "tournaments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), unique=True)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Set once the results are worked out (points given and the winner named).
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    winner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    games: Mapped[list["TournamentGame"]] = relationship(order_by="TournamentGame.position", cascade="all, delete-orphan")
+    winner: Mapped[User | None] = relationship()
+
+
+class TournamentGame(Base):
+    __tablename__ = "tournament_games"
+    __table_args__ = (UniqueConstraint("tournament_id", "game_name", name="uq_tournament_games"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+
+    game: Mapped[Game] = relationship()
+
+
+class TournamentEntry(Base):
+    """A player who entered (by sharing the tournament). Only entered players' scores count."""
+
+    __tablename__ = "tournament_entries"
+    __table_args__ = (UniqueConstraint("tournament_id", "user_id", name="uq_tournament_entries"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TournamentScore(Base):
+    """A player's best run in one tournament game, inside the tournament's 24 hours."""
+
+    __tablename__ = "tournament_scores"
+    __table_args__ = (UniqueConstraint("tournament_id", "game_name", "user_id", name="uq_tournament_scores"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    best: Mapped[int] = mapped_column(BigInteger)
+    stats: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    user: Mapped[User] = relationship()
+
+
+class TournamentPoints(Base):
+    """What a player earned in a finished tournament. Summed for the overall leaderboard."""
+
+    __tablename__ = "tournament_points"
+    __table_args__ = (UniqueConstraint("tournament_id", "user_id", name="uq_tournament_points"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    points: Mapped[int] = mapped_column(Integer)
+    firsts: Mapped[int] = mapped_column(Integer)  # games they came first in
+    place: Mapped[int] = mapped_column(Integer)  # their place in the day's standings
+
+    user: Mapped[User] = relationship()
