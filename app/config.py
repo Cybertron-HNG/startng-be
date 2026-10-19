@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     auto_update: bool = True
     github_token: str = ""
     update_check_seconds: int = 300  # games updated in the last 30 days (newer: every minute; older: hourly)
+    # Daily tournaments (app/tournaments.py): each runs 24 hours and ends at tournament_end_hour, local time
+    # (UTC + tournament_utc_offset; Nigeria is UTC+1 all year), so the winner is named in the evening.
+    tournament_games: int = 5
+    tournament_min_games: int = 3  # fewer games than this qualify: no tournament that day
+    tournament_end_hour: int = 18
+    tournament_utc_offset: int = 1
 
 
 settings = Settings()

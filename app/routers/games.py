@@ -11,13 +11,13 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import auto_update, covers
+from .. import auto_update, covers, tournaments
 from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
 from ..models import Game, GamePlay, PendingGame, Score, User
-from ..checks import Problem
+from ..checks import Problem, standards
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
@@ -99,6 +99,8 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.repo_url, game.branch = repo.url, repo.branch
     game.leaderboard = bundle.leaderboard
     game.description = bundle.description
+    # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
+    game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
@@ -549,6 +551,7 @@ def submit_score(
         if improved:
             row.best, row.stats = first, stats
             db.commit()
+    tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
     best = boards.stats_of(schema, row.stats, row.best)
     rows = _ranked(db, name, schema)
     rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
@@ -589,4 +592,5 @@ def remove_score(name: str, player_id: int, user: User = Depends(current_user), 
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That player has no score in this game")
     db.delete(row)
     db.commit()
+    tournaments.remove_scores(db, name, player_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

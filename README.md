@@ -30,6 +30,26 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
+- `GET /tournaments/current`: today's tournament (games, live standings, whether you've entered), or `null`
+  when fewer than 3 games qualify. `POST /tournaments/current/enter` (start.ng sign-in, not a game session)
+  enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
+  `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
+
+## Daily tournaments
+`app/tournaments.py`. Every day a tournament of 5 random games runs for 24 hours and ends at 18:00 Nigeria time
+(`TOURNAMENT_GAMES`, `TOURNAMENT_MIN_GAMES`, `TOURNAMENT_END_HOUR`, `TOURNAMENT_UTC_OFFSET`).
+- **Games:** ones with a leaderboard (a `startng.json`, or saved scores) that don't fail the game standards, never the
+  Hangout, and not ones from the last 3 tournaments while there are enough others. Fewer than 3: no tournament.
+  `games.meets_standards` is saved on every publish and update; games published before the standards (`null`) can
+  still be picked for now.
+- **Automatic:** nothing runs on a timer. The day's tournament is made the first time anyone asks for it, and one
+  that has ended is settled (points saved, winner named) the next time anyone reads tournaments.
+- **Entering:** the website enters players when they share the tournament on X (it can't check the post).
+- **Scores:** games need no changes. While a player has entered, every run sent to `POST /games/{name}/scores` for a
+  tournament game also counts there; only runs inside the 24 hours count, and only the best one per game.
+- **Points:** on each game, 10 / 7 / 5 / 3 for the top four, 1 for everyone else who played it. Most points wins
+  the day; ties go to more first places, then whoever got there first. Points only come from tournaments.
+  The overall leaderboard adds them up, all time or this week (from Monday 00:00 Nigeria time).
 
 ## Keeping games up to date
 - While the server runs it checks each game's branch on GitHub and republishes the game when there's a new commit
