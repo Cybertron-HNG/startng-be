@@ -136,6 +136,7 @@ class GameOut(BaseModel):
     by: str
     updated_at: datetime
     cover_url: str | None = None  # the card picture; None means show the letter tile
+    description: str | None = None  # from the game's startng.json; None means the page writes its own
     # Only in /games/mine: the latest push didn't go live, and why. None when it's all fine.
     update_problem: UpdateProblem | None = None
     # Only in /games/mine: how start.ng is keeping the game up to date from its repo.

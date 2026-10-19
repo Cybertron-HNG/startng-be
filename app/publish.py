@@ -3,6 +3,7 @@
 Only client-side games are accepted: the repo must already contain a ready-to-play
 index.html. Nothing from the repo is ever run on the server.
 """
+import html
 import io
 import posixpath
 import re
@@ -13,8 +14,9 @@ from dataclasses import dataclass, field
 import requests
 
 from . import storage
-from .checks import Problem, inspect
-from .leaderboard import SchemaError, parse_manifest
+from .checks import Problem, inspect, standards
+from .config import settings
+from .leaderboard import SchemaError, clean_description, parse_description, parse_manifest
 
 MAX_NAME = 40  # the games table's limit; app.storage applies the Worker's name rules
 REPO_RE = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([\w./-]+?))?/?$")
@@ -94,6 +96,7 @@ class GameBundle:
     warnings: list[Problem] = field(default_factory=list)
     manifest: bytes | None = None  # startng.json (game folder first, then the top of the repo)
     leaderboard: list[dict] | None = None  # its leaderboard stats (app/leaderboard.py); None = plain score
+    description: str | None = None  # its one-line description, for the game's page on start.ng
 
     @property
     def total_bytes(self) -> int:
@@ -161,6 +164,56 @@ def _looks_built(html: str) -> bool:
     return not re.search(r"""<script[^>]+src=["']/?src/[^"']+\.(tsx?|jsx)["']""", html, re.I)
 
 
+MIN_GUESSED_DESCRIPTION = 20
+README_NAMES = ("README.md", "readme.md", "Readme.md", "README.markdown", "README")
+MAX_README_BYTES = 64 * 1024
+
+
+def _meta_description(html_text: str) -> str | None:
+    """The game's own <meta name="description"> (or og:description) from its index.html."""
+    found: dict[str, str] = {}
+    for tag in re.findall(r"<meta\b[^>]*>", html_text, re.I):
+        key = re.search(r"""(?:name|property)\s*=\s*["'](description|og:description)["']""", tag, re.I)
+        content = re.search(r"""content\s*=\s*(?:"([^"]*)"|'([^']*)')""", tag, re.I)
+        if key and content:
+            found.setdefault(key.group(1).lower(), html.unescape(content.group(1) or content.group(2) or ""))
+    for key in ("description", "og:description"):
+        text = clean_description(found.get(key, ""))
+        if text and len(text) >= MIN_GUESSED_DESCRIPTION:
+            return text
+    return None
+
+
+def _readme_description(readme: str) -> str | None:
+    """The first real paragraph of a README: not a heading, badge, picture or HTML."""
+    paragraph: list[str] = []
+    for line in readme.splitlines():
+        line = line.strip()
+        skip = not line or line.startswith(("#", "![", "[![", "<", "```", "|", "---", "===", ">"))
+        if skip:
+            if paragraph:
+                break
+            continue
+        paragraph.append(line)
+    text = " ".join(paragraph)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # [text](link) -> text
+    text = re.sub(r"[*_`]+", "", text)
+    text = clean_description(text)
+    return text if text and len(text) >= MIN_GUESSED_DESCRIPTION else None
+
+
+def _guess_description(files: list["GameFile"], readme: bytes | None) -> str | None:
+    """For a game with no description in startng.json: the one in its own page, then its README."""
+    index = next((f for f in files if f.path == "index.html"), None)
+    if index:
+        text = _meta_description(index.data.decode("utf-8", "replace"))
+        if text:
+            return text
+    if readme:
+        return _readme_description(readme.decode("utf-8", "replace"))
+    return None
+
+
 def read_game(archive: bytes) -> GameBundle:
     """Find the ready-to-play game in a repo zip and check it."""
     try:
@@ -204,6 +257,13 @@ def read_game(archive: bytes) -> GameBundle:
         if count > MAX_FILES:
             errors.append(Problem("too_many_files", f"The game has more than {MAX_FILES} files"))
 
+        readme = None
+        for candidate in ([f"{prefix}{n}" for n in README_NAMES] if prefix else []) + list(README_NAMES):
+            info = entries.get(candidate)
+            if info and info.file_size <= MAX_README_BYTES:
+                readme = zf.read(info)
+                break
+
         for candidate in ([f"{prefix}{MANIFEST}"] if prefix else []) + [MANIFEST]:
             info = entries.get(candidate)
             if info and info.file_size <= MAX_MANIFEST_BYTES:
@@ -213,10 +273,14 @@ def read_game(archive: bytes) -> GameBundle:
     if bundle.manifest is not None:
         try:
             bundle.leaderboard = parse_manifest(bundle.manifest)
+            bundle.description = parse_description(bundle.manifest)
         except SchemaError as err:
             errors.append(Problem("bad_startng_json", f"startng.json: {err}", MANIFEST))
+    bundle.description = bundle.description or _guess_description(bundle.files, readme)
     found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])
     errors += found
+    if settings.enforce_game_standards:
+        errors += standards([(f.path, f.data) for f in bundle.files])
     if errors:
         raise GameRejected(errors, bundle.warnings)
     return bundle

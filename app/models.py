@@ -50,6 +50,8 @@ class Game(Base):
     update_problem: Mapped[dict | None] = mapped_column(JSON)
     # The game's own leaderboard stats from its startng.json (app/leaderboard.py); None = plain score
     leaderboard: Mapped[list | None] = mapped_column(JSON)
+    # One line about the game from its startng.json, shown on its page at start.ng/games/<name> (None: the page writes one)
+    description: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

@@ -98,6 +98,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
 
     game.repo_url, game.branch = repo.url, repo.branch
     game.leaderboard = bundle.leaderboard
+    game.description = bundle.description
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
@@ -327,6 +328,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
         cover_url=_cover_url(g),
+        description=g.description,
         leaderboard=_board_columns(g),
     )
 

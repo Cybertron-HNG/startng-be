@@ -110,6 +110,15 @@ def list_indie_games(
     return [_out(g, user, plays.get(g.id, 0)) for g in games[:limit]]
 
 
+@router.get("/{game_id}", response_model=IndieGameOut)
+def get_indie_game(game_id: int, user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    """One game, for its page on start.ng (start.ng/creators/<id>-<name>)."""
+    game = db.scalar(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).where(IndieGame.id == game_id))
+    if not game:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that id")
+    return _out(game, user, _recent_plays(db).get(game.id, 0))
+
+
 @router.post("/{game_id}/plays", status_code=status.HTTP_204_NO_CONTENT)
 def count_indie_play(game_id: int, request: Request, db: Session = Depends(get_db)):
     """start.ng calls this when someone opens the game, to rank the most clicked. No sign-in needed."""

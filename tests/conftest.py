@@ -10,3 +10,5 @@ def test_settings(monkeypatch):
     monkeypatch.setattr(settings, "site_url", "https://start.ng")
     monkeypatch.setattr(settings, "games_base_domain", "start.ng")
     monkeypatch.setattr(settings, "github_token", "")
+    # The game standards have their own tests (test_standards.py); the rest use small games that skip them.
+    monkeypatch.setattr(settings, "enforce_game_standards", False)
