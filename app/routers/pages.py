@@ -33,7 +33,7 @@ SEO_BLOCK = re.compile(r"<!--seo-->[\s\S]*?<!--/seo-->")
 ROOT = '<div id="root"></div>'
 SHARE_IMAGE = "/hangout-cover.jpg"  # used when a game has no cover
 SHELL_SECONDS = 300
-FIXED_PAGES = ["/", "/games", "/creators", "/hangout", "/docs"]
+FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs"]
 
 _shell: tuple[float, str] | None = None
 
