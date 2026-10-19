@@ -18,11 +18,11 @@ from datetime import timezone
 import requests
 from fastapi import APIRouter, Depends, Path, Response
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, selectinload
 
 from ..config import settings
 from ..db import get_db
-from ..models import Game
+from ..models import Game, IndieGame
 from ..storage import game_url
 from .games import _cover_url, _player_name
 
@@ -61,6 +61,17 @@ def _get_shell() -> str | None:
 
 def _title(name: str) -> str:
     return " ".join(w.capitalize() for w in name.split("-"))
+
+
+def slugify(name: str) -> str:
+    """Words for an address: "Moon Garden!" -> "moon-garden". Same as the website's (src/GamePage.tsx)."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40].strip("-")
+
+
+def indie_path(game: IndieGame) -> str:
+    """start.ng/creators/<id>-<name>: the id finds the game, the name is for people and search."""
+    slug = slugify(game.name)
+    return f"/creators/{game.id}-{slug}" if slug else f"/creators/{game.id}"
 
 
 def _esc(s: str) -> str:
@@ -132,6 +143,45 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
+@router.get("/creators/{game_id}", response_class=Response)
+def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depends(get_db)):
+    """The page of a game by an independent creator (hosted outside start.ng), like game_page above."""
+    shell = _get_shell()
+    if shell is None:
+        return Response("The page isn't available right now", status_code=503, media_type="text/plain")
+
+    game = db.scalar(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).where(IndieGame.id == game_id))
+    if not game:
+        body = "<main><h1>Game not found</h1><p>There's no game with that address on start.ng.</p><p><a href=\"/creators\">Browse games by independent creators</a></p></main>"
+        page = _page(shell, title="Game not found · start.ng", description="There's no game with that address on start.ng. Browse the games instead.",
+                     path=f"/creators/{game_id}", image=_site() + SHARE_IMAGE, body=body, noindex=True)
+        return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+    by = _player_name(game.owner, "an independent creator")
+    description = game.description
+    image = f"{settings.api_url.rstrip('/')}/indie/{game.id}/cover.webp"
+    path = indie_path(game)
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": game.name,
+        "description": description,
+        "url": f"{_site()}{path}",
+        "image": image,
+        "author": {"@type": "Person", "name": by},
+        "gamePlatform": "Web browser",
+        "applicationCategory": "Game",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    }
+    extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+    body = (
+        f"<main><h1>{_esc(game.name)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}, an independent creator</p>"
+        f'<p><a href="/creators">All games by independent creators</a></p></main>'
+    )
+    page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
+    return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+
 @router.get("/sitemap.xml", response_class=Response)
 def sitemap(db: Session = Depends(get_db)):
     site = _site()
@@ -140,5 +190,7 @@ def sitemap(db: Session = Depends(get_db)):
         when = (updated.replace(tzinfo=updated.tzinfo or timezone.utc)).date().isoformat() if updated else None
         lastmod = f"<lastmod>{when}</lastmod>" if when else ""
         urls.append(f"  <url><loc>{_esc(f'{site}/games/{name}')}</loc>{lastmod}</url>")
+    for game in db.scalars(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).order_by(IndieGame.id)):
+        urls.append(f"  <url><loc>{_esc(site + indie_path(game))}</loc></url>")
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
     return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})

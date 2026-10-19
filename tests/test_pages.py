@@ -108,3 +108,75 @@ def test_publishing_saves_the_description_and_it_reaches_the_api(env):
     archives["zip"] = make_zip(GAME)
     client.post("/games/publish", json={"repo_url": "https://github.com/ada/Lane-Dash"}, headers=tokens["ada"])
     assert client.get("/games").json()[0]["description"] is None
+
+
+def test_description_is_found_when_the_builder_didnt_write_one(env):
+    from tests.test_publish import GAME, make_zip
+
+    client, _, tokens, archives = env
+    repo = {"repo_url": "https://github.com/ada/Lane-Dash"}
+
+    # 1. the game's own <meta name="description">
+    page = '<!doctype html><meta content="Dodge the lava, climb the tower &amp; beat your friends." name="description"><script type="module" src="src/game.js"></script>'
+    archives["zip"] = make_zip({**GAME, "index.html": page})
+    assert client.post("/games/publish", json=repo, headers=tokens["ada"]).status_code == 200
+    assert client.get("/games").json()[0]["description"] == "Dodge the lava, climb the tower & beat your friends."
+
+    # 2. otherwise the README's first real paragraph (not the title, badges or pictures)
+    readme = "# Lane Dash\n\n![shot](shot.png)\n[![build](b.svg)](x)\n\nA **fast** runner: [dodge](https://x.y) the lava.\nIt gets harder.\n\n## Play\nOpen it.\n"
+    archives["zip"] = make_zip({**GAME, "README.md": readme})
+    client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert client.get("/games").json()[0]["description"] == "A fast runner: dodge the lava. It gets harder."
+
+    # 3. startng.json always wins over both
+    archives["zip"] = make_zip({**GAME, "README.md": readme, "startng.json": json.dumps({"description": "From startng.json, written by the builder."})})
+    client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert client.get("/games").json()[0]["description"] == "From startng.json, written by the builder."
+
+    # 4. nothing to go on: no description (the page writes a simple line)
+    archives["zip"] = make_zip(GAME)
+    client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert client.get("/games").json()[0]["description"] is None
+
+
+def add_indie(name="Moon Garden", description="Grow glowing plants on the moon before the sun comes up."):
+    from app.db import get_db
+    from app.main import app
+    from app.models import IndieGame
+
+    db = next(app.dependency_overrides[get_db]())
+    game = IndieGame(owner_id=1, name=name, url=f"https://ada.itch.io/{name.lower().replace(' ', '-')}", description=description, cover=b"x")
+    db.add(game)
+    db.commit()
+    return game.id
+
+
+def test_indie_game_page_is_rendered_for_crawlers(env):
+    client, *_ = env
+    game_id = add_indie(description="Grow plants <i>fast</i> & win.")
+    res = client.get(f"/pages/creators/{game_id}")
+    assert res.status_code == 200
+    text = res.text
+    assert "<title>Moon Garden · Play free on start.ng</title>" in text
+    assert f'rel="canonical" href="https://start.ng/creators/{game_id}-moon-garden"' in text
+    assert f'content="https://api.start.ng/indie/{game_id}/cover.webp"' in text
+    assert "Grow plants &lt;i&gt;fast&lt;/i&gt; &amp; win." in text and "<i>fast</i>" not in text
+    assert "an independent creator" in text and '"@type": "VideoGame"' in text
+    assert "/assets/app.js" in text
+
+
+def test_unknown_indie_game_is_a_404(env):
+    client, *_ = env
+    res = client.get("/pages/creators/999")
+    assert res.status_code == 404 and "noindex" in res.text
+    assert client.get("/pages/creators/abc").status_code == 422
+
+
+def test_one_indie_game_as_json_and_in_the_sitemap(env):
+    client, _, tokens, _ = env
+    game_id = add_indie()
+    one = client.get(f"/indie/{game_id}", headers=tokens["ada"]).json()
+    assert (one["name"], one["by"], one["mine"]) == ("Moon Garden", "Ada", True)
+    assert client.get(f"/indie/{game_id}").json()["mine"] is False
+    assert client.get("/indie/999").status_code == 404
+    assert f"<loc>https://start.ng/creators/{game_id}-moon-garden</loc>" in client.get("/pages/sitemap.xml").text
