@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 import requests
 
 from . import storage
-from .checks import Problem, inspect
+from .checks import Problem, inspect, standards
+from .config import settings
 from .leaderboard import SchemaError, clean_description, parse_description, parse_manifest
 
 MAX_NAME = 40  # the games table's limit; app.storage applies the Worker's name rules
@@ -278,6 +279,8 @@ def read_game(archive: bytes) -> GameBundle:
     bundle.description = bundle.description or _guess_description(bundle.files, readme)
     found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])
     errors += found
+    if settings.enforce_game_standards:
+        errors += standards([(f.path, f.data) for f in bundle.files])
     if errors:
         raise GameRejected(errors, bundle.warnings)
     return bundle
