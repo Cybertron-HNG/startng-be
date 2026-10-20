@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+      - prod
+      - staging
+      - dev
+  path_instructions:
+    - path: app/**
+      instructions: >
+        FastAPI + SQLAlchemy 2. Flag endpoints missing auth checks, unvalidated input,
+        queries not scoped to the current user, password hashes or secrets in responses,
+        blocking calls inside async routes, and N+1 queries.
+    - path: alembic/**
+      instructions: >
+        Migrations must be reversible, safe on existing data, and match the models.
+    - path: tests/**
+      instructions: >
+        Flag tests that hit the network or real services; tests should use the in-memory SQLite setup.
+    - path: .github/workflows/**
+      instructions: >
+        Actions must be pinned to a full commit SHA, use least-privilege `permissions`,
+        and never interpolate untrusted `github.event.*` values directly into `run:` scripts.
+    - path: Dockerfile
+      instructions: >
+        The malware-scan stage must stay before dependencies are installed. Flag anything that weakens it.
+chat:
+  auto_reply: true
