@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, object_session
 
 from .. import auto_update, covers, events, manifest, tournaments
 from ..activity import record
+from ..features.moderation import service as moderation
 from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
@@ -72,10 +73,30 @@ def _download_and_check(repo: Repo) -> GameBundle:
         raise ApiError.rejected(err)
 
 
+def _word_problems(db: Session, name: str, created: bool, bundle: GameBundle) -> list[Problem]:
+    """The name filter (app/features/moderation), while it's on: a new game's name, and the description in its
+    startng.json. Live games keep their names (admins see any that fail in the Name filter tab). A description
+    start.ng found by itself (in the page or README) is just left out when it fails."""
+    if not moderation.enforcing():
+        return []
+    problems = []
+    if created and moderation.check_text(name.replace("-", " "), db):
+        problems.append(Problem("text_not_allowed", f"The name \"{name}\" has a word that isn't allowed on start.ng. Pick another name."))
+    if moderation.check_text(bundle.description, db):
+        if "description" in bundle.sections:
+            problems.append(Problem("text_not_allowed", "The description in startng.json has a word that isn't allowed on start.ng. Please change it.", "startng.json"))
+        else:
+            bundle.description = None
+    return problems
+
+
 def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner_id: int, repo: Repo, bundle: GameBundle,
               auto: bool = False) -> PublishOut:
     """Uploads a checked game under its name and records it, owned by owner_id. auto: start.ng's own update check."""
     created = game is None
+    problems = _word_problems(db, name, created, bundle)
+    if problems:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, problems[0].code, problems[0].message, problems, bundle.warnings)
     if created:
         game = Game(name=name, owner_id=owner_id, repo_url=repo.url, branch=repo.branch)
         db.add(game)
@@ -276,6 +297,7 @@ def check_game(
         bundle = read_game(download_repo(repo))
     except PublishError as err:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, err.code, str(err), errors + err.errors, err.warnings)
+    errors += _word_problems(db, name, linked is None and db.get(Game, name) is None, bundle)
     if errors:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, errors[0].code, errors[0].message, errors, bundle.warnings)
     return CheckOut(
