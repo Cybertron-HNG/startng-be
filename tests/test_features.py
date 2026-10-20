@@ -137,3 +137,34 @@ def test_the_built_in_sections_behave_as_before():
         manifest.parse_sections(b"not json")
     with pytest.raises(SchemaError):
         manifest.parse_sections(b'{"leaderboard": {"stats": []}}')
+
+
+# ---- hiding games from a feature
+
+
+def test_a_feature_can_hide_a_game_with_its_own_reason():
+    from app.models import Game
+
+    class Store:
+        offline = set()
+
+        def set_hidden(self, name, hidden):
+            (self.offline.add if hidden else self.offline.discard)(name)
+
+    class FakeDb:
+        def commit(self):
+            pass
+
+    admin.register_hide_reason("phase0_reason")
+    assert admin.HIDE_REASONS.index("phase0_reason") == admin.HIDE_REASONS.index(admin.FLAGGED) - 1
+    game, store = Game(name="g1"), Store()
+    try:
+        admin.hide(game, admin.REPORTED)
+        admin.hide(game, "phase0_reason")  # stronger than a report
+        assert game.hidden == "phase0_reason"
+        admin.hide(game, admin.REPORTED)  # a weaker reason doesn't replace it
+        assert game.hidden == "phase0_reason"
+        admin.show_game(FakeDb(), store, game)
+        assert game.hidden is None and store.offline == set()
+    finally:
+        admin.HIDE_REASONS.remove("phase0_reason")
