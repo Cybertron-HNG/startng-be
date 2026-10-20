@@ -2,10 +2,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import auto_update
+from . import auto_update, features, flags
 from .config import settings
 from .errors import ApiError, api_error_handler
 from .routers import admin, auth, favorites, games, indie, live, pages, tournaments
@@ -44,6 +44,17 @@ app.include_router(favorites.router)
 app.include_router(pages.router)
 app.include_router(tournaments.router)
 app.include_router(admin.router)
+
+# Features (app/features): each one's routes answer 404 until its flag is on (FEATURES, app/flags.py).
+for feature in features.load():
+    if feature.router is not None:
+        app.include_router(feature.router, dependencies=[Depends(flags.require(feature.NAME))])
+
+
+@app.get("/features")
+def enabled_features():
+    """The feature flags that are on, so the website can hide what's off. ["*"] means all of them."""
+    return sorted(flags.enabled_features())
 
 
 @app.get("/health")

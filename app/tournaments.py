@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import leaderboard as boards
+from . import events
 from .activity import record as log_activity
 from .config import settings
 from .models import Game, Score, Tournament, TournamentEntry, TournamentGame, TournamentPoints, TournamentScore, User
@@ -304,6 +305,8 @@ def settle(db: Session, t: Tournament, at: datetime | None = None) -> None:
         db.commit()
     except IntegrityError:  # settled by another request at the same moment
         db.rollback()
+        return
+    events.publish("tournament_finished", {"tournament_id": t.id, "winner_id": t.winner_id, "players": len(res.standings)})
 
 
 def settle_due(db: Session, at: datetime | None = None) -> None:

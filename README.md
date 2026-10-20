@@ -35,6 +35,25 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
   `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
 
+## Building a feature (start here)
+Every new feature lives in its own folder with one owner, so nobody edits the same files (the PRD, section 3).
+1. Copy `app/features/_template` to `app/features/<feature>/` and rename things. It has `router.py`, `models.py`,
+   `schemas.py`, `service.py` and `tests/`, with comments.
+2. Add **one line** to `FEATURES` in `app/features/__init__.py`. That's the only shared edit:
+   - `main.py` mounts your router behind your flag;
+   - alembic sees your tables;
+   - the admin page offers your `PERMISSIONS`.
+3. **Flags:** your routes answer 404 until your `NAME` is in `FEATURES` (env, comma separated; `*` turns everything
+   on locally). `GET /features` lists what's on, for the website.
+4. **Events** (`app/events.py`): `events.publish(name, payload)` after you commit, and `@events.subscribe(name)` to
+   react. Every event and its payload is listed in `EVENTS`; add yours there. Handlers that fail are logged, never
+   raised. Published today: `game_published`, `game_updated` (`auto` = from a push), `tournament_finished`.
+5. **startng.json** (`app/manifest.py`): `manifest.register_section("category", parse, apply)`. `parse` checks your
+   key (raise `SchemaError` to refuse the publish), and `apply(db, game, value)` saves it when the game goes live.
+6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
+7. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+   `pytest` with the rest.
+
 ## Admin page and reports
 `app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
 - **Who:** super admins are `SUPER_ADMIN_EMAILS` (every permission; only they add admins and make roles). Other admins

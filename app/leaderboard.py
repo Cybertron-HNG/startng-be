@@ -40,7 +40,11 @@ def parse_manifest(raw: bytes) -> list[dict] | None:
         raise SchemaError("startng.json isn't valid JSON") from err
     if not isinstance(data, dict) or "leaderboard" not in data:
         return None
-    board = data["leaderboard"]
+    return parse_leaderboard(data["leaderboard"])
+
+
+def parse_leaderboard(board) -> list[dict]:
+    """The "leaderboard" section of a startng.json (app/manifest.py), checked."""
     stats = board.get("stats") if isinstance(board, dict) else None
     if not isinstance(stats, list) or not 1 <= len(stats) <= MAX_STATS:
         raise SchemaError(f"leaderboard.stats must list 1 to {MAX_STATS} stats")

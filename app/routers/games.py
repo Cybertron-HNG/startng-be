@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import auto_update, covers, tournaments
+from .. import auto_update, covers, events, manifest, tournaments
 from ..activity import record
 from ..config import settings
 from ..db import get_db
@@ -103,6 +103,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.description = bundle.description
     # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
     game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
+    manifest.apply_sections(db, game, bundle.sections)  # features' own startng.json sections (app/manifest.py)
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
@@ -113,6 +114,10 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     else:
         record(db, db.get(User, owner_id), "developer", "game.published" if created else "game.updated", name)
     db.commit()
+    if created:
+        events.publish("game_published", {"game": name, "owner_id": owner_id})
+    else:
+        events.publish("game_updated", {"game": name, "owner_id": owner_id, "auto": auto})
     return PublishOut(
         name=name,
         url=game_url(name),
