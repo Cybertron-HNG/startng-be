@@ -15,8 +15,6 @@ reviews:
       - prod
       - staging
       - dev
-  path_filters:
-    - '!alembic/versions/**'
   path_instructions:
     - path: app/**
       instructions: >
