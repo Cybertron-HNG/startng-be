@@ -1,5 +1,4 @@
 """The admin page's API (start.ng/admin), and players reporting games. Who can do what: app/admin.py."""
-import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -41,25 +40,12 @@ def _report_out(r: GameReport) -> ReportOut:
                      closed_at=r.closed_at, closed_by=r.closed_by, note=r.note)
 
 
-log = logging.getLogger(__name__)
-
-
 def _offline(store: GameStore | None, name: str, hidden: bool) -> None:
-    """Take a game's own address offline (the Worker shows an error page) or back online. Without game storage
-    (local testing) there's nothing to change."""
-    if store is None:
-        return
-    try:
-        store.set_hidden(name, hidden)
-    except Exception:  # the database is the record; a storage hiccup shouldn't undo an admin's decision
-        log.exception("Couldn't %s %s", "take offline" if hidden else "put back online", name)
+    adm.set_offline(store, name, hidden)
 
 
 def _hide(db: Session, store: GameStore | None, game: Game, why: str) -> None:
-    adm.hide(game, why)
-    db.commit()
-    _offline(store, game.name, True)
-    tournaments.replace_hidden(db, game.name)
+    adm.hide_game(db, store, game, why)
 
 
 # ---- players: reporting a game

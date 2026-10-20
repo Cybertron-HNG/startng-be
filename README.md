@@ -51,7 +51,9 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 5. **startng.json** (`app/manifest.py`): `manifest.register_section("category", parse, apply)`. `parse` checks your
    key (raise `SchemaError` to refuse the publish), and `apply(db, game, value)` saves it when the game goes live.
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
-7. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
+   pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
+8. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Admin page and reports
