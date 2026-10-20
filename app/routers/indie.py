@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
 from .. import covers
+from ..activity import record
 from ..db import get_db
 from ..errors import ApiError
 from ..models import IndieGame, IndiePlay, User
@@ -151,6 +152,7 @@ def submit_indie_game(
     cover = _cover(body.cover)
     game = IndieGame(owner_id=user.id, name=name, url=url, description=description, cover=cover)
     db.add(game)
+    record(db, user, "developer", "indie.added", name, url=url)
     try:
         db.commit()
     except IntegrityError:  # someone listed the same link between the check above and now
@@ -180,4 +182,5 @@ def remove_indie_game(game_id: int, user: User = Depends(current_user), db: Sess
     if game.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the creator who added it can remove it")
     db.delete(game)
+    record(db, user, "developer", "indie.removed", game.name)
     db.commit()

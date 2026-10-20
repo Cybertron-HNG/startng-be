@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import leaderboard as boards
+from .activity import record as log_activity
 from .config import settings
 from .models import Game, Score, Tournament, TournamentEntry, TournamentGame, TournamentPoints, TournamentScore, User
 
@@ -73,6 +74,7 @@ def eligible_games(db: Session) -> list[str]:
     rows = db.scalars(
         select(Game.name)
         .where(Game.meets_standards.is_not(False))
+        .where(Game.hidden.is_(None))  # reported, flagged or blocked (app/admin.py)
         .where(Game.leaderboard.is_not(None) | has_scores)
         .order_by(Game.name)
     ).all()
@@ -118,6 +120,7 @@ def current(db: Session, at: datetime | None = None) -> Tournament | None:
         return None
     t = Tournament(starts_at=starts_at, ends_at=ends_at, games=[TournamentGame(game_name=g, position=i) for i, g in enumerate(games)])
     db.add(t)
+    log_activity(db, None, "system", "tournament.created", starts_at.date().isoformat(), games=games)
     try:
         db.commit()
     except IntegrityError:  # another request made it first: use theirs
@@ -126,11 +129,67 @@ def current(db: Session, at: datetime | None = None) -> Tournament | None:
     return t
 
 
+def ahead(db: Session, at: datetime | None = None) -> list[Tournament]:
+    """For admins: the current tournament and the one after it, made now if they don't exist yet, so admins see
+    (and can change) the games before players do. Nothing changes for players: the next one stays out of sight
+    until it starts. Fewer games than settings.tournament_min_games: what could be made."""
+    at = at or now()
+    out = []
+    t = current(db, at)
+    if t:
+        out.append(t)
+    next_start, next_end = window(window(at)[1])
+    nxt = db.scalar(select(Tournament).where(Tournament.starts_at == next_start))
+    if nxt is None:
+        games = pick_games(db, next_start)
+        if len(games) >= settings.tournament_min_games:
+            nxt = Tournament(starts_at=next_start, ends_at=next_end,
+                             games=[TournamentGame(game_name=g, position=i) for i, g in enumerate(games)])
+            db.add(nxt)
+            log_activity(db, None, "system", "tournament.created", next_start.date().isoformat(), games=games)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                nxt = db.scalar(select(Tournament).where(Tournament.starts_at == next_start))
+    if nxt:
+        out.append(nxt)
+    return out
+
+
+def started(t: Tournament, at: datetime | None = None) -> bool:
+    return utc(t.starts_at) <= (at or now())
+
+
+def set_games(db: Session, t: Tournament, names: list[str]) -> None:
+    """Replace the games of a tournament that hasn't started (an admin chose them). The caller checks them."""
+    t.games.clear()
+    db.flush()
+    t.games.extend(TournamentGame(game_name=g, position=i) for i, g in enumerate(names))
+    db.commit()
+
+
+def replace_hidden(db: Session, game_name: str, at: datetime | None = None) -> None:
+    """A game was hidden (app/admin.py). Tournaments that haven't started get another game in its place. The one that's
+    running drops it: it's no longer shown, its runs no longer count, and it gives no points (no new game joins halfway
+    through the day, so everyone plays the same games). Finished tournaments keep their results."""
+    at = at or now()
+    for t in db.scalars(select(Tournament).join(TournamentGame).where(
+        TournamentGame.game_name == game_name, Tournament.finished_at.is_(None),
+    )).all():
+        names = [tg.game_name for tg in t.games if tg.game_name != game_name]
+        if utc(t.starts_at) > at:
+            spare = [g for g in pick_games(db, utc(t.starts_at)) if g not in names]
+            names += spare[:1]
+        set_games(db, t, names)
+
+
 def enter(db: Session, t: Tournament, user: User) -> None:
     """Enter a player (they shared the tournament). Entering twice is fine."""
     if db.scalar(select(TournamentEntry.id).where(TournamentEntry.tournament_id == t.id, TournamentEntry.user_id == user.id)):
         return
     db.add(TournamentEntry(tournament_id=t.id, user_id=user.id))
+    log_activity(db, user, "player", "tournament.entered", utc(t.starts_at).date().isoformat())
     try:
         db.commit()
     except IntegrityError:
@@ -239,6 +298,8 @@ def settle(db: Session, t: Tournament, at: datetime | None = None) -> None:
         db.add(TournamentPoints(tournament_id=t.id, user_id=st.user.id, points=st.points, firsts=st.firsts, place=st.place))
     t.winner_id = res.standings[0].user.id if res.standings else None
     t.finished_at = at or now()
+    log_activity(db, None, "system", "tournament.finished", utc(t.starts_at).date().isoformat(),
+           winner=res.standings[0].user.email if res.standings else None, players=len(res.standings))
     try:
         db.commit()
     except IntegrityError:  # settled by another request at the same moment

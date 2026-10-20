@@ -59,6 +59,7 @@ def _out(db: Session, t: Tournament, user: User | None) -> TournamentOut:
         standings=[_standing(st) for st in res.standings[:TOP_STANDINGS]],
         me=_standing(mine) if mine else None,
         winner=_standing(res.standings[0]) if finished and res.standings else None,
+        next_starts_at=tournaments.window(tournaments.utc(t.ends_at))[0],
     )
 
 

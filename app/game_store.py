@@ -18,6 +18,7 @@ class GameStore(Protocol):
     def put_file(self, game: str, path: str, data: bytes, content_type: str) -> None: ...
     def delete_file(self, game: str, path: str) -> None: ...
     def delete_game(self, game: str) -> None: ...
+    def set_hidden(self, game: str, hidden: bool) -> None: ...  # take the game offline (the Worker shows an error page)
 
 
 class R2GameStore:
@@ -35,6 +36,9 @@ class R2GameStore:
 
     def delete_game(self, game: str) -> None:
         storage.delete_game(game)
+
+    def set_hidden(self, game: str, hidden: bool) -> None:
+        storage.set_hidden(game, hidden)
 
 
 class LocalGameStore:
@@ -66,6 +70,15 @@ class LocalGameStore:
 
     def delete_game(self, game: str) -> None:
         shutil.rmtree(self._dir(game), ignore_errors=True)
+        self.set_hidden(game, False)
+
+    def set_hidden(self, game: str, hidden: bool) -> None:
+        marker = self.root / storage.HIDDEN_PREFIX / storage.validate_game_name(game)
+        if hidden:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_bytes(b"")
+        else:
+            marker.unlink(missing_ok=True)
 
 
 def get_game_store() -> GameStore | None:

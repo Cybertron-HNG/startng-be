@@ -147,6 +147,8 @@ class GameOut(BaseModel):
     leaderboard: list[dict] | None = None
     # How many people opened it from start.ng in the last 7 days (the homepage shows the most played)
     plays: int = 0
+    # Only in /games/mine: why it's hidden from start.ng ("reported", "flagged", "blocked"; app/admin.py), or None
+    hidden: str | None = None
 
 
 # Highest score a game can save; anything above is treated as a bad request.
@@ -256,6 +258,8 @@ class TournamentOut(BaseModel):
     standings: list[TournamentStanding]  # the day's points so far (top 20); final once finished
     me: TournamentStanding | None = None  # the signed-in player's own row, when they have points
     winner: TournamentStanding | None = None  # once finished
+    # When the next tournament starts, for the countdown. Its games stay hidden from players until then.
+    next_starts_at: datetime | None = None
 
 
 class TournamentSummary(BaseModel):
@@ -277,3 +281,177 @@ class OverallEntry(BaseModel):
     points: int
     wins: int  # days won
     firsts: int  # tournament games won
+
+
+# ---- Reports and the admin page (app/admin.py, app/routers/admin.py)
+
+# Why a player reports a game, with the words the website shows
+REPORT_REASONS = {
+    "broken": "It's broken or buggy",
+    "obscene": "Obscene or sexual content",
+    "offensive": "Hateful or offensive",
+    "harmful": "Scam, malware or phishing",
+    "stolen": "It copies someone else's game",
+    "other": "Something else",
+}
+ReportReason = Literal["broken", "obscene", "offensive", "harmful", "stolen", "other"]
+
+
+class ReportIn(BaseModel):
+    reason: ReportReason
+    details: str | None = Field(default=None, max_length=1000)  # needed when the reason is "other"
+
+
+class ReportOut(BaseModel):
+    id: int
+    game: str
+    reason: str
+    details: str | None
+    by_admin: bool
+    reporter_id: int | None
+    reporter: str | None  # their name or email, for admins
+    status: str
+    created_at: datetime
+    closed_at: datetime | None
+    closed_by: str | None
+    note: str | None
+
+
+class AdminMe(BaseModel):
+    email: str
+    is_super: bool
+    role: str | None
+    permissions: list[str]
+
+
+class Permission(BaseModel):
+    key: str
+    label: str
+
+
+class RoleIn(BaseModel):
+    name: str = Field(min_length=2, max_length=40)
+    permissions: list[str]
+
+
+class RoleOut(BaseModel):
+    id: int
+    name: str
+    permissions: list[str]
+    admins: int  # how many admins have it
+
+
+class AdminIn(BaseModel):
+    email: EmailStr
+    role_id: int | None = None
+
+
+class AdminRoleIn(BaseModel):
+    role_id: int | None
+
+
+class AdminOut(BaseModel):
+    id: int | None  # None for super admins (from settings, not the table)
+    email: str
+    is_super: bool
+    role_id: int | None
+    role: str | None
+    added_by: str | None
+    created_at: datetime | None
+    signed_up: bool  # they've signed in to start.ng with Google at least once
+
+
+class FlagIn(BaseModel):
+    reason: ReportReason
+    details: str | None = Field(default=None, max_length=1000)
+
+
+class CloseIn(BaseModel):
+    outcome: Literal["approved", "dismissed"]  # approved hides the game
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class RestoreIn(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ContactIn(BaseModel):
+    issue: str = Field(min_length=3, max_length=2000)
+    game_name: str | None = None
+    report_id: int | None = None
+
+
+class ContactOut(BaseModel):
+    id: int
+    issue: str
+    game_name: str | None
+    report_id: int | None
+    admin_email: str
+    created_at: datetime
+
+
+class DeveloperOut(BaseModel):
+    id: int
+    email: str
+    name: str | None
+    blocked_at: datetime | None
+    games: list[str]
+    contacts: list[ContactOut]
+    contacts_needed: int  # contacts before they can be blocked or deleted
+    can_block: bool
+
+
+class GameCard(BaseModel):
+    """A game as the admin page shows it: a card with its picture."""
+    name: str
+    url: str
+    cover_url: str | None
+    by: str
+    description: str | None
+    hidden: str | None  # why it's hidden from start.ng, or None
+
+
+class ReviewGameOut(GameCard):
+    hidden_at: datetime | None
+    developer_id: int
+    developer: str
+    developer_contacts: int
+    open_reports: int  # reports waiting for a decision
+    reports: list[ReportOut]
+
+
+class AdminTournamentOut(BaseModel):
+    id: int
+    starts_at: datetime
+    ends_at: datetime
+    started: bool
+    games: list[GameCard]
+
+
+class TournamentGamesIn(BaseModel):
+    games: list[str]
+
+
+class AdminTournamentsOut(BaseModel):
+    tournaments: list[AdminTournamentOut]  # the current one, then the next
+    eligible: list[GameCard]  # games a tournament can use (they keep a leaderboard, meet the standards, aren't hidden)
+    min_games: int
+    max_games: int
+
+
+class LogOut(BaseModel):
+    id: int
+    actor: str | None  # their email; None for start.ng itself
+    kind: str  # player, developer, admin or system
+    action: str
+    target: str | None
+    detail: dict | None
+    at: datetime
+
+
+class OverviewOut(BaseModel):
+    open_reports: int
+    games_waiting: int  # games with reports waiting for a decision
+    hidden_games: int
+    blocked_developers: int
+    admins: int

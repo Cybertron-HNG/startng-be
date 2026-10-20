@@ -111,7 +111,7 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         return Response("The page isn't available right now", status_code=503, media_type="text/plain")
 
     game = db.get(Game, name)
-    if not game:
+    if not game or game.hidden:  # hidden while admins look at it (app/admin.py)
         body = "<main><h1>Game not found</h1><p>There's no game with that name on start.ng.</p><p><a href=\"/games\">Browse all games</a></p></main>"
         page = _page(shell, title="Game not found · start.ng", description="There's no game with that name on start.ng. Browse the games instead.",
                      path=f"/games/{name}", image=_site() + SHARE_IMAGE, body=body, noindex=True)
@@ -186,7 +186,7 @@ def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depend
 def sitemap(db: Session = Depends(get_db)):
     site = _site()
     urls = [f"  <url><loc>{_esc(site + p)}</loc></url>" for p in FIXED_PAGES]
-    for name, updated in db.execute(select(Game.name, Game.updated_at).order_by(Game.name)):
+    for name, updated in db.execute(select(Game.name, Game.updated_at).where(Game.hidden.is_(None)).order_by(Game.name)):
         when = (updated.replace(tzinfo=updated.tzinfo or timezone.utc)).date().isoformat() if updated else None
         lastmod = f"<lastmod>{when}</lastmod>" if when else ""
         urls.append(f"  <url><loc>{_esc(f'{site}/games/{name}')}</loc>{lastmod}</url>")

@@ -4,7 +4,7 @@ from google.oauth2 import id_token as g_id_token
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..activity import mark_seen
+from ..activity import mark_seen, record
 from ..config import settings
 from ..db import get_db
 from ..models import User
@@ -15,6 +15,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _token_response(user: User) -> TokenOut:
+    if user.blocked_at is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been blocked")
     return TokenOut(access_token=create_token(user.id), user=UserOut.model_validate(user))
 
 
@@ -25,6 +27,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
     user = User(email=email, name=body.name, password_hash=hash_password(body.password))
     db.add(user)
+    record(db, email, "player", "account.created", email, via="email")
     db.commit()
     db.refresh(user)
     return _token_response(user)
@@ -56,6 +59,7 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
     if user is None:
         user = User(email=email, name=info.get("name"), google_sub=info["sub"])
         db.add(user)
+        record(db, email, "player", "account.created", email, via="google")
     elif not user.google_sub:
         user.google_sub = info["sub"]
     db.commit()
