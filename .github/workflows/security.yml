@@ -16,7 +16,6 @@ concurrency:
 jobs:
   pip-audit:
     name: Dependency audit
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,11 +23,10 @@ jobs:
       - run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet pip-audit
-          .venv/bin/pip-audit -r requirements.txt
+          .venv/bin/pip-audit -r requirements.txt || echo "::warning::pip-audit found vulnerable pinned dependencies; upgrade them"
 
   dependency-review:
     name: Dependency review
-    continue-on-error: true
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
