@@ -134,7 +134,7 @@ def list_games() -> list[str]:
         Bucket=settings.r2_bucket, Delimiter="/"
     ):
         names += [p["Prefix"].rstrip("/") for p in page.get("CommonPrefixes", [])]
-    return names
+    return [n for n in names if not n.startswith("_")]  # _hidden/ holds markers, not a game
 
 
 def delete_game(game: str) -> int:
@@ -148,7 +148,21 @@ def delete_game(game: str) -> int:
         if keys:
             _client().delete_objects(Bucket=settings.r2_bucket, Delete={"Objects": list(keys)})
             removed += len(keys)
+    _client().delete_object(Bucket=settings.r2_bucket, Key=HIDDEN_PREFIX + game.strip().lower())  # its marker, if hidden
     return removed
+
+
+# A hidden game (app/admin.py) has an empty object at _hidden/<name>; the Worker then serves an error page instead of
+# the game. It sits outside every game's folder, so no game can write or serve it ("_" can't start a game name).
+HIDDEN_PREFIX = "_hidden/"
+
+
+def set_hidden(game: str, hidden: bool) -> None:
+    key = HIDDEN_PREFIX + validate_game_name(game)
+    if hidden:
+        _client().put_object(Bucket=settings.r2_bucket, Key=key, Body=b"", ContentType="text/plain")
+    else:
+        _client().delete_object(Bucket=settings.r2_bucket, Key=key)
 
 
 def delete_file(game: str, path: str) -> None:

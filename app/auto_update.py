@@ -33,6 +33,7 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 from .db import SessionLocal
 from .game_store import GameStore, get_game_store
+from .activity import record
 from .models import Game
 from .checks import Problem
 from .publish import PublishError, parse_repo_url
@@ -161,7 +162,7 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
                     downloads += 1
                     try:
                         repo = parse_repo_url(game.repo_url, game.branch)
-                        _put_live(db, store, game, game.name, game.owner_id, repo, _download_and_check(repo))
+                        _put_live(db, store, game, game.name, game.owner_id, repo, _download_and_check(repo), auto=True)
                         summary.updated.append(game.name)
                         republished = True
                         log.info("Updated %s to %s", game.name, found.sha)
@@ -177,6 +178,7 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
                             # The owner sees why in Your games.
                             detail = str(getattr(err, "detail", err))
                             log.warning("Couldn't update %s to %s: %s", game.name, found.sha, detail)
+                            record(db, None, "system", "game.update_failed", game.name, commit=found.sha[:7], detail=detail[:200])
                             game.update_problem = {
                                 "commit": found.sha,
                                 "at": now.isoformat(),

@@ -35,6 +35,30 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
   `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
 
+## Admin page and reports
+`app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
+- **Who:** super admins are `SUPER_ADMIN_EMAILS` (every permission; only they add admins and make roles). Other admins
+  are added by email with a role: a named set of permissions (`GET /admin/permissions` lists them). There's no admin
+  sign-up: admins sign in to start.ng with Google as that email. An account with a password never gets admin access,
+  because registering with a password doesn't prove the email is yours. Non-admins get 404 from every `/admin` call.
+- **Reports:** `POST /games/{name}/report` (signed in) `{reason, details?}` with reason `broken`, `obscene`, `offensive`,
+  `harmful`, `stolen` or `other` (details needed). The game stays up until an admin approves the report
+  (`POST /admin/reports/{id}/close` `{outcome: "approved" | "dismissed"}`); approving hides it (not in `/games`, its page
+  or the sitemap, swapped out of tournaments that haven't started and dropped from the running one, and its own address `<name>.start.ng` shows an
+  error page: the game store writes `_hidden/<name>` and the Worker checks it). One open report per player per game,
+  `REPORTS_PER_DAY` (10) a day. Owners see `hidden` on their games in `/games/mine`.
+- **Admins:** `GET /admin/games/review` (games with reports waiting, then hidden games), `POST /admin/games/{name}/flag`
+  (hides at once), `POST /admin/games/{name}/restore`.
+- **Developers:** admins record each time they reach out (`POST /admin/developers/{id}/contacts`). After
+  `CONTACTS_BEFORE_BLOCK` (3) issues they can block one (`/block`: can't sign in or publish, games hidden; `/unblock`)
+  or delete one with all their games (`DELETE /admin/developers/{id}`). Admins can't be blocked or deleted.
+- **Tournaments:** `GET /admin/tournaments` gives the current tournament and the next one (made ahead of time, so admins
+  see it first) as game cards, and every eligible game. `PUT /admin/tournaments/{id}/games` or `POST .../reroll` change
+  one that hasn't started. Players get `next_starts_at` in `/tournaments/current` for a countdown, not the next games.
+- **Activity:** `GET /admin/log?kind=player|developer|admin|system` is everything that happens on start.ng: accounts
+  made, games published, updated, auto-updated or removed, covers, Creators listings, reports, tournaments made,
+  entered and finished, and every admin action (`app/activity.record`).
+
 ## Daily tournaments
 `app/tournaments.py`. Every day a tournament of 5 random games runs for 24 hours and ends at 18:00 Nigeria time
 (`TOURNAMENT_GAMES`, `TOURNAMENT_MIN_GAMES`, `TOURNAMENT_END_HOUR`, `TOURNAMENT_UTC_OFFSET`).

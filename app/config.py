@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     tournament_min_games: int = 3  # fewer games than this qualify: no tournament that day
     tournament_end_hour: int = 18
     tournament_utc_offset: int = 1
+    # Admin (app/admin.py). Super admins: comma-separated emails, with every permission; they add the other admins.
+    # Admins sign in with Google as that email (there's no admin sign-up).
+    super_admin_emails: str = ""
+    contacts_before_block: int = 3  # issues a developer must have been contacted about before they can be blocked or deleted
+    reports_per_day: int = 10  # reports one player can send in 24 hours
 
 
 settings = Settings()

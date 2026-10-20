@@ -42,7 +42,7 @@ def current_user(
         user = db.get(User, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
         raise unauthorized
-    if user is None:
+    if user is None or user.blocked_at is not None:  # blocked by an admin (app/admin.py)
         raise unauthorized
     return user
 
@@ -85,6 +85,6 @@ def game_player(
         user = db.get(User, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
         raise unauthorized
-    if user is None:
+    if user is None or user.blocked_at is not None:  # blocked by an admin (app/admin.py)
         raise unauthorized
     return user

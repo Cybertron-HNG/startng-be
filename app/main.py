@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import auto_update
 from .config import settings
 from .errors import ApiError, api_error_handler
-from .routers import auth, favorites, games, indie, live, pages, tournaments
+from .routers import admin, auth, favorites, games, indie, live, pages, tournaments
 
 # Show the app's own messages (e.g. "Updated lane-dash to ...") next to uvicorn's.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
@@ -36,12 +36,14 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(admin.reports_router)  # before games.router: POST /games/{name}/report
 app.include_router(games.router)
 app.include_router(live.router)
 app.include_router(indie.router)
 app.include_router(favorites.router)
 app.include_router(pages.router)
 app.include_router(tournaments.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

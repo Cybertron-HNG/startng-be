@@ -22,6 +22,8 @@ class User(Base):
     # When they last used start.ng (updated at most every few minutes). Picks who gets a bench
     # in the Hangout.
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Set when an admin blocks them (app/admin.py): they can't sign in or publish, and their games are hidden.
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 def _now() -> datetime:
@@ -55,6 +57,10 @@ class Game(Base):
     # Whether the live version meets the game standards (app/checks.standards), checked on every publish and
     # update. None = published before the standards existed; such games still take part in tournaments for now.
     meets_standards: Mapped[bool | None] = mapped_column(Boolean)
+    # Hidden from start.ng while admins look at it (app/admin.py): "reported" (a player reported it), "flagged"
+    # (an admin flagged it) or "blocked" (its developer is blocked). None = listed as usual.
+    hidden: Mapped[str | None] = mapped_column(String(20), index=True)
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -234,3 +240,86 @@ class TournamentPoints(Base):
     place: Mapped[int] = mapped_column(Integer)  # their place in the day's standings
 
     user: Mapped[User] = relationship()
+
+
+# ---- Admin (app/admin.py): roles, admins, reports, contacting developers and the activity log
+
+
+class Role(Base):
+    """A named set of admin permissions (app/admin.PERMISSIONS), made by a super admin."""
+
+    __tablename__ = "admin_roles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), unique=True)
+    permissions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Admin(Base):
+    """Someone a super admin added by email. There's no admin sign-up: they sign in with Google as that email
+    and get their role's permissions. Super admins come from settings.super_admin_emails, not this table."""
+
+    __tablename__ = "admins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    role_id: Mapped[int | None] = mapped_column(ForeignKey("admin_roles.id", ondelete="SET NULL"))
+    added_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    role: Mapped[Role | None] = relationship()
+
+
+class GameReport(Base):
+    """A report on a game: from a signed-in player, or a flag from an admin (by_admin). A player's report waits
+    ("open") until an admin approves it, which hides the game, or dismisses it. An admin's flag is approved at once."""
+
+    __tablename__ = "game_reports"
+    __table_args__ = (Index("ix_game_reports_game_status", "game_name", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
+    reporter_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    by_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    reason: Mapped[str] = mapped_column(String(20))
+    details: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[str | None] = mapped_column(String(255))
+    note: Mapped[str | None] = mapped_column(Text)  # what the admin decided
+
+    game: Mapped[Game] = relationship()
+    reporter: Mapped[User | None] = relationship()
+
+
+class DeveloperContact(Base):
+    """An admin reached out to a game's developer about an issue. After settings.contacts_before_block
+    different issues, admins can block or delete the developer."""
+
+    __tablename__ = "developer_contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    developer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    game_name: Mapped[str | None] = mapped_column(String(40))  # kept as text: the game may be deleted later
+    report_id: Mapped[int | None] = mapped_column(ForeignKey("game_reports.id", ondelete="SET NULL"))
+    issue: Mapped[str] = mapped_column(Text)
+    admin_email: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Activity(Base):
+    """Everything that happens on start.ng, for the admin page's activity log (app/activity.record): accounts made,
+    games published and updated, reports, tournaments, and what admins do. kind says who did it: "player",
+    "developer", "admin" or "system" (start.ng itself, e.g. an auto-update)."""
+
+    __tablename__ = "activity"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor: Mapped[str | None] = mapped_column(String(255))  # their email; None for start.ng itself
+    kind: Mapped[str] = mapped_column(String(12), index=True)
+    action: Mapped[str] = mapped_column(String(40))
+    target: Mapped[str | None] = mapped_column(String(255))
+    detail: Mapped[dict | None] = mapped_column(JSON)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
