@@ -11,13 +11,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import auto_update, covers
+from .. import auto_update, covers, tournaments
+from ..activity import record
 from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
 from ..models import Game, GamePlay, PendingGame, Score, User
-from ..checks import Problem
+from ..checks import Problem, standards
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
@@ -71,8 +72,9 @@ def _download_and_check(repo: Repo) -> GameBundle:
         raise ApiError.rejected(err)
 
 
-def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner_id: int, repo: Repo, bundle: GameBundle) -> PublishOut:
-    """Uploads a checked game under its name and records it, owned by owner_id."""
+def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner_id: int, repo: Repo, bundle: GameBundle,
+              auto: bool = False) -> PublishOut:
+    """Uploads a checked game under its name and records it, owned by owner_id. auto: start.ng's own update check."""
     created = game is None
     if created:
         game = Game(name=name, owner_id=owner_id, repo_url=repo.url, branch=repo.branch)
@@ -98,11 +100,18 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
 
     game.repo_url, game.branch = repo.url, repo.branch
     game.leaderboard = bundle.leaderboard
+    game.description = bundle.description
+    # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
+    game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
         game.cover = covers.repo_cover(list(files))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
+    if auto:
+        record(db, None, "system", "game.auto_updated", name, commit=(game.last_commit or "")[:7])
+    else:
+        record(db, db.get(User, owner_id), "developer", "game.published" if created else "game.updated", name)
     db.commit()
     return PublishOut(
         name=name,
@@ -321,12 +330,14 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         checked_at=g.checked_at if owner_view else None,
         live_commit=(g.last_commit or None) and g.last_commit[:7] if owner_view else None,
         updates_paused_until=auto_update.paused_until() if owner_view else None,
+        hidden=g.hidden if owner_view else None,
         name=g.name,
         url=game_url(g.name),
         repo_url=g.repo_url,
         by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
         cover_url=_cover_url(g),
+        description=g.description,
         leaderboard=_board_columns(g),
     )
 
@@ -378,7 +389,7 @@ def _recent_plays(db: Session) -> dict[str, int]:
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)):
     plays = _recent_plays(db)
-    return [_game_out(g, plays=plays.get(g.name, 0)) for g in db.scalars(select(Game).order_by(Game.updated_at.desc())).all()]
+    return [_game_out(g, plays=plays.get(g.name, 0)) for g in db.scalars(select(Game).where(Game.hidden.is_(None)).order_by(Game.updated_at.desc())).all()]
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
@@ -418,6 +429,7 @@ def unpublish(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the game's owner can remove it")
     store.delete_game(name)
     db.delete(game)
+    record(db, user, "developer", "game.removed", name)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -466,6 +478,7 @@ def upload_cover(
         log.exception("Uploading the cover of %s failed", name)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't save the picture, try again")
     game.cover, game.cover_at = covers.COVER_FILE, datetime.now(timezone.utc)
+    record(db, user, "developer", "game.cover_changed", name)
     db.commit()
     return _game_out(game)
 
@@ -483,6 +496,7 @@ def remove_cover(
         store.delete_file(name, covers.COVER_FILE)
         game.cover = covers.repo_cover(store.paths(name))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
+        record(db, user, "developer", "game.cover_removed", name)
         db.commit()
     return _game_out(game)
 
@@ -547,6 +561,7 @@ def submit_score(
         if improved:
             row.best, row.stats = first, stats
             db.commit()
+    tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
     best = boards.stats_of(schema, row.stats, row.best)
     rows = _ranked(db, name, schema)
     rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
@@ -586,5 +601,7 @@ def remove_score(name: str, player_id: int, user: User = Depends(current_user), 
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That player has no score in this game")
     db.delete(row)
+    record(db, user, "developer", "score.removed", name, player_id=player_id)
     db.commit()
+    tournaments.remove_scores(db, name, player_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

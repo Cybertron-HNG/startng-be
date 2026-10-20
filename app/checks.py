@@ -80,6 +80,12 @@ LEAVES = re.compile(
     rb"""\blocation(?:\.href)?\s*=\s*["'`](https?://[^"'`]+)|\blocation\.(?:replace|assign)\(\s*["'`](https?://[^"'`]+)"""
 )
 USES_STARTNG = re.compile(rb"startng:whoami|startng_session|api\.start\.ng|start\.ng/connect")
+# The standards every game on start.ng meets (docs, "Game standards"). They're read from the game's own files, so
+# they can only show the code is there, not that it's on screen: a link back, the name, and a share-on-X link.
+BACK_LINK = re.compile(rb"""https?://(?:www\.)?start\.ng/?(?=["'`\s)<>?#\\]|$)""")  # https://start.ng, not /connect or /games
+BRANDING = re.compile(rb"""(?<![\w./@-])start\.ng(?![\w-])""")  # the name written out, not as part of an address
+SHARE_ON_X = re.compile(rb"""(?:twitter\.com|x\.com)/intent/(?:tweet|post)\b""")
+STANDARDS_DOCS = "https://start.ng/docs#game-standards"
 COVERS = {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"}
 
 
@@ -194,6 +200,28 @@ def inspect(files: list[tuple[str, bytes]]) -> tuple[list[Problem], list[Problem
             "The game doesn't ask start.ng who's playing. Every start.ng game shows the player's character (see the docs)",
         ))
     return _dedupe(errors)[:MAX_PROBLEMS], _dedupe(warnings)[:MAX_PROBLEMS]
+
+
+def standards(files: list[tuple[str, bytes]]) -> list[Problem]:
+    """What's missing from a game's files to meet start.ng's standards (empty when it meets them all)."""
+    code = [data for path, data in files if _extension(path) in SCRIPT]
+    out: list[Problem] = []
+    if not any(BACK_LINK.search(d) for d in code):
+        out.append(Problem(
+            "missing_back_link",
+            f'Game standards: players need a way back to start.ng. Add a link to https://start.ng, for example <a href="https://start.ng">Back to start.ng</a> ({STANDARDS_DOCS})',
+        ))
+    if not any(BRANDING.search(d) for d in code):
+        out.append(Problem(
+            "missing_branding",
+            f'Game standards: show the start.ng name in the game, for example "Play more on start.ng" on its title or end screen ({STANDARDS_DOCS})',
+        ))
+    if not any(SHARE_ON_X.search(d) for d in code):
+        out.append(Problem(
+            "missing_share",
+            f"Game standards: when a round ends, let players share their result on X. Open https://twitter.com/intent/tweet?text=...&url=... from a Share button ({STANDARDS_DOCS})",
+        ))
+    return out
 
 
 def _dedupe(problems: list[Problem]) -> list[Problem]:

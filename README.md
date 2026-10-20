@@ -30,6 +30,50 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
 - `PUT /games/{name}/cover` (owner only): the picture as the raw request body (PNG, JPEG or WebP, up to 2 MB)
   sets the game's card picture; `DELETE /games/{name}/cover` removes it. Both return the game.
   `GET /games` and `/games/mine` give each game's `cover_url` (`null` = no picture)
+- `GET /tournaments/current`: today's tournament (games, live standings, whether you've entered), or `null`
+  when fewer than 3 games qualify. `POST /tournaments/current/enter` (start.ng sign-in, not a game session)
+  enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
+  `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
+
+## Admin page and reports
+`app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
+- **Who:** super admins are `SUPER_ADMIN_EMAILS` (every permission; only they add admins and make roles). Other admins
+  are added by email with a role: a named set of permissions (`GET /admin/permissions` lists them). There's no admin
+  sign-up: admins sign in to start.ng with Google as that email. An account with a password never gets admin access,
+  because registering with a password doesn't prove the email is yours. Non-admins get 404 from every `/admin` call.
+- **Reports:** `POST /games/{name}/report` (signed in) `{reason, details?}` with reason `broken`, `obscene`, `offensive`,
+  `harmful`, `stolen` or `other` (details needed). The game stays up until an admin approves the report
+  (`POST /admin/reports/{id}/close` `{outcome: "approved" | "dismissed"}`); approving hides it (not in `/games`, its page
+  or the sitemap, swapped out of tournaments that haven't started and dropped from the running one, and its own address `<name>.start.ng` shows an
+  error page: the game store writes `_hidden/<name>` and the Worker checks it). One open report per player per game,
+  `REPORTS_PER_DAY` (10) a day. Owners see `hidden` on their games in `/games/mine`.
+- **Admins:** `GET /admin/games/review` (games with reports waiting, then hidden games), `POST /admin/games/{name}/flag`
+  (hides at once), `POST /admin/games/{name}/restore`.
+- **Developers:** admins record each time they reach out (`POST /admin/developers/{id}/contacts`). After
+  `CONTACTS_BEFORE_BLOCK` (3) issues they can block one (`/block`: can't sign in or publish, games hidden; `/unblock`)
+  or delete one with all their games (`DELETE /admin/developers/{id}`). Admins can't be blocked or deleted.
+- **Tournaments:** `GET /admin/tournaments` gives the current tournament and the next one (made ahead of time, so admins
+  see it first) as game cards, and every eligible game. `PUT /admin/tournaments/{id}/games` or `POST .../reroll` change
+  one that hasn't started. Players get `next_starts_at` in `/tournaments/current` for a countdown, not the next games.
+- **Activity:** `GET /admin/log?kind=player|developer|admin|system` is everything that happens on start.ng: accounts
+  made, games published, updated, auto-updated or removed, covers, Creators listings, reports, tournaments made,
+  entered and finished, and every admin action (`app/activity.record`).
+
+## Daily tournaments
+`app/tournaments.py`. Every day a tournament of 5 random games runs for 24 hours and ends at 18:00 Nigeria time
+(`TOURNAMENT_GAMES`, `TOURNAMENT_MIN_GAMES`, `TOURNAMENT_END_HOUR`, `TOURNAMENT_UTC_OFFSET`).
+- **Games:** ones with a leaderboard (a `startng.json`, or saved scores) that don't fail the game standards, never the
+  Hangout, and not ones from the last 3 tournaments while there are enough others. Fewer than 3: no tournament.
+  `games.meets_standards` is saved on every publish and update; games published before the standards (`null`) can
+  still be picked for now.
+- **Automatic:** nothing runs on a timer. The day's tournament is made the first time anyone asks for it, and one
+  that has ended is settled (points saved, winner named) the next time anyone reads tournaments.
+- **Entering:** the website enters players when they share the tournament on X (it can't check the post).
+- **Scores:** games need no changes. While a player has entered, every run sent to `POST /games/{name}/scores` for a
+  tournament game also counts there; only runs inside the 24 hours count, and only the best one per game.
+- **Points:** on each game, 10 / 7 / 5 / 3 for the top four, 1 for everyone else who played it. Most points wins
+  the day; ties go to more first places, then whoever got there first. Points only come from tournaments.
+  The overall leaderboard adds them up, all time or this week (from Monday 00:00 Nigeria time).
 
 ## Keeping games up to date
 - While the server runs it checks each game's branch on GitHub and republishes the game when there's a new commit

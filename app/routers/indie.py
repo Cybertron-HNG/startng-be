@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
 from .. import covers
+from ..activity import record
 from ..db import get_db
 from ..errors import ApiError
 from ..models import IndieGame, IndiePlay, User
@@ -110,6 +111,15 @@ def list_indie_games(
     return [_out(g, user, plays.get(g.id, 0)) for g in games[:limit]]
 
 
+@router.get("/{game_id}", response_model=IndieGameOut)
+def get_indie_game(game_id: int, user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    """One game, for its page on start.ng (start.ng/creators/<id>-<name>)."""
+    game = db.scalar(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).where(IndieGame.id == game_id))
+    if not game:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that id")
+    return _out(game, user, _recent_plays(db).get(game.id, 0))
+
+
 @router.post("/{game_id}/plays", status_code=status.HTTP_204_NO_CONTENT)
 def count_indie_play(game_id: int, request: Request, db: Session = Depends(get_db)):
     """start.ng calls this when someone opens the game, to rank the most clicked. No sign-in needed."""
@@ -142,6 +152,7 @@ def submit_indie_game(
     cover = _cover(body.cover)
     game = IndieGame(owner_id=user.id, name=name, url=url, description=description, cover=cover)
     db.add(game)
+    record(db, user, "developer", "indie.added", name, url=url)
     try:
         db.commit()
     except IntegrityError:  # someone listed the same link between the check above and now
@@ -171,4 +182,5 @@ def remove_indie_game(game_id: int, user: User = Depends(current_user), db: Sess
     if game.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the creator who added it can remove it")
     db.delete(game)
+    record(db, user, "developer", "indie.removed", game.name)
     db.commit()
