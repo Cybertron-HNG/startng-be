@@ -23,17 +23,7 @@ jobs:
       - run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet pip-audit
-          set +e
-          .venv/bin/pip-audit -r requirements.txt -f json -o audit.json
-          code=$?
-          set -e
-          [ "$code" -eq 0 ] && exit 0
-          if python3 -c "import json,sys; d=json.load(open('audit.json')); sys.exit(0 if any(x.get('vulns') for x in d['dependencies']) else 1)"; then
-            echo "::warning::pip-audit found vulnerable pinned dependencies; upgrade them"
-            .venv/bin/pip-audit -r requirements.txt || true
-            exit 0
-          fi
-          exit "$code"
+          .venv/bin/pip-audit -r requirements.txt
 
   dependency-review:
     name: Dependency review
