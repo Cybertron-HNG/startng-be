@@ -33,6 +33,14 @@ PERMISSIONS = {
     "log.view": "See the admin activity log",
 }
 
+def register_permissions(perms: dict[str, str]) -> None:
+    """A feature adds its own admin permissions (key: what it lets an admin do). Keys must be unique."""
+    for key, label in perms.items():
+        if key in PERMISSIONS and PERMISSIONS[key] != label:
+            raise ValueError(f'Admin permission "{key}" is already used by another feature')
+        PERMISSIONS[key] = label
+
+
 # Why a game is hidden (games.hidden)
 REPORTED, FLAGGED, BLOCKED = "reported", "flagged", "blocked"
 
