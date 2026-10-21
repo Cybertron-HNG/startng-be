@@ -53,8 +53,67 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0027`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
+
+## Progress Engine (PRD D1)
+`app/features/progress`; flag `progress` (off by default; with it off, scores behave exactly as before and nothing is logged).
+- **Run log:** with the flag on, every `POST /games/{name}/scores` is logged in `runs` (not only personal bests), the player's
+  day is updated in `activity_days` (Nigeria time), and registered award rules are evaluated. The score response then also
+  carries `unlocked: [{kind, key}]`, the awards that run earned (`[]` when none). Nothing else in the response changes.
+- **Streaks:** consecutive days with a run. A streak stays alive until the end of the day after the last one played.
+  **Freezes:** a streak earns one each time it reaches a multiple of 7 days (up to 2 banked). A missed day spends one
+  automatically and the streak carries on (the frozen day adds nothing); with none left it ends the streak. Worked out
+  from the daily activity each time, so there is nothing to keep in step.
+  **XP:** +10 for the first run of the day, +2 per run, capped at 50 a day. **Level:** `1 + isqrt(xp // 50)`.
+- `GET /me/progress` (signed in): `{runs, distinct_games, current_streak, best_streak, streak_freezes, xp, level, tournament_wins}`.
+  `GET /me/awards` (signed in): `[{kind, key, earned_at}]`, newest first.
+  `GET /players/{id}/progress` (no sign-in): `{runs, distinct_games, current_streak, best_streak, level, tournament_wins}`,
+  never XP or an email. 404 for an unknown player or one whose page is private (the player profile registers a check
+  with `progress.register_visibility(feature, lambda db, user_id: ...)`).
+- **Game opens (C4):** `POST /games/{name}/plays` with a sign-in token also remembers the open in `game_opens`
+  (`first_at`, `last_at`, `count`; read it with `progress.game_open(db, user_id, game)`). Without a token it only counts
+  the play, as before. **The website must send the player's token on that call for opens to be recorded.**
+- **Tournament link:** a run records the daily tournament it counted for (`runs.tournament_id`).
+- **Retention:** runs are kept `RUNS_RETENTION_DAYS` (180); older ones are deleted, at most once an hour per server
+  process. Daily activity, streaks, XP and awards are kept.
+- **Backfill:** players who scored before this existed get one run per game they have a score in, so "tried 5 games"
+  works for them: run `python -m app.features.progress.backfill` once after deploying (safe to repeat). It gives no
+  streak and no XP, because the real days are unknown.
+- **For other features:** `from app.features.progress import service as progress`, then
+  `progress.snapshot(db, user_id)` and `progress.register("wardrobe", [progress.Rule("item", "explorer_cap", lambda snap, run: snap.distinct_games >= 5)])`
+  from your own `rules.py`. A rule gets the player's snapshot (after the run) and the run; awards are unique per
+  (player, kind, key); a rule that raises is logged and skipped. Events: `run_recorded`, `award_unlocked`.
+
+## Score integrity and fast leaderboards (PRD D2)
+`app/features/integrity`; flag `integrity` (off by default; with it off nothing below applies and scores work as before).
+Limits, a rate limit, the leaderboard layer, and outlier flags with a review queue.
+- **Limits:** a game can set `"max"` on a stat in its startng.json (`{"key": "score", "label": "Score", "max": 5000}`, a whole
+  number from 1 to 1,000,000,000). A run with a stat above it is refused with 422 and the code `score_out_of_range`
+  (`{"ok": false, "detail": ..., "errors": [{"code": "score_out_of_range", ...}]}`) and nothing is saved.
+- **Rate limit:** at most `SCORES_PER_MINUTE` (30) scores per player per game in any 60 seconds; over it, 429 with
+  `rate_limited` and a `Retry-After` header. Kept in memory per server process.
+- **Leaderboards:** same ranking as before (first stat, then the next ones, then whoever got there first, then who was saved
+  first) but sorted in the database, so it stays quick with tens of thousands of scores. `GET /games/{name}/leaderboard`
+  keeps its output and is cached for 30 seconds; a new or removed score clears that game's cache at once. The rank in a
+  score response is always worked out fresh.
+- **Outlier flags:** a run is held for review when its first stat is more than `FLAG_PREVIOUS_FACTOR` (3) times the player's
+  previous best (when that was at least `FLAG_MIN_PREVIOUS`, 20), or more than `FLAG_PERCENTILE_FACTOR` (5) times the game's
+  99th percentile (once the game has `FLAG_MIN_PLAYERS`, 20, players). For a lowest-is-best stat the same tests run the other
+  way (a time under a third of their best). A flagged run is **saved in the run log as flagged** but is not the player's best,
+  isn't on the board, doesn't count in a tournament (private ones too), earns no XP or awards, and publishes no event. The
+  answer to the game looks like any other, so nobody can tell it was held back.
+- **Review queue:** the game's owner sees its flags at `GET /games/{name}/flags` (never an email or an admin's note). Admins
+  with the new `scores.review` permission use `GET /admin/score-flags?status=open|cleared|confirmed`,
+  `POST /admin/score-flags/{id}/clear` (the run counts from now on: it can become the player's best, counts as a run, awards
+  are checked; XP is not added back and a finished tournament is not redone) and `POST /admin/score-flags/{id}/confirm`.
+  Each decision is in the activity log. **The admin page needs a tab for this in startng-fe.**
+- **Rank held:** each run records the player's place afterwards (`runs.rank_after`); `progress.snapshot(...).ranks` gives, per
+  game, the worse of the player's last two places, so a rank only counts for rewards once it was held across two runs.
+- **`record_beaten`:** published when a run takes the top spot from someone else.
+- **For other features (contract C5):** `from app.features.integrity import service as integrity`, then
+  `integrity.ranked(db, game, limit, only_users=None)` (the game's best runs, best first, with `.user` loaded) and
+  `integrity.rank_of(db, user_id, game)` (a place, or None). `only_users` ranks just those players (friends, a crew).
 
 ## Admin page and reports
 `app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.

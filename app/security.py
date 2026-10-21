@@ -55,6 +55,18 @@ def optional_user(
     return None if creds is None else current_user(creds, db)
 
 
+def lenient_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Like optional_user, but a token that can't be used (expired, revoked, blocked) counts as no token. For routes that
+    work for anyone and only do a little extra for a signed-in user, so a stale sign-in never costs the request."""
+    try:
+        return optional_user(creds, db)
+    except HTTPException:
+        return None
+
+
 # ---- game sessions: what a game on <name>.start.ng uses to call the API for its player
 GAME_SESSION_MINUTES = 120
 
