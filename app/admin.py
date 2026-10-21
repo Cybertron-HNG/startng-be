@@ -7,6 +7,7 @@ PERMISSIONS. There's no admin sign-up: an admin signs in to start.ng with Google
 Only a Google sign-in counts. Anyone can register an email with a password (POST /auth/register) without
 proving they own it, so an account that has a password never gets admin access, even if its email is on the list.
 """
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -41,8 +42,16 @@ def register_permissions(perms: dict[str, str]) -> None:
         PERMISSIONS[key] = label
 
 
-# Why a game is hidden (games.hidden)
+# Why a game is hidden (games.hidden), weakest first. A stronger reason replaces a weaker one. Features add their
+# own with register_hide_reason (a short word, which Your games shows the owner).
 REPORTED, FLAGGED, BLOCKED = "reported", "flagged", "blocked"
+HIDE_REASONS: list[str] = [REPORTED, FLAGGED, BLOCKED]
+
+
+def register_hide_reason(reason: str, below: str = FLAGGED) -> None:
+    """A feature's own reason for hiding a game, ranked just below another (by default below an admin's flag)."""
+    if reason not in HIDE_REASONS:
+        HIDE_REASONS.insert(HIDE_REASONS.index(below), reason)
 
 
 def now() -> datetime:
@@ -107,9 +116,11 @@ def log(db: Session, admin: AdminUser | str, action: str, target: str | None = N
 
 
 def hide(game: Game, why: str) -> None:
-    """Hide a game from start.ng. A stronger reason replaces a weaker one (blocked > flagged > reported)."""
-    order = [None, REPORTED, FLAGGED, BLOCKED]
-    if order.index(why) > order.index(game.hidden):
+    """Mark a game hidden (the caller commits). A stronger reason replaces a weaker one (HIDE_REASONS). Features
+    use hide_game, which also takes it offline and out of tournaments."""
+    order = [None, *HIDE_REASONS]
+    rank = order.index(game.hidden) if game.hidden in order else 0
+    if order.index(why) > rank:
         game.hidden = why
         game.hidden_at = now()
 
@@ -117,3 +128,32 @@ def hide(game: Game, why: str) -> None:
 def unhide(game: Game) -> None:
     game.hidden = None
     game.hidden_at = None
+
+
+def set_offline(store, name: str, hidden: bool) -> None:
+    """Take a game's own address offline (the Worker shows an error page) or back online. Without game storage
+    (local testing) there's nothing to change. A storage hiccup is logged, never undoing an admin's decision."""
+    if store is None:
+        return
+    try:
+        store.set_hidden(name, hidden)
+    except Exception:
+        logging.getLogger(__name__).exception("Couldn't %s %s", "take offline" if hidden else "put back online", name)
+
+
+def hide_game(db: Session, store, game: Game, why: str) -> None:
+    """Hide a game everywhere: off start.ng's lists and pages, offline at its own address, out of tournaments that
+    haven't started and the one that's running. Commits."""
+    from . import tournaments  # here, not at the top: tournaments doesn't need admin, admin rarely needs it
+
+    hide(game, why)
+    db.commit()
+    set_offline(store, game.name, True)
+    tournaments.replace_hidden(db, game.name)
+
+
+def show_game(db: Session, store, game: Game) -> None:
+    """Put a hidden game back everywhere (the caller has decided it may come back). Commits."""
+    unhide(game)
+    db.commit()
+    set_offline(store, game.name, False)

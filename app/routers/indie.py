@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, defer, selectinload
 
 from .. import covers
 from ..activity import record
+from ..features.moderation import service as moderation
 from ..db import get_db
 from ..errors import ApiError
 from ..models import IndieGame, IndiePlay, User
@@ -146,6 +147,9 @@ def submit_indie_game(
     _rate_limit(request, _submits, SUBMITS_PER_HOUR, "You've added a lot of games, try again in an hour")
     name = _text(body.name, "name", NAME_LEN)
     description = _text(body.description, "description", DESCRIPTION_LEN)
+    if moderation.enforcing():  # the name filter (app/features/moderation)
+        moderation.require_clean(db, name, "The game's name")
+        moderation.require_clean(db, description, "The description")
     url = _link(body.url)
     if db.scalar(select(IndieGame.id).where(IndieGame.url == url)):
         raise ApiError(status.HTTP_409_CONFLICT, "already_listed", "That game is already listed")

@@ -1,5 +1,4 @@
 """The admin page's API (start.ng/admin), and players reporting games. Who can do what: app/admin.py."""
-import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -41,25 +40,12 @@ def _report_out(r: GameReport) -> ReportOut:
                      closed_at=r.closed_at, closed_by=r.closed_by, note=r.note)
 
 
-log = logging.getLogger(__name__)
-
-
 def _offline(store: GameStore | None, name: str, hidden: bool) -> None:
-    """Take a game's own address offline (the Worker shows an error page) or back online. Without game storage
-    (local testing) there's nothing to change."""
-    if store is None:
-        return
-    try:
-        store.set_hidden(name, hidden)
-    except Exception:  # the database is the record; a storage hiccup shouldn't undo an admin's decision
-        log.exception("Couldn't %s %s", "take offline" if hidden else "put back online", name)
+    adm.set_offline(store, name, hidden)
 
 
 def _hide(db: Session, store: GameStore | None, game: Game, why: str) -> None:
-    adm.hide(game, why)
-    db.commit()
-    _offline(store, game.name, True)
-    tournaments.replace_hidden(db, game.name)
+    adm.hide_game(db, store, game, why)
 
 
 # ---- players: reporting a game
@@ -319,6 +305,9 @@ def restore_game(name: str, body: RestoreIn, admin: AdminUser = Depends(require(
     game = _game_or_404(db, name)
     if game.owner.blocked_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Its developer is blocked. Unblock them to put their games back")
+    if game.hidden not in (None, adm.REPORTED, adm.FLAGGED):
+        reason = game.hidden.replace("_", " ")
+        raise HTTPException(status.HTTP_409_CONFLICT, f"It's hidden as \"{reason}\". Put it back from that tab")
     for r in db.scalars(select(GameReport).where(GameReport.game_name == name, GameReport.status == "open")).all():
         r.status, r.note, r.closed_at, r.closed_by = "dismissed", body.note, adm.now(), admin.email
     adm.unhide(game)
