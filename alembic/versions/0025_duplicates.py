@@ -1,13 +1,13 @@
 """duplicates (H2): game_fingerprints and duplicate_decisions, for the duplicate finder
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0025
+Revises: 0024
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0024"
-down_revision = "0023"
+revision = "0025"
+down_revision = "0024"
 branch_labels = None
 depends_on = None
 

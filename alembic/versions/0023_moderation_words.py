@@ -1,13 +1,13 @@
 """moderation (H2 name filter): moderation_words, the words admins block or allow
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0023
+Revises: 0022
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0022"
-down_revision = "0021"
+revision = "0023"
+down_revision = "0022"
 branch_labels = None
 depends_on = None
 
