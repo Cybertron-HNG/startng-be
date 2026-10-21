@@ -207,6 +207,19 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
   `POST /admin/needs-fixing/{id}/approve`, `POST /admin/needs-fixing/{id}/reopen` `{note}`.
   Owners: `GET /needs-fixing/mine`, `POST /needs-fixing/{id}/fixed` `{note}`.
 
+## Duplicate finder (PRD H2)
+`app/features/duplicates`; flag `duplicates`; admin permission `games.duplicates`.
+- Every game is fingerprinted when it's published or updated (`game_published`, `game_updated`): its `index.html`
+  (spaces ignored), its cover, its list of files and sizes, and its name with "copy", "v2" and trailing numbers taken
+  off. `POST /admin/duplicates/scan` fingerprints games published before the feature was on.
+- Two games are a pair when they have the same files, the same page or the same cover, or names one letter apart
+  (6+ letters). The older game is shown first. The Hangout is never included.
+- Admins keep both (the pair stops showing), hide one as a copy (`admin.hide_game`, reason `duplicate`), put it back,
+  or delete it for good (files, scores, plays). Owners see which game theirs was hidden as a copy of.
+- Admins: `GET /admin/duplicates`, `POST /admin/duplicates/scan`, `POST /admin/duplicates/keep` `{a, b}`,
+  `POST /admin/duplicates/games/{name}/hide` `{of}`, `GET /admin/duplicates/hidden`,
+  `POST /admin/duplicates/games/{name}/show`, `DELETE /admin/duplicates/games/{name}`. Owners: `GET /duplicates/mine`.
+
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
