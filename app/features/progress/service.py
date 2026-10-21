@@ -124,12 +124,18 @@ class Result:
 
 def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime) -> Run:
     """Add the run and bump the player's day. Retried once when two first runs of a day race on the day's row."""
-    for attempt in (1, 2):
+    for attempt in (1, 2, 3):
         try:
-            day = db.get(ActivityDay, (user_id, local_day(when)))
+            # Locked while we add to it, so simultaneous runs queue up and each sees the real totals (a plain read-then-write
+            # loses updates and can give the first-run-of-the-day bonus twice).
+            day = db.scalar(
+                select(ActivityDay).where(ActivityDay.user_id == user_id, ActivityDay.day == local_day(when))
+                .with_for_update().execution_options(populate_existing=True)
+            )
             if day is None:
                 day = ActivityDay(user_id=user_id, day=local_day(when), runs=0, xp=0)
                 db.add(day)
+                db.flush()  # another request creating the same row fails here; the retry then finds and locks it
             day.xp += xp_for_run(day.runs, day.xp)
             day.runs += 1
             run = Run(user_id=user_id, game_name=game, score=next(iter(stats.values()), 0), stats=stats, created_at=when)
@@ -138,7 +144,7 @@ def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime) 
             return run
         except IntegrityError:
             db.rollback()
-            if attempt == 2:
+            if attempt == 3:
                 raise
     raise AssertionError("unreachable")
 
