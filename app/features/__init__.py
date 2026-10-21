@@ -1,7 +1,8 @@
 """Every feature built on top of start.ng's core lives in its own folder here, owned by one person (see the PRD):
 
     app/features/<feature>/
-        __init__.py   NAME (its flag), router (or None), PERMISSIONS (admin permissions it adds, or {})
+        __init__.py   NAME (its flag), router (or None), PERMISSIONS (admin permissions it adds, or {}),
+                      and optionally TASKS: background loops (async functions) run while the server is up
         router.py     its API routes
         models.py     its tables (only its own; it never writes another feature's tables)
         schemas.py    its request and response shapes
@@ -22,6 +23,7 @@ FEATURES: list[str] = [
     "moderation",  # H2 name filter (Hamzat)
     "needs_fixing",  # H2 "needs fixing" label (Hamzat)
     "duplicates",  # H2 duplicate finder (Hamzat)
+    "email",  # H1 email and notifications (Hamzat)
 ]
 
 _loaded: dict[str, ModuleType] = {}

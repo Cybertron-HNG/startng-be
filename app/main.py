@@ -17,9 +17,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(m
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Keeps live games in step with their GitHub repos while the server runs.
-    task = asyncio.create_task(auto_update.run_forever()) if settings.auto_update else None
+    tasks = [asyncio.create_task(auto_update.run_forever())] if settings.auto_update else []
+    # Features' background loops (TASKS in their __init__.py). Each checks its own flag as it runs.
+    tasks += [asyncio.create_task(run()) for feature in features.load() for run in getattr(feature, "TASKS", [])]
     yield
-    if task:
+    for task in tasks:
         task.cancel()
 
 
