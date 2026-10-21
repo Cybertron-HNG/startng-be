@@ -1,6 +1,6 @@
 """Private tournaments: the rules, and what other features may call.
 
-A player makes one (a title, 1 to 5 games that have leaderboards, a window of 1 hour to 7 days from now) and shares its
+A player makes one (a title, 1 to 5 games that have leaderboards, a window of 1 day to 1 month from now) and shares its
 invite link. Members' runs on those games inside the window count: each game gives points by place (the daily
 tournament's 10/7/5/3/1) and the most points wins. Nothing here gives global points, XP or rewards. Standings are
 worked out when someone looks, so nothing runs on a timer.
@@ -26,7 +26,8 @@ from .models import PrivateTournament, PrivateTournamentGame, PrivateTournamentM
 
 MAX_ACTIVE_OWNED = 5  # tournaments a player can have running at once
 MAX_MEMBERS = 200
-MAX_HOURS = 168
+MIN_HOURS = 24
+MAX_HOURS = 720  # 30 days
 
 
 class Refused(Exception):
@@ -59,8 +60,8 @@ def create(db: Session, owner: User, title: str, games: list[str], hours: int, a
     names = list(dict.fromkeys(games))  # the same game twice is once
     if not 1 <= len(names) <= 5:
         raise Refused("games", "Pick between 1 and 5 games.")
-    if not 1 <= hours <= MAX_HOURS:
-        raise Refused("duration", "A tournament runs from 1 hour to 7 days.")
+    if not MIN_HOURS <= hours <= MAX_HOURS:
+        raise Refused("duration", "A tournament runs from 1 day to 1 month.")
     allowed = set(tournaments.eligible_games(db))
     bad = [n for n in names if n not in allowed]
     if bad:

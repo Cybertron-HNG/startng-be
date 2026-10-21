@@ -73,7 +73,7 @@ def test_create_and_the_maker_is_a_member(env):
 
 @pytest.mark.parametrize("games,hours,code", [
     ([], 24, 422), (["g0", "g1", "g2", "g3", "g4", "g5"], 24, 422),  # 1 to 5 games
-    (["g0"], 0, 422), (["g0"], 169, 422),  # 1 hour to 7 days
+    (["g0"], 23, 422), (["g0"], 721, 422),  # 1 day to 30 days
     (["no-board"], 24, 400), (["nope"], 24, 400),  # needs a leaderboard and to exist
 ])
 def test_create_rules(env, games, hours, code):

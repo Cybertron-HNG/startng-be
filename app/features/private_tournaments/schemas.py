@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class PrivateTournamentIn(BaseModel):
     title: str = Field(min_length=3, max_length=60)
     games: list[str] = Field(min_length=1, max_length=5)
-    hours: int = Field(ge=1, le=168)  # how long it runs, from now: 1 hour to 7 days
+    hours: int = Field(ge=24, le=720)  # how long it runs, from now: 1 day to 30 days
 
 
 class RunOut(BaseModel):
