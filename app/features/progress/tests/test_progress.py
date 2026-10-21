@@ -355,3 +355,29 @@ def test_me_awards_lists_what_the_player_owns(env, on):
     assert [(a["kind"], a["key"]) for a in awards] == [("badge", "first_score")]
     assert "earned_at" in awards[0]
     assert client.get("/me/awards", headers=tokens["tunde"]).json() == []
+
+
+# --- logging a run should be cheap when nothing is watching for awards -------------------------------------------
+
+def test_with_no_rules_registered_a_run_does_not_compute_the_snapshot(env):
+    """No feature has registered an award rule yet, so there is nothing to evaluate: logging the run must not run the half
+    dozen queries the snapshot needs (each is a round-trip to the database on every score)."""
+    from sqlalchemy import event
+    Session, _, _, ids = env
+    with Session() as db:
+        progress.after_run(db, ids["ada"], "lanedash", {"score": 1})  # the first run also creates the day
+        statements = []
+        event.listen(db.get_bind(), "before_cursor_execute", lambda conn, cur, stmt, *a: statements.append(stmt))
+        progress.after_run(db, ids["ada"], "lanedash", {"score": 2})
+        selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+        assert len(selects) <= 3, f"{len(selects)} SELECTs: {[s[:60] for s in selects]}"  # the day (locked), and re-reading the new run
+
+
+def test_rules_still_see_the_snapshot_once_one_is_registered(env):
+    Session, _, _, ids = env
+    seen = []
+    progress.register("watch", [progress.Rule("badge", "x", lambda snap, run: seen.append(snap.runs) or False)])
+    with Session() as db:
+        progress.after_run(db, ids["ada"], "lanedash", {"score": 1})
+        progress.after_run(db, ids["ada"], "lanedash", {"score": 2})
+    assert seen == [1, 2]

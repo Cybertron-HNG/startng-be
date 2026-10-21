@@ -149,12 +149,12 @@ def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime) 
     raise AssertionError("unreachable")
 
 
-def after_run(db: Session, user_id: int, game: str, stats: dict) -> Result:
-    """Log this run, update the player's day, evaluate every registered rule. Never raises because of a rule."""
-    run = _log_run(db, user_id, game, stats, now())
-    info = RunInfo(run_id=run.id, user_id=user_id, game=game, stats=stats)
+def _evaluate_rules(db: Session, user_id: int, info: "RunInfo") -> list[dict]:
+    """Award what the registered rules say this run earned. Returns the new awards; nothing is published here.
+    With no rules registered there is nothing to decide, so the snapshot (about six queries) is not worked out at all."""
+    if not _rules:
+        return []
     snap = snapshot(db, user_id)
-
     owned = {(a.kind, a.key) for a in db.scalars(select(Award).where(Award.user_id == user_id))}
     unlocked: list[dict] = []
     for feature, rules in list(_rules.items()):
@@ -176,6 +176,13 @@ def after_run(db: Session, user_id: int, game: str, stats: dict) -> Result:
                 continue
             owned.add((rule.kind, rule.key))
             unlocked.append({"kind": rule.kind, "key": rule.key})
+    return unlocked
+
+
+def after_run(db: Session, user_id: int, game: str, stats: dict) -> Result:
+    """Log this run, update the player's day, evaluate every registered rule. Never raises because of a rule."""
+    run = _log_run(db, user_id, game, stats, now())
+    unlocked = _evaluate_rules(db, user_id, RunInfo(run_id=run.id, user_id=user_id, game=game, stats=stats))
 
     events.publish("run_recorded", {"user_id": user_id, "game": game, "run_id": run.id})
     for award in unlocked:
