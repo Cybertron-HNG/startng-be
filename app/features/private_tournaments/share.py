@@ -84,8 +84,9 @@ def card_png(t: PrivateTournament, members: int, owner: str) -> bytes:
     tw = (W - 140 - gap * (len(games) - 1)) // len(games)
     tw = min(tw, 220)
     th = int(tw * .62)
+    urls = [_cover_url(g.game) for g in t.games[:5]]  # read here: the database session isn't for other threads
     with ThreadPoolExecutor(max_workers=5) as pool:
-        covers = list(pool.map(lambda g: (_fetch(_cover_url(g.game)) if g.game.cover else None), t.games[:5]))
+        covers = list(pool.map(lambda url: _fetch(url) if url else None, urls))
     for i, (name, data) in enumerate(zip(games, covers)):
         x = 70 + i * (tw + gap)
         img.paste(_tile(_title(name), data, (tw, th)), (x, ty))
