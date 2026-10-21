@@ -51,7 +51,9 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 5. **startng.json** (`app/manifest.py`): `manifest.register_section("category", parse, apply)`. `parse` checks your
    key (raise `SchemaError` to refuse the publish), and `apply(db, game, value)` saves it when the game goes live.
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
-7. **Migrations** start at `0023`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
+   pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
+8. **Migrations** start at `0024`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -236,6 +238,22 @@ storage.list_files("dave"); storage.get_file("dave", "index.html"); storage.dele
 ```
 Names and paths follow the Worker rules (lowercase letters/digits/hyphens, no `..`, no hidden files, reserved
 names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (see `.env.example`).
+
+## Name filter (PRD H2)
+`app/features/moderation`; flag `moderation`; admin permission `moderation.words`.
+- **For other features:** `check_text(text)` returns the blocked word, or `None` when the text is fine.
+  `require_clean(db, text, "crew name")` raises a 422 (`text_not_allowed`) that names the field, never the word. Both
+  are in `app/features/moderation/service.py` and let everything through while the flag is off. Use them on any name
+  people type (crews, wardrobe items, ...).
+- **Checked while the flag is on:** new game names, the `startng.json` description (a description start.ng found in
+  the page or README is just left out), character names and Creators listings. Live game names aren't touched; admins
+  see the ones that fail.
+- **Word lists:** built in, in `words.py`. "Strong" words are caught even inside other words; the rest only as whole
+  words with simple endings (-s, -es, -ed, -ing). An allow list keeps innocent names (Scunthorpe). Look-alike letters,
+  accents, dots and stretched letters (sh1t, $hit, s.h.i.t, shiiit) are undone first. Admins add their own blocked or
+  allowed words, saved in `moderation_words`.
+- `GET`/`POST /admin/moderation/words`, `DELETE /admin/moderation/words/{id}`, `POST /admin/moderation/try` (check a
+  name), `GET /admin/moderation/flagged` (live names that fail).
 
 ## Run locally
 ```bash
