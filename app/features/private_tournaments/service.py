@@ -22,6 +22,7 @@ from ... import leaderboard as boards
 from ...activity import record as log_activity
 from ...db import SessionLocal
 from ...models import Game, User
+from ..crews import service as crews
 from .models import PrivateTournament, PrivateTournamentGame, PrivateTournamentMember, PrivateTournamentScore
 
 MAX_ACTIVE_OWNED = 5  # tournaments a player can have running at once
@@ -55,8 +56,10 @@ def member_count(db: Session, t: PrivateTournament) -> int:
     return db.scalar(select(func.count()).select_from(PrivateTournamentMember).where(PrivateTournamentMember.tournament_id == t.id)) or 0
 
 
-def create(db: Session, owner: User, title: str, games: list[str], hours: int, at: datetime | None = None) -> PrivateTournament:
+def create(db: Session, owner: User, title: str, games: list[str], hours: int, crew_id: int | None = None, at: datetime | None = None) -> PrivateTournament:
     at = at or tournaments.now()
+    if crew_id is not None and not crews.is_member(db, crew_id, owner.id):
+        raise Refused("not_in_crew", "You can only start a tournament for a crew you are in.")
     names = list(dict.fromkeys(games))  # the same game twice is once
     if not 1 <= len(names) <= 5:
         raise Refused("games", "Pick between 1 and 5 games.")
@@ -71,7 +74,7 @@ def create(db: Session, owner: User, title: str, games: list[str], hours: int, a
     if active >= MAX_ACTIVE_OWNED:
         raise Refused("too_many", f"You already have {MAX_ACTIVE_OWNED} tournaments running. Wait for one to end.")
     t = PrivateTournament(
-        code=secrets.token_urlsafe(8), owner_id=owner.id, title=title.strip(), starts_at=at, ends_at=at + timedelta(hours=hours),
+        code=secrets.token_urlsafe(8), owner_id=owner.id, title=title.strip(), crew_id=crew_id, starts_at=at, ends_at=at + timedelta(hours=hours),
         games=[PrivateTournamentGame(game_name=n, position=i) for i, n in enumerate(names)],
         members=[PrivateTournamentMember(user_id=owner.id)],
     )
@@ -112,6 +115,17 @@ def new_code(db: Session, t: PrivateTournament, owner: User) -> None:
     t.code = secrets.token_urlsafe(8)
     log_activity(db, owner, "player", "private_tournament.link_changed", t.code)
     db.commit()
+
+
+def for_crew(db: Session, crew_id: int, user: User) -> list[PrivateTournament]:
+    """A crew's tournaments, for its members: running ones first, then the most recent that ended."""
+    if not crews.is_member(db, crew_id, user.id):
+        return []
+    rows = db.scalars(select(PrivateTournament).where(PrivateTournament.crew_id == crew_id)).all()
+    now = tournaments.now()
+    running = sorted((t for t in rows if not ended(t, now)), key=lambda t: tournaments.utc(t.ends_at))
+    done = sorted((t for t in rows if ended(t, now)), key=lambda t: tournaments.utc(t.ends_at), reverse=True)
+    return running + done
 
 
 def mine(db: Session, user: User) -> list[PrivateTournament]:

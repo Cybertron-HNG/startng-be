@@ -267,3 +267,26 @@ def test_card_shows_the_games_covers_and_copes_when_one_is_missing(env, monkeypa
     card = Image.open(io.BytesIO(res.content))
     assert card.size == (1200, 630)
     assert card.getpixel((120, 400)) == (200, 30, 30)  # g0's cover is in the first tile
+
+
+def test_a_tournament_for_a_crew_is_found_on_the_crews_list_by_its_members(env):
+    client, tokens, _, _ = env
+    crew = client.post("/crews", json={"name": "Lagos Family", "kind": "family"}, headers=tokens["ada"]).json()
+    client.post(f"/crews/join/{crew['code']}", headers=tokens["tunde"])
+    res = client.post("/private-tournaments", json={"title": "Family Cup", "games": ["g0"], "hours": 48, "crew_id": crew["id"]}, headers=tokens["tunde"])
+    assert res.status_code == 201 and res.json()["crew_id"] == crew["id"]
+    code = res.json()["code"]
+    # a crew member who hasn't joined sees it, and can open it and join from there
+    listed = client.get(f"/private-tournaments/crew/{crew['id']}", headers=tokens["ada"]).json()
+    assert [(t["code"], t["joined"]) for t in listed] == [(code, False)]
+    assert client.post(f"/private-tournaments/{code}/join", headers=tokens["ada"]).json()["joined"] is True
+    # someone outside the crew gets nothing from the list
+    assert client.get(f"/private-tournaments/crew/{crew['id']}", headers=tokens["chioma"]).json() == []
+
+
+def test_only_a_crew_member_can_start_a_tournament_for_it(env):
+    client, tokens, _, _ = env
+    crew = client.post("/crews", json={"name": "Lagos Family", "kind": "family"}, headers=tokens["ada"]).json()
+    body = {"title": "Family Cup", "games": ["g0"], "hours": 48, "crew_id": crew["id"]}
+    assert client.post("/private-tournaments", json=body, headers=tokens["chioma"]).status_code == 400
+    assert client.post("/private-tournaments", json={**body, "crew_id": 999}, headers=tokens["ada"]).status_code == 400

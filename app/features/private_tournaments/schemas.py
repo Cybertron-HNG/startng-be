@@ -7,6 +7,7 @@ class PrivateTournamentIn(BaseModel):
     title: str = Field(min_length=3, max_length=60)
     games: list[str] = Field(min_length=1, max_length=5)
     hours: int = Field(ge=24, le=720)  # how long it runs, from now: 1 day to 30 days
+    crew_id: int | None = None  # for a crew you are in: its members find it on the crew page
 
 
 class RunOut(BaseModel):
@@ -48,6 +49,7 @@ class SummaryOut(BaseModel):
     games: list[str]
     joined: bool
     mine: bool  # the signed-in player made it
+    crew_id: int | None = None
 
 
 class PrivateTournamentOut(SummaryOut):
