@@ -32,7 +32,7 @@ def _summary(db: Session, t: PrivateTournament, user: User | None) -> dict:
     return dict(
         code=t.code, title=t.title, owner=_player_name(t.owner), starts_at=tournaments.utc(t.starts_at), ends_at=tournaments.utc(t.ends_at),
         finished=service.ended(t), members=service.member_count(db, t), games=[g.game_name for g in t.games],
-        joined=bool(user) and service.is_member(db, t, user.id), mine=bool(user) and t.owner_id == user.id,
+        joined=bool(user) and service.is_member(db, t, user.id), mine=bool(user) and t.owner_id == user.id, crew_id=t.crew_id,
     )
 
 
@@ -50,7 +50,7 @@ def _refuse(e: service.Refused) -> ApiError:
 @router.post("", response_model=SummaryOut, status_code=status.HTTP_201_CREATED)
 def create(body: PrivateTournamentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     try:
-        t = service.create(db, user, body.title, body.games, body.hours)
+        t = service.create(db, user, body.title, body.games, body.hours, body.crew_id)
     except service.Refused as e:
         raise _refuse(e)
     return SummaryOut(**_summary(db, t, user))
@@ -59,6 +59,12 @@ def create(body: PrivateTournamentIn, user: User = Depends(current_user), db: Se
 @router.get("/mine", response_model=list[SummaryOut])
 def my_tournaments(user: User = Depends(current_user), db: Session = Depends(get_db)):
     return [SummaryOut(**_summary(db, t, user)) for t in service.mine(db, user)]
+
+
+@router.get("/crew/{crew_id}", response_model=list[SummaryOut])
+def crew_tournaments(crew_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A crew's tournaments (empty for anyone who isn't in the crew)."""
+    return [SummaryOut(**_summary(db, t, user)) for t in service.for_crew(db, crew_id, user)]
 
 
 @router.get("/{code}", response_model=PrivateTournamentOut | SummaryOut)

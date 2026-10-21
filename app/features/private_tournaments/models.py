@@ -19,6 +19,8 @@ class PrivateTournament(Base):
     code: Mapped[str] = mapped_column(String(16), unique=True)  # the invite link: start.ng/t/<code>
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(60))
+    # Made for a crew (app/features/crews): its members find it on the crew page. No foreign key: crews are another feature's table.
+    crew_id: Mapped[int | None] = mapped_column(Integer, index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

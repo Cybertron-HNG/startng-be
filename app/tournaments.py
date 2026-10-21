@@ -331,8 +331,9 @@ class OverallRow:
     firsts: int
 
 
-def overall(db: Session, period: str, limit: int, at: datetime | None = None) -> list[OverallRow]:
-    """Points from every finished tournament (period "all") or the ones that ended this week ("week")."""
+def overall(db: Session, period: str, limit: int, at: datetime | None = None, only_users: list[int] | None = None) -> list[OverallRow]:
+    """Points from every finished tournament (period "all") or the ones that ended this week ("week"). only_users keeps just
+    those players (the scoped boards: a crew, friends)."""
     at = at or now()
     settle_due(db, at)
     query = (
@@ -348,6 +349,8 @@ def overall(db: Session, period: str, limit: int, at: datetime | None = None) ->
     )
     if period == "week":
         query = query.where(Tournament.ends_at >= week_start(at))
+    if only_users is not None:
+        query = query.where(TournamentPoints.user_id.in_(only_users))
     rows = db.execute(query).all()
     users = {u.id: u for u in db.scalars(select(User).where(User.id.in_([r.user_id for r in rows]))).all()}
     rows = sorted(rows, key=lambda r: (-r.points, -r.wins, -r.firsts, utc(r.since), r.user_id))[:limit]
