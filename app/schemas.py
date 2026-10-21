@@ -167,6 +167,8 @@ class ScoreOut(BaseModel):
     improved: bool  # true when this score is their new best
     rank: int  # their place on the game's leaderboard
     stats: dict[str, int | None]  # the best run's stats (games with a startng.json)
+    # Awards this run just earned (items and badges). Only present while the "progress" feature is on.
+    unlocked: list[dict[str, str]] | None = None
 
 
 class LeaderboardEntry(BaseModel):
