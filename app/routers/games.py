@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
 from .. import auto_update, covers, events, flags, manifest, tournaments
+from ..features import progress
 from ..features.integrity import service as integrity
 from ..activity import record
 from ..config import settings
@@ -527,7 +528,7 @@ def game_player_info(name: str, user: User = Depends(game_player), db: Session =
     return _player_out(user)
 
 
-@router.post("/{name}/scores", response_model=ScoreOut)
+@router.post("/{name}/scores", response_model=ScoreOut, response_model_exclude_unset=True)  # `unlocked` shows only when set
 def submit_score(
     name: str,
     body: ScoreIn,
@@ -576,6 +577,9 @@ def submit_score(
             db.commit()
     tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
     events.publish("score_submitted", {"user_id": user.id, "game": name, "stats": stats})  # private tournaments, and more later
+    extra = {}
+    if flags.is_on(progress.NAME):  # the Progress Engine (PRD D1): log the run, award what its rules say
+        extra["unlocked"] = progress.service.after_run(db, user.id, name, stats).unlocked
     best = boards.stats_of(schema, row.stats, row.best)
     if on:
         integrity.invalidate(name)
@@ -583,7 +587,7 @@ def submit_score(
     else:
         rows = _ranked(db, name, schema)
         rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
-    return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best)
+    return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best, **extra)
 
 
 def _ranked(db: Session, name: str, schema: list[dict]) -> list[Score]:
