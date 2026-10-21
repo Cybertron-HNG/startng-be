@@ -10,6 +10,7 @@ got there first), but the database does the sorting, so it stays quick with tens
 """
 import math
 import time
+from datetime import datetime, timezone
 from collections import deque
 from typing import Any, Callable, Iterable
 
@@ -20,13 +21,17 @@ from ... import leaderboard as boards
 from ...config import settings
 from ...errors import ApiError
 from ...models import Game, Score
+from ..progress import service as progress
+from .models import ScoreFlag
 
 RATE_WINDOW_SECONDS = 60
 CACHE_SECONDS = 30
+EDGE_SECONDS = 300  # how long a game's 99th percentile is kept
 
 _recent: dict[tuple[int, str], deque] = {}  # (player, game) -> when their recent scores came in
 _cache: dict[tuple, tuple[float, Any]] = {}  # (game, limit) -> (when, answer)
 _consistent: dict[tuple, bool] = {}  # (game, schema) -> does every row's `best` equal its first stat?
+_edges: dict[tuple, tuple[float, int | None]] = {}  # (game, schema) -> (when, the 99th percentile of the first stat)
 
 
 def clock() -> float:
@@ -37,6 +42,7 @@ def reset() -> None:
     _recent.clear()
     _cache.clear()
     _consistent.clear()
+    _edges.clear()
 
 
 # --- limits and rate limit -------------------------------------------------------------------------------------
@@ -158,3 +164,89 @@ def cached(game_name: str, limit: int, build: Callable[[], Any]) -> Any:
 def invalidate(game_name: str) -> None:
     for key in [k for k in _cache if k[0] == game_name]:
         del _cache[key]
+
+
+# --- outliers --------------------------------------------------------------------------------------------------
+
+def _edge(db: Session, game_name: str, schema: list[dict]) -> int | None:
+    """The 99th percentile of the first stat across the game's players, taken from the good end (the top 1% for a
+    highest-is-best stat, the fastest 1% for a lowest-is-best one). None while the game has too few players to judge
+    by. Kept for EDGE_SECONDS, so judging a run costs nothing most of the time."""
+    key = (game_name, tuple((s["key"], s["order"]) for s in schema))
+    hit = _edges.get(key)
+    if hit is not None and clock() - hit[0] < EDGE_SECONDS:
+        return hit[1]
+    value = _first_stat(db, game_name, schema)
+    players = db.scalar(select(func.count(Score.id)).where(Score.game_name == game_name, value.is_not(None)))
+    edge = None
+    if players >= settings.flag_min_players:
+        good_first = value.desc() if schema[0]["order"] == "highest" else value.asc()
+        edge = db.scalar(select(value).where(Score.game_name == game_name, value.is_not(None)).order_by(good_first).offset(int(players * 0.01)).limit(1))
+    _edges[key] = (clock(), edge)
+    return edge
+
+
+def outlier_reason(db: Session, game_name: str, schema: list[dict], stats: dict, previous_first: int | None) -> str | None:
+    """Why this run looks too good to be true, or None. Judged on the first stat only, in the direction that is better:
+    more than `flag_previous_factor` times the player's previous best (when that was big enough to judge by), or more
+    than `flag_percentile_factor` times the game's 99th percentile (when the game has enough players)."""
+    first = schema[0]
+    value = stats.get(first["key"])
+    if value is None:
+        return None
+    highest = first["order"] == "highest"
+    factor = settings.flag_previous_factor
+    if previous_first is not None and previous_first >= settings.flag_min_previous:
+        if (highest and value > previous_first * factor) or (not highest and value * factor < previous_first):
+            return f"more than {factor}x their previous best ({previous_first:,} to {value:,})"
+    factor = settings.flag_percentile_factor
+    edge = _edge(db, game_name, schema)
+    if edge is not None:
+        if highest and value > edge * factor:
+            return f"more than {factor}x the game's 99th percentile ({edge:,})"
+        if not highest and edge > 0 and value * factor < edge:
+            return f"under 1/{factor} of the game's 99th percentile ({edge:,})"
+    return None
+
+
+def hypothetical_rank(db: Session, game_name: str, schema: list[dict], first_value: int) -> int:
+    """The place a first-stat value would take if it counted (players strictly better, plus one). Used to answer a
+    flagged first run like any other, so nobody can tell it was held back."""
+    value = _first_stat(db, game_name, schema)
+    better = value > first_value if schema[0]["order"] == "highest" else value < first_value
+    return db.scalar(select(func.count(Score.id)).where(Score.game_name == game_name, better)) + 1
+
+
+def previous_top(db: Session, game_name: str) -> int | None:
+    """Who is number one on the game's board right now, if anyone."""
+    top = ranked(db, game_name, 1)
+    return top[0].user_id if top else None
+
+
+def add_flag(db: Session, user_id: int, game_name: str, stats: dict, previous_best: int | None, reason: str, run_id: int | None) -> ScoreFlag:
+    flag = ScoreFlag(user_id=user_id, game_name=game_name, stats=stats, previous_best=previous_best, reason=reason[:200], run_id=run_id)
+    db.add(flag)
+    db.commit()
+    return flag
+
+
+def decide(db: Session, flag: ScoreFlag, outcome: str, admin_email: str, note: str | None) -> None:
+    """Record an admin's decision. Cleared: the run counts from now on (the Progress Engine releases it, and it becomes the
+    player's best if it beats their saved one). Confirmed: it stays out for good. The caller commits."""
+    flag.status, flag.reviewed_by, flag.note = outcome, admin_email, note
+    flag.reviewed_at = datetime.now(timezone.utc)
+    if outcome != "cleared":
+        return
+    if flag.run_id is not None:
+        progress.release_run(db, flag.run_id)
+    schema = _schema(db, flag.game_name)
+    if schema is None:
+        return
+    row = db.scalar(select(Score).where(Score.user_id == flag.user_id, Score.game_name == flag.game_name))
+    first = flag.stats[schema[0]["key"]]
+    if row is None:
+        db.add(Score(user_id=flag.user_id, game_name=flag.game_name, best=first, stats=flag.stats))
+    elif boards.is_better(schema, flag.stats, boards.stats_of(schema, row.stats, row.best)):
+        row.best, row.stats = first, flag.stats
+    db.flush()
+    invalidate(flag.game_name)

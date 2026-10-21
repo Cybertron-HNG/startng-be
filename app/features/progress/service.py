@@ -94,19 +94,34 @@ class Snapshot:
     xp: int
     level: int
     tournament_wins: int
+    ranks: dict = field(default_factory=dict)  # game -> place, only once held across the last 2 runs (the worse of the two)
+
+
+def held_ranks(db: Session, user_id: int) -> dict[str, int]:
+    """For each game, the player's place if they have held it across their last two runs there: the worse of the two.
+    Flagged runs and runs from before ranks were recorded don't count."""
+    rows = db.execute(
+        select(Run.game_name, Run.rank_after).where(Run.user_id == user_id, Run.flagged.is_(False), Run.rank_after.is_not(None))
+        .order_by(Run.created_at.desc(), Run.id.desc()).limit(500)
+    ).all()
+    last: dict[str, list[int]] = {}
+    for game, rank in rows:
+        if len(last.setdefault(game, [])) < 2:
+            last[game].append(rank)
+    return {game: max(ranks) for game, ranks in last.items() if len(ranks) == 2}
 
 
 def snapshot(db: Session, user_id: int, today: date | None = None) -> Snapshot:
     today = today or local_day(now())
     runs, games = db.execute(
-        select(func.count(Run.id), func.count(func.distinct(Run.game_name))).where(Run.user_id == user_id)
+        select(func.count(Run.id), func.count(func.distinct(Run.game_name))).where(Run.user_id == user_id, Run.flagged.is_(False))
     ).one()
     played = db.scalars(select(ActivityDay.day).where(ActivityDay.user_id == user_id)).all()
     xp = db.scalar(select(func.coalesce(func.sum(ActivityDay.xp), 0)).where(ActivityDay.user_id == user_id))
     wins = db.scalar(select(func.count(Tournament.id)).where(Tournament.winner_id == user_id))
     current, best, freezes = streak_state(played, today)
     return Snapshot(runs=runs, distinct_games=games, current_streak=current, best_streak=best, streak_freezes=freezes,
-                    xp=xp, level=level_for(xp), tournament_wins=wins)
+                    xp=xp, level=level_for(xp), tournament_wins=wins, ranks=held_ranks(db, user_id))
 
 
 @dataclass
@@ -138,7 +153,8 @@ class Result:
     unlocked: list[dict] = field(default_factory=list)
 
 
-def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime, tournament_id: int | None = None) -> Run:
+def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime, tournament_id: int | None = None,
+             rank_after: int | None = None) -> Run:
     """Add the run and bump the player's day. Retried once when two first runs of a day race on the day's row."""
     for attempt in (1, 2):
         try:
@@ -149,7 +165,7 @@ def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime, 
             day.xp += xp_for_run(day.runs, day.xp)
             day.runs += 1
             run = Run(user_id=user_id, game_name=game, score=next(iter(stats.values()), 0), stats=stats, created_at=when,
-                      tournament_id=tournament_id)
+                      tournament_id=tournament_id, rank_after=rank_after)
             db.add(run)
             db.commit()
             return run
@@ -160,14 +176,9 @@ def _log_run(db: Session, user_id: int, game: str, stats: dict, when: datetime, 
     raise AssertionError("unreachable")
 
 
-def after_run(db: Session, user_id: int, game: str, stats: dict, tournament_id: int | None = None) -> Result:
-    """Log this run (and the daily tournament it counted for, if any), update the player's day, evaluate every
-    registered rule. Never raises because of a rule."""
-    run = _log_run(db, user_id, game, stats, now(), tournament_id)
-    maybe_purge(db)
-    info = RunInfo(run_id=run.id, user_id=user_id, game=game, stats=stats)
+def _evaluate_rules(db: Session, user_id: int, info: "RunInfo") -> list[dict]:
+    """Award what the registered rules say this run earned. Returns the new awards; nothing is published here."""
     snap = snapshot(db, user_id)
-
     owned = {(a.kind, a.key) for a in db.scalars(select(Award).where(Award.user_id == user_id))}
     unlocked: list[dict] = []
     for feature, rules in list(_rules.items()):
@@ -189,11 +200,43 @@ def after_run(db: Session, user_id: int, game: str, stats: dict, tournament_id: 
                 continue
             owned.add((rule.kind, rule.key))
             unlocked.append({"kind": rule.kind, "key": rule.key})
+    return unlocked
+
+
+def after_run(db: Session, user_id: int, game: str, stats: dict, tournament_id: int | None = None,
+              flagged: bool = False, rank_after: int | None = None) -> Result:
+    """Log this run (and the daily tournament it counted for, if any, and the player's place afterwards), update the
+    player's day, evaluate every registered rule. Never raises because of a rule.
+    A flagged run (score integrity holds it for review) is only logged: no XP, no day, no rules, no events."""
+    if flagged:
+        run = Run(user_id=user_id, game_name=game, score=next(iter(stats.values()), 0), stats=stats, created_at=now(), flagged=True)
+        db.add(run)
+        db.commit()
+        return Result(run_id=run.id)
+    run = _log_run(db, user_id, game, stats, now(), tournament_id, rank_after)
+    maybe_purge(db)
+    info = RunInfo(run_id=run.id, user_id=user_id, game=game, stats=stats)
+    unlocked = _evaluate_rules(db, user_id, info)
 
     events.publish("run_recorded", {"user_id": user_id, "game": game, "run_id": run.id})
     for award in unlocked:
         events.publish("award_unlocked", {"user_id": user_id, "kind": award["kind"], "key": award["key"]})
     return Result(run_id=run.id, unlocked=unlocked)
+
+
+def release_run(db: Session, run_id: int) -> list[dict]:
+    """An admin cleared a flagged run: it counts from now on (runs, games, ranks) and the award rules see it. Its XP is
+    not added back (the day it was played has moved on). Returns the awards it earned."""
+    run = db.get(Run, run_id)
+    if run is None or not run.flagged:
+        return []
+    run.flagged = False
+    db.commit()
+    unlocked = _evaluate_rules(db, run.user_id, RunInfo(run_id=run.id, user_id=run.user_id, game=run.game_name, stats=run.stats))
+    events.publish("run_recorded", {"user_id": run.user_id, "game": run.game_name, "run_id": run.id})
+    for award in unlocked:
+        events.publish("award_unlocked", {"user_id": run.user_id, "kind": award["kind"], "key": award["key"]})
+    return unlocked
 
 
 def awards_of(db: Session, user_id: int) -> list[Award]:

@@ -12,6 +12,7 @@ class ProgressOut(BaseModel):
     xp: int
     level: int
     tournament_wins: int
+    ranks: dict[str, int]  # game -> place, once held across the last two runs there (needs score integrity on)
 
 
 class PublicProgressOut(BaseModel):
