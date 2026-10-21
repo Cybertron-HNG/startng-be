@@ -1,7 +1,7 @@
 """The Progress Engine's own tables. Migration: alembic/versions/0020_progress.py."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...db import Base
@@ -29,6 +29,10 @@ class Run(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # The daily tournament this run counted for, if the player had entered and the game was in it.
     tournament_id: Mapped[int | None] = mapped_column(ForeignKey("tournaments.id", ondelete="SET NULL"))
+    # Held for review (score integrity): a flagged run earns no XP, awards, rank or tournament points until cleared.
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # The player's place on the game's board right after this run (only while score integrity is on).
+    rank_after: Mapped[int | None] = mapped_column(Integer)
 
 
 class GameOpen(Base):

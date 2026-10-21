@@ -561,6 +561,12 @@ def submit_score(
     # Locked until the commit, so two runs sent at once are compared one after the other and a lower one can't overwrite a higher best.
     mine = select(Score).where(Score.user_id == user.id, Score.game_name == name).with_for_update()
     row = db.scalar(mine)
+    if on:  # a run that looks too good to be true is held for review, not scored
+        previous = boards.stats_of(schema, row.stats, row.best)[schema[0]["key"]] if row is not None else None
+        why = integrity.outlier_reason(db, name, schema, stats, previous)
+        if why:
+            return _held_back(db, user, name, schema, stats, previous, why, row)
+        top_before = integrity.previous_top(db, name)
     if row is None:
         row = Score(user_id=user.id, game_name=name, best=first, stats=stats)
         db.add(row)
@@ -580,18 +586,34 @@ def submit_score(
             db.commit()
     counted = tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
     events.publish("score_submitted", {"user_id": user.id, "game": name, "stats": stats})  # private tournaments, and more later
-    extra = {}
-    if flags.is_on(progress.NAME):  # the Progress Engine (PRD D1): log the run, award what its rules say
-        running = tournaments.running(db) if counted else None
-        extra["unlocked"] = progress.service.after_run(db, user.id, name, stats, running.id if running else None).unlocked
     best = boards.stats_of(schema, row.stats, row.best)
     if on:
         integrity.invalidate(name)
         rank = integrity.rank_of(db, user.id, name)
+        if improved and rank == 1 and top_before not in (None, user.id):  # the record changed hands
+            events.publish("record_beaten", {"game": name, "user_id": user.id, "previous_user_id": top_before})
     else:
         rows = _ranked(db, name, schema)
         rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
+    extra = {}
+    if flags.is_on(progress.NAME):  # the Progress Engine (PRD D1): log the run, award what its rules say
+        running = tournaments.running(db) if counted else None
+        extra["unlocked"] = progress.service.after_run(
+            db, user.id, name, stats, running.id if running else None, rank_after=rank if on else None).unlocked
     return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best, **extra)
+
+
+def _held_back(db: Session, user: User, name: str, schema: list[dict], stats: dict, previous: int | None, why: str, row: Score | None) -> ScoreOut:
+    """A run that looks too good to be true: logged and flagged for an admin to review (score integrity, PRD D2). It isn't
+    saved as the player's best, doesn't reach the board or a tournament, earns nothing and publishes no event. The answer
+    looks like any other, so nobody can tell it was held back."""
+    run_id = progress.service.after_run(db, user.id, name, stats, flagged=True).run_id if flags.is_on(progress.NAME) else None
+    integrity.add_flag(db, user.id, name, stats, previous, why, run_id)
+    extra = {"unlocked": []} if flags.is_on(progress.NAME) else {}
+    if row is not None:
+        return ScoreOut(best=row.best, improved=False, rank=integrity.rank_of(db, user.id, name), stats=boards.stats_of(schema, row.stats, row.best), **extra)
+    first = stats[schema[0]["key"]]
+    return ScoreOut(best=first, improved=False, rank=integrity.hypothetical_rank(db, name, schema, first), stats=stats, **extra)
 
 
 def _ranked(db: Session, name: str, schema: list[dict]) -> list[Score]:
