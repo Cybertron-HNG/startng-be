@@ -20,6 +20,7 @@ from types import ModuleType
 FEATURES: list[str] = [
     "private_tournaments",
     "progress",
+    "integrity",
 ]
 
 _loaded: dict[str, ModuleType] = {}
