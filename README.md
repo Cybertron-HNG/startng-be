@@ -53,7 +53,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0027`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0028`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -310,6 +310,18 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
 - **Setting up Brevo:** an API key (SMTP & API, API keys); a verified sender, then the `mail.start.ng` domain with
   the DNS records Brevo lists; the server's IP under Security, Authorised IPs; and a transactional webhook to
   `<API_URL>/email/webhooks/brevo?key=<BREVO_WEBHOOK_KEY>` for hard bounces, spam, blocked, invalid and unsubscribed.
+
+## Game health (PRD H2)
+`app/features/game_health`; flag `game_health`; admin permission `games.health`. (Not "health": `GET /health` is the
+server's own check.)
+- A background loop checks every live game about every 20 minutes (failing ones every 10): `index.html` is there and
+  not blank, the scripts and stylesheets it loads from the game's folder exist, and the game's address answers 200.
+  Set `GAME_HEALTH_HTTP=false` where the API can't reach the games' addresses (a laptop without the Worker).
+- Three failed checks in a row make a game unhealthy and publish `game_unhealthy` `{game, reason}`. One good check
+  makes it healthy again, and a new version starts fresh. Unhealthy games aren't hidden: that's an admin's call
+  (Needs fixing).
+- Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
+  Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
 ## Run locally
 ```bash

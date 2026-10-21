@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     email_only_to: str = ""
     # Brevo calls POST /email/webhooks/brevo?key=<this> about bounces and spam complaints. Empty: webhook off.
     brevo_webhook_key: str = ""
+    # Game health (app/features/game_health, H2): besides checking each game's files, open its address and expect an
+    # answer. Off when the games' addresses aren't reachable from the API (a laptop without the Worker running).
+    game_health_http: bool = True
     email_merge_minutes: int = 10  # an email waits this long, so notes for the same player that day share one email
 
 
