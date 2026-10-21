@@ -204,3 +204,40 @@ def test_member_cap(env, monkeypatch):
     code = make(client, tokens).json()["code"]
     assert client.post(f"/private-tournaments/{code}/join", headers=tokens["tunde"]).status_code == 200
     assert client.post(f"/private-tournaments/{code}/join", headers=tokens["chioma"]).status_code == 400
+
+
+SHELL = '<html><head><!--seo--><title>start.ng</title><!--/seo--></head><body><div id="root"></div></body></html>'
+
+
+def test_invite_card_is_a_png_anyone_with_the_link_can_load(env):
+    client, tokens, _, _ = env
+    code = make(client, tokens, title="Family Cup").json()["code"]
+    res = client.get(f"/private-tournaments/{code}/card.png")
+    assert res.status_code == 200 and res.headers["content-type"] == "image/png"
+    assert res.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert client.get("/private-tournaments/nope-nope-1/card.png").status_code == 404
+
+
+def test_invite_page_has_the_tournament_in_its_preview_tags(env, monkeypatch):
+    from app.routers import pages
+    client, tokens, _, _ = env
+    monkeypatch.setattr(pages, "_get_shell", lambda: SHELL)
+    code = make(client, tokens, title="Family <Cup>").json()["code"]
+    html = client.get(f"/private-tournaments/{code}/page").text
+    assert "Family &lt;Cup&gt; · tournament with friends" in html and "<Cup>" not in html  # escaped
+    assert f"/private-tournaments/{code}/card.png" in html and f"/friends/{code}" in html
+    assert "noindex" in html  # a private link stays out of search
+    missing = client.get("/private-tournaments/nope-nope-1/page")
+    assert missing.status_code == 404 and "noindex" in missing.text
+
+
+def test_the_maker_can_swap_the_invite_link(env):
+    client, tokens, _, _ = env
+    old = make(client, tokens).json()["code"]
+    client.post(f"/private-tournaments/{old}/join", headers=tokens["tunde"])
+    assert client.post(f"/private-tournaments/{old}/new-link", headers=tokens["tunde"]).status_code == 403
+    new = client.post(f"/private-tournaments/{old}/new-link", headers=tokens["ada"]).json()["code"]
+    assert new != old
+    assert client.get(f"/private-tournaments/{old}").status_code == 404  # the old link is dead
+    assert client.post(f"/private-tournaments/{old}/join", headers=tokens["chioma"]).status_code == 404
+    assert client.get(f"/private-tournaments/{new}", headers=tokens["tunde"]).json()["members"] == 2  # members stay

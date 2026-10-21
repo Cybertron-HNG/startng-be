@@ -107,6 +107,13 @@ def leave(db: Session, t: PrivateTournament, user: User) -> None:
     db.commit()
 
 
+def new_code(db: Session, t: PrivateTournament, owner: User) -> None:
+    """A new invite link. Whoever only has the old one can't join; members stay."""
+    t.code = secrets.token_urlsafe(8)
+    log_activity(db, owner, "player", "private_tournament.link_changed", t.code)
+    db.commit()
+
+
 def mine(db: Session, user: User) -> list[PrivateTournament]:
     """Tournaments the player is in: running ones first, then the most recent that ended."""
     rows = db.scalars(select(PrivateTournament).join(PrivateTournamentMember).where(
