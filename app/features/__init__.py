@@ -20,6 +20,7 @@ from types import ModuleType
 # One line per feature, in any order. The name is the folder under app/features.
 FEATURES: list[str] = [
     "private_tournaments",
+    "follows",
     "moderation",  # H2 name filter (Hamzat)
     "needs_fixing",  # H2 "needs fixing" label (Hamzat)
     "duplicates",  # H2 duplicate finder (Hamzat)
