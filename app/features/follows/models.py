@@ -1,7 +1,7 @@
 """Friends & follows (S2): who follows whom, and invite links that make two players friends.
 
 Friends are not stored separately: two players are friends when each one follows the other.
-Migration: alembic/versions/0020_follows.py (renumber right before merging if someone else takes 0020).
+Migration: alembic/versions/0029_follows.py (after the Blackburn H1/H2 chain, which ends at 0028).
 """
 from datetime import datetime, timezone
 
