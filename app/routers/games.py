@@ -25,7 +25,7 @@ from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
     ScoreIn, ScoreOut,
 )
-from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, optional_user
+from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, lenient_user, optional_user
 from .. import leaderboard as boards
 from ..storage import game_url
 
@@ -399,7 +399,7 @@ def list_games(db: Session = Depends(get_db)):
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
-def count_play(name: str, request: Request, user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+def count_play(name: str, request: Request, user: User | None = Depends(lenient_user), db: Session = Depends(get_db)):
     """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed; a signed-in player's
     open is also remembered (the Progress Engine)."""
     _game_or_404(db, name)

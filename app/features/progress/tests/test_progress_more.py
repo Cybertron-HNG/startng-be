@@ -9,7 +9,7 @@ from app import tournaments
 from app.config import settings
 from app.features.progress import service as progress
 from app.features.progress.models import ActivityDay, GameOpen, Run
-from app.models import Score, Tournament, TournamentEntry, TournamentGame
+from app.models import GamePlay, Score, Tournament, TournamentEntry, TournamentGame
 from .test_progress import clean_registry, env, on  # noqa: F401  (shared fixtures)
 
 UTC = timezone.utc
@@ -172,6 +172,16 @@ def test_an_anonymous_play_records_no_open_but_still_counts_as_a_play(env, on):
     Session, client, _, _ = env
     assert client.post("/games/lanedash/plays").status_code == 204
     with Session() as db:
+        assert db.scalar(select(func.count()).select_from(GameOpen)) == 0
+
+
+def test_a_play_with_a_token_that_cannot_be_used_counts_as_a_visitor_play(env, on):
+    Session, client, _, _ = env
+    # the website sends the saved sign-in with the play; one that has expired or been revoked must not lose the play
+    res = client.post("/games/lanedash/plays", headers={"Authorization": "Bearer not-a-real-token"})
+    assert res.status_code == 204
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(GamePlay)) == 1
         assert db.scalar(select(func.count()).select_from(GameOpen)) == 0
 
 
