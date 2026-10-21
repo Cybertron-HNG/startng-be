@@ -252,6 +252,18 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
   the DNS records Brevo lists; the server's IP under Security, Authorised IPs; and a transactional webhook to
   `<API_URL>/email/webhooks/brevo?key=<BREVO_WEBHOOK_KEY>` for hard bounces, spam, blocked, invalid and unsubscribed.
 
+## Game health (PRD H2)
+`app/features/game_health`; flag `game_health`; admin permission `games.health`. (Not "health": `GET /health` is the
+server's own check.)
+- A background loop checks every live game about every 20 minutes (failing ones every 10): `index.html` is there and
+  not blank, the scripts and stylesheets it loads from the game's folder exist, and the game's address answers 200.
+  Set `GAME_HEALTH_HTTP=false` where the API can't reach the games' addresses (a laptop without the Worker).
+- Three failed checks in a row make a game unhealthy and publish `game_unhealthy` `{game, reason}`. One good check
+  makes it healthy again, and a new version starts fresh. Unhealthy games aren't hidden: that's an admin's call
+  (Needs fixing).
+- Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
+  Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
+
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
