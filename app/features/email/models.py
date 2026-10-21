@@ -68,3 +68,12 @@ class Email(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     subscriber: Mapped[Subscriber] = relationship()
+
+
+class Announcement(Base):
+    """Something start.ng emailed everyone about once, so it's never sent twice (e.g. "tournament:12")."""
+
+    __tablename__ = "email_announcements"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
