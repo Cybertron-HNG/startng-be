@@ -241,3 +241,29 @@ def test_the_maker_can_swap_the_invite_link(env):
     assert client.get(f"/private-tournaments/{old}").status_code == 404  # the old link is dead
     assert client.post(f"/private-tournaments/{old}/join", headers=tokens["chioma"]).status_code == 404
     assert client.get(f"/private-tournaments/{new}", headers=tokens["tunde"]).json()["members"] == 2  # members stay
+
+
+def test_card_shows_the_games_covers_and_copes_when_one_is_missing(env, monkeypatch):
+    import io
+    from PIL import Image
+    from app.features.private_tournaments import share
+    client, tokens, _, Session = env
+    code = make(client, tokens, games=["g0", "g1"]).json()["code"]
+    with Session() as db:
+        for g in db.scalars(select(Game).where(Game.name.in_(["g0", "g1"]))):
+            g.cover = "cover.webp"
+        db.commit()
+    asked = []
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 200), (200, 30, 30)).save(buf, "PNG")
+
+    def fake(url):
+        asked.append(url)
+        return buf.getvalue() if "g0" in url else None  # g1's picture can't be had
+
+    monkeypatch.setattr(share, "_fetch", fake)
+    res = client.get(f"/private-tournaments/{code}/card.png")
+    assert res.status_code == 200 and len(asked) == 2 and any("g0" in u for u in asked)
+    card = Image.open(io.BytesIO(res.content))
+    assert card.size == (1200, 630)
+    assert card.getpixel((120, 400)) == (200, 30, 30)  # g0's cover is in the first tile
