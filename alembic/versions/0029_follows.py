@@ -1,13 +1,13 @@
 """follows: who follows whom, and friend invite links (app/features/follows)
 
-Revision ID: 0020
-Revises: 0019
+Revision ID: 0029
+Revises: 0028
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0020"
-down_revision = "0019"
+revision = "0029"
+down_revision = "0028"
 branch_labels = None
 depends_on = None
 
