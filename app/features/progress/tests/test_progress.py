@@ -341,7 +341,7 @@ def test_me_progress_returns_the_players_snapshot(env, on):
     post_score(client, tokens, "ada", 90, game="relic")
     body = client.get("/me/progress", headers=tokens["ada"]).json()
     assert body == {
-        "runs": 2, "distinct_games": 2, "current_streak": 1, "best_streak": 1,
+        "runs": 2, "distinct_games": 2, "current_streak": 1, "best_streak": 1, "streak_freezes": 0,
         "xp": progress.FIRST_RUN_XP + 2 * progress.RUN_XP, "level": 1, "tournament_wins": 0,
     }
 

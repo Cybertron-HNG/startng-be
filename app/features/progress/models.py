@@ -18,6 +18,7 @@ class Run(Base):
     __table_args__ = (
         Index("ix_runs_user_created", "user_id", "created_at"),
         Index("ix_runs_game_created", "game_name", "created_at"),
+        Index("ix_runs_created", "created_at"),  # the retention purge
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -26,6 +27,20 @@ class Run(Base):
     score: Mapped[int] = mapped_column(BigInteger)  # the run's first stat, for quick sorting
     stats: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # The daily tournament this run counted for, if the player had entered and the game was in it.
+    tournament_id: Mapped[int | None] = mapped_column(ForeignKey("tournaments.id", ondelete="SET NULL"))
+
+
+class GameOpen(Base):
+    """Proof that a signed-in player opened a game (C4): when they first and last did, and how many times."""
+
+    __tablename__ = "game_opens"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    game_name: Mapped[str] = mapped_column(String(40), ForeignKey("games.name", ondelete="CASCADE"), primary_key=True)
+    first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    count: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class ActivityDay(Base):
