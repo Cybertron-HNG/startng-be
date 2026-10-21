@@ -12,3 +12,5 @@ def test_settings(monkeypatch):
     monkeypatch.setattr(settings, "github_token", "")
     # The game standards have their own tests (test_standards.py); the rest use small games that skip them.
     monkeypatch.setattr(settings, "enforce_game_standards", False)
+    monkeypatch.setattr(settings, "email_provider", "log")  # never sends real email
+    monkeypatch.setattr(settings, "email_only_to", "")
