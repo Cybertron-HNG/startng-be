@@ -53,7 +53,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0028`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0029`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -322,6 +322,14 @@ server's own check.)
   (Needs fixing).
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
+
+## Tournament emails (PRD H1)
+`app/features/email/tournament_mail.py`, part of the `email` feature.
+- At 6 PM one tournament ends and the next starts. Everyone on the `tournament` topic (visitors too) gets who won and
+  the new games (`tournament_day`). Each player who chose `results` gets their place and points (`tournament_result`,
+  from `tournament_finished`). A player on both gets one email.
+- The email loop settles and announces each tournament itself, once (`email_announcements`), within 3 hours of its
+  start, so it goes out even when nobody opens start.ng at 6 PM.
 
 ## Run locally
 ```bash

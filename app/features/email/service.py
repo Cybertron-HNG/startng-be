@@ -397,10 +397,17 @@ async def run_forever() -> None:
 
     from starlette.concurrency import run_in_threadpool
 
+    from . import tournament_mail
+
     def tick() -> int:
         if not flags.is_on(NAME):
             return 0
         with SessionLocal() as db:
+            try:
+                tournament_mail.tick(db)  # the day's tournament email, once, when it starts
+            except Exception:
+                db.rollback()
+                log.exception("Tournament emails failed")
             return send_due(db)
 
     while True:

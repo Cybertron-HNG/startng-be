@@ -1,6 +1,6 @@
 """H1 email and notifications: opt-in per topic, double opt-in for visitors, one-click unsubscribe, an outbox with
 retries, 1 email per player per day, and notify() for the other features (see service.py)."""
-from . import service
+from . import service, tournament_mail  # noqa: F401  (tournament_mail declares its email kinds)
 from .router import router  # noqa: F401
 
 NAME = "email"
