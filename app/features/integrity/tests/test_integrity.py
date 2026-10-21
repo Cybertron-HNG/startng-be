@@ -347,3 +347,31 @@ def test_the_stats_are_read_instead_when_a_row_disagrees_with_the_column(env):
         seed(db, ids, "arena", ARENA, 1, legacy=True)  # includes rows saved before the schema had these stats
         integrity.ranked(db, "arena", 10)
         assert integrity._consistent[key_for("arena", ARENA)] is False
+
+
+# --- ranking a crowd of ties without loading them ----------------------------------------------------------------
+
+def test_ranking_the_top_few_does_not_load_the_players_tied_with_them(env):
+    """200 players share the best first stat. Asking for the top 5 must be answered by the database in one go, not by
+    fetching every tied row to sort them here (that was slow on a big game)."""
+    from sqlalchemy import event
+    Session, _, _, ids = env
+    with Session() as db:
+        rng = random.Random(4)
+        users = [User(email=f"tie{n}@example.com", name=f"T{n}") for n in range(200)]
+        db.add_all(users)
+        db.flush()
+        for n, u in enumerate(users):
+            stats = {"stage": 5, "kills": rng.randint(0, 9), "time": rng.randint(10, 30)}
+            db.add(Score(user_id=u.id, game_name="arena", best=5, stats=stats, updated_at=BASE + timedelta(seconds=n % 7)))
+        db.commit()
+        integrity.ranked(db, "arena", 5)  # the first call also does the once-per-game checks
+        statements, rows = [], []
+        engine = db.get_bind()
+        event.listen(engine, "before_cursor_execute", lambda conn, cur, stmt, *a: statements.append(stmt))
+        got = integrity.ranked(db, "arena", 5)
+        assert len(got) == 5
+        selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+        assert len(selects) <= 2, f"{len(selects)} queries: {selects}"  # the game, and the ranking itself
+        expected = [r.user_id for r in old_ranked(db, "arena", ARENA)][:5]
+        assert [r.user_id for r in got] == expected
