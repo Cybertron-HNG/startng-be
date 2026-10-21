@@ -19,6 +19,7 @@ from types import ModuleType
 # One line per feature, in any order. The name is the folder under app/features.
 FEATURES: list[str] = [
     "private_tournaments",
+    "kit",
 ]
 
 _loaded: dict[str, ModuleType] = {}
