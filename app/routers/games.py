@@ -567,6 +567,7 @@ def submit_score(
             row.best, row.stats = first, stats
             db.commit()
     tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
+    events.publish("score_submitted", {"user_id": user.id, "game": name, "stats": stats})  # private tournaments, and more later
     best = boards.stats_of(schema, row.stats, row.best)
     rows = _ranked(db, name, schema)
     rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1

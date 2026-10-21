@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 EVENTS: dict[str, tuple[str, ...]] = {
     "game_published": ("game", "owner_id"),  # a new game went live
     "game_updated": ("game", "owner_id", "auto"),  # a new version of a live game went live (auto: from a GitHub push)
+    "score_submitted": ("user_id", "game", "stats"),  # a game sent a score (every run, not only personal bests)
     "tournament_finished": ("tournament_id", "winner_id", "players"),  # a daily tournament was settled
     "run_recorded": ("user_id", "game", "run_id"),  # D1
     "award_unlocked": ("user_id", "kind", "key"),  # D1
