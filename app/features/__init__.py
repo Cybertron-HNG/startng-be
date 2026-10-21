@@ -25,6 +25,7 @@ FEATURES: list[str] = [
     "duplicates",  # H2 duplicate finder (Hamzat)
     "email",  # H1 email and notifications (Hamzat)
     "game_health",  # H2 game health checks (Hamzat)
+    "progress",
 ]
 
 _loaded: dict[str, ModuleType] = {}
