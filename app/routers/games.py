@@ -558,7 +558,9 @@ def submit_score(
         integrity.check_limits(schema, stats)
     first = stats[schema[0]["key"]]
 
-    row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+    # Locked until the commit, so two runs sent at once are compared one after the other and a lower one can't overwrite a higher best.
+    mine = select(Score).where(Score.user_id == user.id, Score.game_name == name).with_for_update()
+    row = db.scalar(mine)
     if on:  # a run that looks too good to be true is held for review, not scored
         previous = boards.stats_of(schema, row.stats, row.best)[schema[0]["key"]] if row is not None else None
         why = integrity.outlier_reason(db, name, schema, stats, previous)
@@ -573,7 +575,7 @@ def submit_score(
             db.commit()
         except IntegrityError:  # two first runs at once: compare with the one that won
             db.rollback()
-            row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+            row = db.scalar(mine)
             improved = None
     else:
         improved = None
