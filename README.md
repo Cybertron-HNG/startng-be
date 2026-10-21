@@ -53,7 +53,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0026`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0027`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -278,6 +278,38 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
 - Admins: `GET /admin/duplicates`, `POST /admin/duplicates/scan`, `POST /admin/duplicates/keep` `{a, b}`,
   `POST /admin/duplicates/games/{name}/hide` `{of}`, `GET /admin/duplicates/hidden`,
   `POST /admin/duplicates/games/{name}/show`, `DELETE /admin/duplicates/games/{name}`. Owners: `GET /duplicates/mine`.
+
+## Email (PRD H1)
+`app/features/email`; flag `email`; admin permission `email.view`. Sent with Brevo, behind a small `EmailProvider`
+(`provider.py`), so moving to another provider is one new class.
+- **For other features (C7):** declare your kind once, then notify:
+  ```python
+  from app.features.email import service as email
+
+  email.register_kind("record_beaten", "records", lambda d: email.Note(
+      subject="Your record was beaten", html=f"<p>{email.esc(d['by'])} beat you.</p>", text=f"{d['by']} beat you."))
+  email.notify(user_id, "record_beaten", {"by": "Ada"})        # one player, only if they chose the topic
+  email.broadcast("new_games", "weekly_digest", {...})          # everyone on a topic, visitors too
+  ```
+  Escape anything from players with `email.esc()`. `notify()` does nothing while the flag is off.
+- **Topics:** `tournament`, `results`, `records`, `new_games`, `follows`, `newsletter`. Signed-in players choose theirs;
+  visitors can ask for `tournament`, `new_games` and `newsletter`, and confirm by a link first (double opt-in).
+- **One email a day:** notes wait a few minutes (`EMAIL_MERGE_MINUTES`); notes for the same player that day join the
+  waiting email. After it's sent, more notes that day are dropped and logged as `capped`.
+- **Every email** has a "choose your emails" link and one-click unsubscribe (a link, plus the `List-Unsubscribe` and
+  `List-Unsubscribe-Post` headers).
+- **The outbox** (`email_outbox`) keeps every email. A background loop sends what's due every 30 seconds and retries
+  failures after 1, 5, 30 and 120 minutes. Bounces and spam complaints from Brevo's webhook mark an address as bad;
+  it's never written to again.
+- Players: `GET`/`PUT /email/me`. Visitors and email links: `POST /email/subscribe` `{email, topics}`,
+  `POST /email/confirm` `{token}`, `POST /email/unsubscribe` (`{token, topic?}`, or `?token=` from mail apps).
+  Brevo: `POST /email/webhooks/brevo?key=...`. Admins: `GET /admin/email` (the outbox), `POST /admin/email/test`.
+- **Settings:** `EMAIL_PROVIDER` (`log`, the default, writes emails to the server log instead of sending; `brevo`
+  sends), `BREVO_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `EMAIL_ONLY_TO` (while set, only these addresses get email:
+  for testing), `BREVO_WEBHOOK_KEY`, `EMAIL_MERGE_MINUTES`.
+- **Setting up Brevo:** an API key (SMTP & API, API keys); a verified sender, then the `mail.start.ng` domain with
+  the DNS records Brevo lists; the server's IP under Security, Authorised IPs; and a transactional webhook to
+  `<API_URL>/email/webhooks/brevo?key=<BREVO_WEBHOOK_KEY>` for hard bounces, spam, blocked, invalid and unsubscribed.
 
 ## Run locally
 ```bash

@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
+    # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
+    # (local work and tests); "brevo" sends through Brevo with BREVO_API_KEY. EMAIL_ONLY_TO: while it's set, mail
+    # goes only to these comma-separated addresses and everyone else's is skipped (testing before go-live).
+    email_provider: str = "log"
+    brevo_api_key: str = ""
+    email_from: str = "start.ng <hello@mail.start.ng>"
+    email_reply_to: str = ""  # a monitored inbox for replies; empty: replies go to email_from
+    email_only_to: str = ""
+    # Brevo calls POST /email/webhooks/brevo?key=<this> about bounces and spam complaints. Empty: webhook off.
+    brevo_webhook_key: str = ""
+    email_merge_minutes: int = 10  # an email waits this long, so notes for the same player that day share one email
 
 
 settings = Settings()
