@@ -548,7 +548,9 @@ def submit_score(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"send stats: {keys}")
     first = stats[schema[0]["key"]]
 
-    row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+    # Locked until the commit, so two runs sent at once are compared one after the other and a lower one can't overwrite a higher best.
+    mine = select(Score).where(Score.user_id == user.id, Score.game_name == name).with_for_update()
+    row = db.scalar(mine)
     if row is None:
         row = Score(user_id=user.id, game_name=name, best=first, stats=stats)
         db.add(row)
@@ -557,7 +559,7 @@ def submit_score(
             db.commit()
         except IntegrityError:  # two first runs at once: compare with the one that won
             db.rollback()
-            row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+            row = db.scalar(mine)
             improved = None
     else:
         improved = None
