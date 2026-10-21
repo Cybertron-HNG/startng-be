@@ -64,8 +64,14 @@ def parse_leaderboard(board) -> list[dict]:
             raise SchemaError(f'stat "{key}": order must be "highest" or "lowest"')
         if fmt not in FORMATS:
             raise SchemaError(f'stat "{key}": format must be "number" or "time"')
+        mx = s.get("max")  # optional: the highest value a run may send for this stat (checked by the integrity feature)
+        if mx is not None and (isinstance(mx, bool) or not isinstance(mx, int) or not 1 <= mx <= MAX_VALUE):
+            raise SchemaError(f'stat "{key}": max must be a whole number from 1 to {MAX_VALUE:,}')
         seen.add(key)
-        out.append({"key": key, "label": label.strip(), "order": order, "format": fmt})
+        entry = {"key": key, "label": label.strip(), "order": order, "format": fmt}
+        if mx is not None:
+            entry["max"] = mx
+        out.append(entry)
     return out
 
 

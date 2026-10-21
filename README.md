@@ -54,6 +54,22 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 7. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
+## Score integrity and fast leaderboards (PRD D2)
+`app/features/integrity`; flag `integrity` (off by default; with it off nothing below applies and scores work as before).
+This drop: limits, a rate limit and the new leaderboard layer. Flagged outliers, the flag queue and its admin tab come next.
+- **Limits:** a game can set `"max"` on a stat in its startng.json (`{"key": "score", "label": "Score", "max": 5000}`, a whole
+  number from 1 to 1,000,000,000). A run with a stat above it is refused with 422 and the code `score_out_of_range`
+  (`{"ok": false, "detail": ..., "errors": [{"code": "score_out_of_range", ...}]}`) and nothing is saved.
+- **Rate limit:** at most `SCORES_PER_MINUTE` (30) scores per player per game in any 60 seconds; over it, 429 with
+  `rate_limited` and a `Retry-After` header. Kept in memory per server process.
+- **Leaderboards:** same ranking as before (first stat, then the next ones, then whoever got there first, then who was saved
+  first) but sorted in the database, so it stays quick with tens of thousands of scores. `GET /games/{name}/leaderboard`
+  keeps its output and is cached for 30 seconds; a new or removed score clears that game's cache at once. The rank in a
+  score response is always worked out fresh.
+- **For other features (contract C5):** `from app.features.integrity import service as integrity`, then
+  `integrity.ranked(db, game, limit, only_users=None)` (the game's best runs, best first, with `.user` loaded) and
+  `integrity.rank_of(db, user_id, game)` (a place, or None). `only_users` ranks just those players (friends, a crew).
+
 ## Admin page and reports
 `app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
 - **Who:** super admins are `SUPER_ADMIN_EMAILS` (every permission; only they add admins and make roles). Other admins

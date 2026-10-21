@@ -11,7 +11,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import auto_update, covers, events, manifest, tournaments
+from .. import auto_update, covers, events, flags, manifest, tournaments
+from ..features.integrity import service as integrity
 from ..activity import record
 from ..config import settings
 from ..db import get_db
@@ -536,6 +537,9 @@ def submit_score(
     """Save the player's run: their game's stats (startng.json) or a plain score. Only their best run is kept."""
     game = _game_or_404(db, name)
     schema = _schema(game)
+    on = flags.is_on("integrity")  # score integrity (PRD D2): a rate limit, the startng.json `max`, a fast leaderboard
+    if on:
+        integrity.check_rate(user.id, name)
     if body.stats is not None:
         try:
             stats = boards.check_stats(schema, body.stats)
@@ -546,6 +550,8 @@ def submit_score(
     else:
         keys = ", ".join(s["key"] for s in schema)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"send stats: {keys}")
+    if on:
+        integrity.check_limits(schema, stats)
     first = stats[schema[0]["key"]]
 
     row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
@@ -569,8 +575,12 @@ def submit_score(
     tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
     events.publish("score_submitted", {"user_id": user.id, "game": name, "stats": stats})  # private tournaments, and more later
     best = boards.stats_of(schema, row.stats, row.best)
-    rows = _ranked(db, name, schema)
-    rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
+    if on:
+        integrity.invalidate(name)
+        rank = integrity.rank_of(db, user.id, name)
+    else:
+        rows = _ranked(db, name, schema)
+        rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
     return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best)
 
 
@@ -585,17 +595,22 @@ def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = De
     """A game's top players, ranked by its own stats (startng.json) or a plain score."""
     game = _game_or_404(db, name)
     schema = _schema(game)
-    return [
-        LeaderboardEntry(
-            rank=i + 1,
-            player_id=s.user_id,
-            name=_player_name(s.user),
-            color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
-            score=s.best,
-            stats=boards.stats_of(schema, s.stats, s.best),
-        )
-        for i, s in enumerate(_ranked(db, name, schema)[:limit])
-    ]
+
+    def build() -> list[LeaderboardEntry]:
+        top = integrity.ranked(db, name, limit) if flags.is_on("integrity") else _ranked(db, name, schema)[:limit]
+        return [
+            LeaderboardEntry(
+                rank=i + 1,
+                player_id=s.user_id,
+                name=_player_name(s.user),
+                color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
+                score=s.best,
+                stats=boards.stats_of(schema, s.stats, s.best),
+            )
+            for i, s in enumerate(top)
+        ]
+
+    return integrity.cached(name, limit, build) if flags.is_on("integrity") else build()
 
 
 @router.delete("/{name}/scores/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -609,5 +624,6 @@ def remove_score(name: str, player_id: int, user: User = Depends(current_user), 
     db.delete(row)
     record(db, user, "developer", "score.removed", name, player_id=player_id)
     db.commit()
+    integrity.invalidate(name)
     tournaments.remove_scores(db, name, player_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
