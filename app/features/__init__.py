@@ -20,6 +20,8 @@ from types import ModuleType
 FEATURES: list[str] = [
     "private_tournaments",
     "moderation",  # H2 name filter (Hamzat)
+    "progress",
+    "integrity",
 ]
 
 _loaded: dict[str, ModuleType] = {}

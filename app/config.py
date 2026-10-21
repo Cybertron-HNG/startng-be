@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     super_admin_emails: str = ""
     contacts_before_block: int = 3  # issues a developer must have been contacted about before they can be blocked or deleted
     reports_per_day: int = 10  # reports one player can send in 24 hours
+    # Outlier flags (the "integrity" feature): a run is held for review when it beats the player's previous best by more
+    # than flag_previous_factor, or the game's 99th percentile by more than flag_percentile_factor.
+    flag_previous_factor: int = 3
+    flag_percentile_factor: int = 5
+    flag_min_previous: int = 20  # a previous best under this is too small to judge a jump by
+    flag_min_players: int = 20  # players with a score a game needs before its percentile is used
+    scores_per_minute: int = 30  # scores one player can send to one game in a minute (when the "integrity" feature is on)
+    runs_retention_days: int = 180  # how long the Progress Engine keeps each run (daily activity and awards are kept)
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
