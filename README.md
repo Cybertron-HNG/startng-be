@@ -264,6 +264,14 @@ server's own check.)
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
+## Tournament emails (PRD H1)
+`app/features/email/tournament_mail.py`, part of the `email` feature.
+- At 6 PM one tournament ends and the next starts. Everyone on the `tournament` topic (visitors too) gets who won and
+  the new games (`tournament_day`). Each player who chose `results` gets their place and points (`tournament_result`,
+  from `tournament_finished`). A player on both gets one email.
+- The email loop settles and announces each tournament itself, once (`email_announcements`), within 3 hours of its
+  start, so it goes out even when nobody opens start.ng at 6 PM.
+
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
