@@ -53,7 +53,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0024`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0025`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -254,6 +254,17 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
   allowed words, saved in `moderation_words`.
 - `GET`/`POST /admin/moderation/words`, `DELETE /admin/moderation/words/{id}`, `POST /admin/moderation/try` (check a
   name), `GET /admin/moderation/flagged` (live names that fail).
+
+## Needs fixing (PRD H2)
+`app/features/needs_fixing`; flag `needs_fixing`; admin permission `games.needs_fixing`.
+- An admin marks a broken game with a note for its owner. The game is hidden everywhere (`admin.hide_game`, reason
+  `needs_fixing`) until an admin puts it back.
+- The owner sees the note in Your games and says it's fixed (with an optional note), which puts it back in the admins'
+  queue. Admins put it back, or send it back with a new note. One open request per game; each step goes to the
+  activity log. A game also hidden for a stronger reason (flagged, blocked) stays hidden.
+- Admins: `GET /admin/needs-fixing`, `POST /admin/needs-fixing/games/{name}` `{note}`,
+  `POST /admin/needs-fixing/{id}/approve`, `POST /admin/needs-fixing/{id}/reopen` `{note}`.
+  Owners: `GET /needs-fixing/mine`, `POST /needs-fixing/{id}/fixed` `{note}`.
 
 ## Run locally
 ```bash

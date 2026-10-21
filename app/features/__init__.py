@@ -20,6 +20,7 @@ from types import ModuleType
 FEATURES: list[str] = [
     "private_tournaments",
     "moderation",  # H2 name filter (Hamzat)
+    "needs_fixing",  # H2 "needs fixing" label (Hamzat)
     "progress",
     "integrity",
 ]
