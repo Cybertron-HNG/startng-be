@@ -13,7 +13,7 @@ import time
 from collections import deque
 from typing import Any, Callable, Iterable
 
-from sqlalchemy import case, func, null, select
+from sqlalchemy import String, case, cast, func, null, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from ... import leaderboard as boards
@@ -72,12 +72,18 @@ def _schema(db: Session, game_name: str) -> list[dict] | None:
     return None if game is None else (game.leaderboard or boards.DEFAULT)
 
 
+def _no_stats():
+    """A plain-score row: no stats at all. Old rows hold SQL NULL; a row saved with None through the ORM holds the JSON
+    value null. Both mean the same, and `boards.stats_of` reads both as {"score": best}."""
+    return or_(Score.stats.is_(None), cast(Score.stats, String) == "null")
+
+
 def _first_stat_in_json(schema: list[dict]):
     """The first stat read out of the row's stats, the way `boards.stats_of` does: a row with no stats is a plain
     score, and a row that predates the schema may not have the stat at all (NULL = worst)."""
     key = schema[0]["key"]
     plain = Score.best if key == "score" else null()
-    return case((Score.stats.is_(None), plain), else_=Score.stats[key].as_integer())
+    return case((_no_stats(), plain), else_=Score.stats[key].as_integer())
 
 
 def _first_stat(db: Session, game_name: str, schema: list[dict]):
@@ -101,22 +107,36 @@ def _filter(query, game_name: str, only_users: Iterable[int] | None):
     return query if only_users is None else query.where(Score.user_id.in_(list(only_users)))
 
 
+def _stat(db: Session, game_name: str, schema: list[dict], index: int):
+    """Stat number `index` as the database sees it. The first stat may come from the indexed `best` column (see
+    `_first_stat`); the others are read out of the row's stats, a missing one being NULL (= worst)."""
+    if index == 0:
+        return _first_stat(db, game_name, schema)
+    key = schema[index]["key"]
+    plain = Score.best if key == "score" else null()
+    return case((_no_stats(), plain), else_=Score.stats[key].as_integer())
+
+
+def _order(db: Session, game_name: str, schema: list[dict]) -> list:
+    """The leaderboard order, in SQL: each stat in turn (a missing one last, then best first), then whoever got there
+    first, then whoever was saved first. The same order `_sort_key` gives."""
+    order = []
+    for i, stat in enumerate(schema):
+        value = _stat(db, game_name, schema, i)
+        if value is not Score.best:  # `best` is never NULL; leaving the flag off lets the (game, best) index give the order
+            order.append(case((value.is_(None), 1), else_=0))
+        order.append(value.desc() if stat["order"] == "highest" else value.asc())
+    return order + [Score.updated_at, Score.id]
+
+
 def ranked(db: Session, game_name: str, limit: int, only_users: Iterable[int] | None = None) -> list[Score]:
-    """The game's best runs, best first. The database finds the top `limit` by the first stat; only the rows that tie
-    with the last of them are sorted here, to apply the remaining stats and the time."""
+    """The game's best runs, best first, in one query. The database walks the (game, best) index, so it only has to
+    order the few players tied with the last one it returns."""
     schema = _schema(db, game_name)
     if schema is None:
         return []
-    value = _first_stat(db, game_name, schema)
-    highest = schema[0]["order"] == "highest"
-    order = [case((value.is_(None), 1), else_=0), value.desc() if highest else value.asc()]
-    top = list(db.scalars(_filter(select(value), game_name, only_users).order_by(*order).limit(limit)))
-    candidates = _filter(select(Score.id, Score.stats, Score.best, Score.updated_at), game_name, only_users)
-    if len(top) == limit and top[-1] is not None:  # otherwise every row is a candidate
-        candidates = candidates.where(value >= top[-1] if highest else value <= top[-1])
-    rows = sorted(db.execute(candidates).all(), key=lambda r: _sort_key(schema, r.stats, r.best, r.updated_at, r.id))[:limit]
-    by_id = {s.id: s for s in db.scalars(select(Score).options(joinedload(Score.user)).where(Score.id.in_([r.id for r in rows]))).unique()}
-    return [by_id[r.id] for r in rows]
+    query = _filter(select(Score).options(joinedload(Score.user)), game_name, only_users)
+    return list(db.scalars(query.order_by(*_order(db, game_name, schema)).limit(limit)).unique())
 
 
 def rank_of(db: Session, user_id: int, game_name: str) -> int | None:
