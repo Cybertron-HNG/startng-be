@@ -22,6 +22,8 @@ FEATURES: list[str] = [
     "moderation",  # H2 name filter (Hamzat)
     "needs_fixing",  # H2 "needs fixing" label (Hamzat)
     "duplicates",  # H2 duplicate finder (Hamzat)
+    "progress",
+    "integrity",
 ]
 
 _loaded: dict[str, ModuleType] = {}
