@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     super_admin_emails: str = ""
     contacts_before_block: int = 3  # issues a developer must have been contacted about before they can be blocked or deleted
     reports_per_day: int = 10  # reports one player can send in 24 hours
+    runs_retention_days: int = 180  # how long the Progress Engine keeps each run (daily activity and awards are kept)
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""

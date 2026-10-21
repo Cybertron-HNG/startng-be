@@ -51,7 +51,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 5. **startng.json** (`app/manifest.py`): `manifest.register_section("category", parse, apply)`. `parse` checks your
    key (raise `SchemaError` to refuse the publish), and `apply(db, game, value)` saves it when the game goes live.
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
-7. **Migrations** start at `0021`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+7. **Migrations** start at `0022`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -60,15 +60,28 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
   day is updated in `activity_days` (Nigeria time), and registered award rules are evaluated. The score response then also
   carries `unlocked: [{kind, key}]`, the awards that run earned (`[]` when none). Nothing else in the response changes.
 - **Streaks:** consecutive days with a run. A streak stays alive until the end of the day after the last one played.
+  **Freezes:** a streak earns one each time it reaches a multiple of 7 days (up to 2 banked). A missed day spends one
+  automatically and the streak carries on (the frozen day adds nothing); with none left it ends the streak. Worked out
+  from the daily activity each time, so there is nothing to keep in step.
   **XP:** +10 for the first run of the day, +2 per run, capped at 50 a day. **Level:** `1 + isqrt(xp // 50)`.
-- `GET /me/progress` (signed in): `{runs, distinct_games, current_streak, best_streak, xp, level, tournament_wins}`.
+- `GET /me/progress` (signed in): `{runs, distinct_games, current_streak, best_streak, streak_freezes, xp, level, tournament_wins}`.
   `GET /me/awards` (signed in): `[{kind, key, earned_at}]`, newest first.
+  `GET /players/{id}/progress` (no sign-in): `{runs, distinct_games, current_streak, best_streak, level, tournament_wins}`,
+  never XP or an email. 404 for an unknown player or one whose page is private (the player profile registers a check
+  with `progress.register_visibility(feature, lambda db, user_id: ...)`).
+- **Game opens (C4):** `POST /games/{name}/plays` with a sign-in token also remembers the open in `game_opens`
+  (`first_at`, `last_at`, `count`; read it with `progress.game_open(db, user_id, game)`). Without a token it only counts
+  the play, as before. **The website must send the player's token on that call for opens to be recorded.**
+- **Tournament link:** a run records the daily tournament it counted for (`runs.tournament_id`).
+- **Retention:** runs are kept `RUNS_RETENTION_DAYS` (180); older ones are deleted, at most once an hour per server
+  process. Daily activity, streaks, XP and awards are kept.
+- **Backfill:** players who scored before this existed get one run per game they have a score in, so "tried 5 games"
+  works for them: run `python -m app.features.progress.backfill` once after deploying (safe to repeat). It gives no
+  streak and no XP, because the real days are unknown.
 - **For other features:** `from app.features.progress import service as progress`, then
   `progress.snapshot(db, user_id)` and `progress.register("wardrobe", [progress.Rule("item", "explorer_cap", lambda snap, run: snap.distinct_games >= 5)])`
   from your own `rules.py`. A rule gets the player's snapshot (after the run) and the run; awards are unique per
   (player, kind, key); a rule that raises is logged and skipped. Events: `run_recorded`, `award_unlocked`.
-- Coming in the next drops: streak freezes, `game_opens`, the backfill from `scores`, `GET /players/{id}/progress`,
-  run retention (180 days) and a `tournament_id` on runs.
 
 ## Admin page and reports
 `app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
