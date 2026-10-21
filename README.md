@@ -51,8 +51,24 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 5. **startng.json** (`app/manifest.py`): `manifest.register_section("category", parse, apply)`. `parse` checks your
    key (raise `SchemaError` to refuse the publish), and `apply(db, game, value)` saves it when the game goes live.
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
-7. **Migrations** start at `0019`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+7. **Migrations** start at `0021`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
+
+## Progress Engine (PRD D1)
+`app/features/progress`; flag `progress` (off by default; with it off, scores behave exactly as before and nothing is logged).
+- **Run log:** with the flag on, every `POST /games/{name}/scores` is logged in `runs` (not only personal bests), the player's
+  day is updated in `activity_days` (Nigeria time), and registered award rules are evaluated. The score response then also
+  carries `unlocked: [{kind, key}]`, the awards that run earned (`[]` when none). Nothing else in the response changes.
+- **Streaks:** consecutive days with a run. A streak stays alive until the end of the day after the last one played.
+  **XP:** +10 for the first run of the day, +2 per run, capped at 50 a day. **Level:** `1 + isqrt(xp // 50)`.
+- `GET /me/progress` (signed in): `{runs, distinct_games, current_streak, best_streak, xp, level, tournament_wins}`.
+  `GET /me/awards` (signed in): `[{kind, key, earned_at}]`, newest first.
+- **For other features:** `from app.features.progress import service as progress`, then
+  `progress.snapshot(db, user_id)` and `progress.register("wardrobe", [progress.Rule("item", "explorer_cap", lambda snap, run: snap.distinct_games >= 5)])`
+  from your own `rules.py`. A rule gets the player's snapshot (after the run) and the run; awards are unique per
+  (player, kind, key); a rule that raises is logged and skipped. Events: `run_recorded`, `award_unlocked`.
+- Coming in the next drops: streak freezes, `game_opens`, the backfill from `scores`, `GET /players/{id}/progress`,
+  run retention (180 days) and a `tournament_id` on runs.
 
 ## Admin page and reports
 `app/admin.py`, `app/routers/admin.py`; the website's page is start.ng/admin.
