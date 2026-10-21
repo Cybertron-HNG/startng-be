@@ -1,4 +1,4 @@
-"""The Kit's own table. Migration: alembic/versions/0028_kit_game_sessions.py.
+"""The Kit's own table. Migration: alembic/versions/0030_kit_game_sessions.py.
 
 Not to be confused with security.create_game_session, which is a key a game uses to call the player API. A row here
 is one play session: from the moment a game opens until the player leaves it."""

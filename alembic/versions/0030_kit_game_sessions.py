@@ -1,15 +1,13 @@
 """kit: game_sessions, how long people play games that use kit.js (app/features/kit)
 
-Revision ID: 0028
-Revises: 0019
-
-0020-0027 are taken by open pull requests. Point down_revision at whichever migration is merged last before this.
+Revision ID: 0030
+Revises: 0029
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0028"
-down_revision = "0019"
+revision = "0030"
+down_revision = "0029"
 branch_labels = None
 depends_on = None
 

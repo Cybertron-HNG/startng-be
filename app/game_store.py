@@ -19,6 +19,8 @@ class GameStore(Protocol):
     def delete_file(self, game: str, path: str) -> None: ...
     def delete_game(self, game: str) -> None: ...
     def set_hidden(self, game: str, hidden: bool) -> None: ...  # take the game offline (the Worker shows an error page)
+    def read_file(self, game: str, path: str) -> bytes | None: ...  # one file of a game, or None if it isn't there
+    def file_sizes(self, game: str) -> dict[str, int]: ...  # every file of a game and its size in bytes
 
 
 class R2GameStore:
@@ -39,6 +41,15 @@ class R2GameStore:
 
     def set_hidden(self, game: str, hidden: bool) -> None:
         storage.set_hidden(game, hidden)
+
+    def file_sizes(self, game: str) -> dict[str, int]:
+        return {f["path"]: f["size"] for f in storage.list_files(game)}
+
+    def read_file(self, game: str, path: str) -> bytes | None:
+        try:
+            return storage.get_file(game, path)
+        except Exception:  # not there (or R2 hiccup): callers treat it as missing
+            return None
 
 
 class LocalGameStore:
@@ -79,6 +90,14 @@ class LocalGameStore:
             marker.write_bytes(b"")
         else:
             marker.unlink(missing_ok=True)
+
+    def file_sizes(self, game: str) -> dict[str, int]:
+        folder = self._dir(game)
+        return {p.relative_to(folder).as_posix(): p.stat().st_size for p in folder.rglob("*") if p.is_file()} if folder.exists() else {}
+
+    def read_file(self, game: str, path: str) -> bytes | None:
+        target = self._dir(game) / storage.clean_path(path)
+        return target.read_bytes() if target.is_file() else None
 
 
 def get_game_store() -> GameStore | None:
