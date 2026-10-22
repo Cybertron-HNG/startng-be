@@ -30,10 +30,8 @@ def _out(flag: ScoreFlag, admin: bool = False) -> FlagOut:
 def game_flags(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The runs held back in your game, newest first, so you can see why a score you expected isn't on the board."""
     game = db.get(Game, name)
-    if game is None:
+    if game is None or game.owner_id != user.id:  # someone else's game gets the same answer as an unknown one
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such game")
-    if game.owner_id != user.id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the game's owner can see its flags")
     rows = db.scalars(select(ScoreFlag).options(joinedload(ScoreFlag.user)).where(ScoreFlag.game_name == name).order_by(ScoreFlag.id.desc()))
     return [_out(f) for f in rows.unique()]
 

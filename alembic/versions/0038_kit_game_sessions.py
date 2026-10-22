@@ -1,13 +1,13 @@
 """kit: game_sessions, how long people play games that use kit.js (app/features/kit)
 
-Revision ID: 0030
-Revises: 0029
+Revision ID: 0038
+Revises: 0037
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0030"
-down_revision = "0029"
+revision = "0038"
+down_revision = "0037"
 branch_labels = None
 depends_on = None
 
