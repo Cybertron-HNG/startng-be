@@ -1,13 +1,13 @@
 """profiles (S1): profile_settings, a player's choices about their page
 
-Revision ID: 0035
-Revises: 0029
+Revision ID: 0034
+Revises: 0033
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0035"
-down_revision = "0029"
+revision = "0034"
+down_revision = "0033"
 branch_labels = None
 depends_on = None
 
