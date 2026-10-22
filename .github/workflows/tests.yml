@@ -2,7 +2,9 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, prod, staging, dev]
+    # Every PR, whatever its base (stacked PRs into a feature branch too). "edited" re-runs CI when a PR is
+    # retargeted (and on title or description edits, which just run it again: skipping would hide a failure).
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, prod, staging, dev]
 

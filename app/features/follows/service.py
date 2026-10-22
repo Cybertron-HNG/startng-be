@@ -67,6 +67,10 @@ def friends_of(db: Session, user_id: int) -> set[int]:
 def is_friend(db: Session, a_id: int, b_id: int) -> bool:
     if a_id == b_id:
         return False
+    # A blocked account is nobody's friend, the same as in friends_of.
+    active = db.scalar(select(func.count()).select_from(User).where(User.id.in_((a_id, b_id)), User.blocked_at.is_(None)))
+    if active != 2:
+        return False
     found = db.scalar(
         select(func.count()).select_from(Follow).where(
             ((Follow.follower_id == a_id) & (Follow.target_user_id == b_id))
@@ -116,7 +120,7 @@ def follow(db: Session, follower: User, target_id: int, at: datetime | None = No
         return False
     made = db.scalar(
         select(func.count()).select_from(Follow)
-        .where(Follow.follower_id == follower.id, Follow.created_at >= at - timedelta(days=1))
+        .where(Follow.follower_id == follower.id, Follow.via_invite.is_(False), Follow.created_at >= at - timedelta(days=1))
     ) or 0
     if made >= DAILY_FOLLOW_LIMIT:
         raise Refused("follow_limit", f"You can follow up to {DAILY_FOLLOW_LIMIT} players a day. Try again tomorrow.")
@@ -184,7 +188,7 @@ def accept_invite(db: Session, user: User, code: str, at: datetime | None = None
     new = []
     for a, b in ((user.id, inviter.id), (inviter.id, user.id)):
         if not _follows(db, a, b):
-            db.add(Follow(follower_id=a, target_user_id=b, created_at=at))
+            db.add(Follow(follower_id=a, target_user_id=b, created_at=at, via_invite=True))
             new.append((a, b))
     try:
         db.commit()
