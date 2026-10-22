@@ -344,3 +344,26 @@ uvicorn app.main:app --reload
 Dockerfile build pack, port 8000. The container runs `alembic upgrade head` before starting.
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
+
+## Share cards (PRD B2)
+`app/features/share`; flag `share`. A link, ready text and a picture for something worth sharing, and the page behind
+`/s/<kind>/<id>` whose preview tags make a pasted link show the card (nginx asks the API for it).
+- **For other features (C8):** say what a card shows, once, at import:
+  ```python
+  from app.features.share import service as share
+
+  def describe(db, item):          # item is the id in the link; return None when it doesn't exist
+      return share.Card(kicker="Challenge", title="Loki scored 4,200", subtitle="Can you beat it?",
+                        numbers=[("Score", "4,200")], covers=[cover_url], target="/c/abc123", text="Beat me!")
+
+  share.register("challenge", describe)
+  share.make(db, "challenge", "abc123")   # -> Shared(url, text, image_url), or None
+  ```
+  On the website: `<ShareButton kind="challenge" id="abc123" />` (`src/features/share/ShareButton.tsx`).
+- **Pictures:** 1200x630 (`?size=wide`, X and link previews) and 1080x1080 (`?size=square`, WhatsApp and Instagram),
+  drawn on first request and kept in memory by what's on them, so a changed card is redrawn and an unchanged one
+  is served in about a millisecond.
+- **API:** `GET /share/{kind}/{id}` (link, text, picture URLs), `GET /share/{kind}/{id}/card.png`, `GET /share/{kind}/{id}/page`.
+  A card's `target` must be a path on start.ng; anything else sends people to the home page.
+- **Kinds so far:** `tournament_result` (id `<tournament id>.<user id>`). Challenge, unlock, league_move,
+  private_tournament, creator and profile register themselves when their features use it.

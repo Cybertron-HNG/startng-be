@@ -28,6 +28,7 @@ FEATURES: list[str] = [
     "game_health",  # H2 game health checks (Hamzat)
     "progress",
     "integrity",
+    "share",  # B2 share cards (Hamzat, for Bumblebee)
 ]
 
 _loaded: dict[str, ModuleType] = {}
