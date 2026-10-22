@@ -34,6 +34,10 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   when fewer than 3 games qualify. `POST /tournaments/current/enter` (start.ng sign-in, not a game session)
   enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
   `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
+- `GET /share/{kind}/{id}` (feature `share_cards`): `{url, text, image_url, square_image_url, title, path}` for sharing one
+  thing; `GET /share/{kind}/{id}/card.jpg?size=wide|square` is its card (1200x630 or 1080x1080) and `/page` its
+  start.ng/s/<kind>/<id> preview page. Features describe their own kind with `share_cards.service.register` and call
+  `service.make(db, kind, id)`; see `app/features/share_cards/service.py`
 
 ## Building a feature (start here)
 Every new feature lives in its own folder with one owner, so nobody edits the same files (the PRD, section 3).
