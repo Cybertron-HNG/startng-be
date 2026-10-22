@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Iterable
 
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -258,11 +258,13 @@ def record_open(db: Session, user_id: int, game: str) -> None:
     """A signed-in player opened a game: remember the first time, the last time and how many times."""
     when = now()
     for attempt in (1, 2):
-        row = db.get(GameOpen, (user_id, game))
-        if row is None:
+        # Added in the database (count = count + 1), so opens at the same moment are all counted.
+        bumped = db.execute(
+            update(GameOpen).where(GameOpen.user_id == user_id, GameOpen.game_name == game)
+            .values(last_at=when, count=GameOpen.count + 1)
+        ).rowcount
+        if not bumped:
             db.add(GameOpen(user_id=user_id, game_name=game, first_at=when, last_at=when, count=1))
-        else:
-            row.last_at, row.count = when, row.count + 1
         try:
             db.commit()
             return
