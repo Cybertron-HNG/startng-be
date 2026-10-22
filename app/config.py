@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     tournament_min_games: int = 3  # fewer games than this qualify: no tournament that day
     tournament_end_hour: int = 18
     tournament_utc_offset: int = 1
+    # Leagues (app/features/leagues): each track's round length in hours. Rounds line up with tournament_end_hour.
+    league_sprint_hours: int = 2
+    league_daily_hours: int = 24
+    league_weekly_hours: int = 168
     # Admin (app/admin.py). Super admins: comma-separated emails, with every permission; they add the other admins.
     # Admins sign in with Google as that email (there's no admin sign-up).
     super_admin_emails: str = ""
