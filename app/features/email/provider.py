@@ -2,9 +2,13 @@
 
     EMAIL_PROVIDER=log     emails go to the server log (local work, tests)
     EMAIL_PROVIDER=brevo   sent with Brevo's API (BREVO_API_KEY)
+    EMAIL_PROVIDER=smtp    sent with an SMTP server (SMTP_* settings)
 """
 import logging
+import smtplib
+import ssl
 from dataclasses import dataclass, field
+from email.message import EmailMessage
 from email.utils import parseaddr
 from typing import Protocol
 
@@ -84,6 +88,59 @@ class BrevoProvider:
         raise SendError(f"Brevo said {r.status_code}: {detail}", retry=r.status_code == 429 or r.status_code >= 500)
 
 
+class SmtpProvider:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        starttls: bool,
+        ssl_enabled: bool,
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.starttls = starttls
+        self.ssl_enabled = ssl_enabled
+
+    def send(self, message: Message) -> str:
+        sender_name, sender_address = parseaddr(settings.email_from)
+        if not sender_address:
+            raise SendError("EMAIL_FROM must contain a valid email address", retry=False)
+        email = EmailMessage()
+        email["From"] = f"{sender_name} <{sender_address}>" if sender_name else sender_address
+        email["To"] = message.to
+        email["Subject"] = message.subject
+        if settings.email_reply_to:
+            email["Reply-To"] = settings.email_reply_to
+        for name, value in message.headers.items():
+            email[name] = value
+        email.set_content(message.text)
+        email.add_alternative(message.html, subtype="html")
+        context = ssl.create_default_context()
+        try:
+            if self.ssl_enabled:
+                with smtplib.SMTP_SSL(self.host, self.port, context=context, timeout=20) as client:
+                    self._login_and_send(client, email, sender_address)
+            else:
+                with smtplib.SMTP(self.host, self.port, timeout=20) as client:
+                    client.ehlo()
+                    if self.starttls:
+                        client.starttls(context=context)
+                        client.ehlo()
+                    self._login_and_send(client, email, sender_address)
+        except (OSError, smtplib.SMTPException) as error:
+            raise SendError(f"SMTP delivery failed: {error}")
+        return email.get("Message-ID", "")
+
+    def _login_and_send(self, client: smtplib.SMTP, email: EmailMessage, sender: str) -> None:
+        if self.username:
+            client.login(self.username, self.password)
+        client.send_message(email, from_addr=sender)
+
+
 _log_provider = LogProvider()
 
 
@@ -92,4 +149,17 @@ def get_provider() -> EmailProvider:
         if not settings.brevo_api_key:
             raise SendError("EMAIL_PROVIDER is brevo but BREVO_API_KEY isn't set", retry=False)
         return BrevoProvider(settings.brevo_api_key)
+    if settings.email_provider == "smtp":
+        if not settings.smtp_host:
+            raise SendError("EMAIL_PROVIDER is smtp but SMTP_HOST isn't set", retry=False)
+        if settings.smtp_ssl and settings.smtp_starttls:
+            raise SendError("SMTP_SSL and SMTP_STARTTLS cannot both be enabled", retry=False)
+        return SmtpProvider(
+            settings.smtp_host,
+            settings.smtp_port,
+            settings.smtp_username,
+            settings.smtp_password,
+            settings.smtp_starttls,
+            settings.smtp_ssl,
+        )
     return _log_provider

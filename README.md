@@ -276,8 +276,9 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
   `POST /email/confirm` `{token}`, `POST /email/unsubscribe` (`{token, topic?}`, or `?token=` from mail apps).
   Brevo: `POST /email/webhooks/brevo?key=...`. Admins: `GET /admin/email` (the outbox), `POST /admin/email/test`.
 - **Settings:** `EMAIL_PROVIDER` (`log`, the default, writes emails to the server log instead of sending; `brevo`
-  sends), `BREVO_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `EMAIL_ONLY_TO` (while set, only these addresses get email:
-  for testing), `BREVO_WEBHOOK_KEY`, `EMAIL_MERGE_MINUTES`.
+  or `smtp` sends), `BREVO_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS`,
+  `SMTP_SSL`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `EMAIL_ONLY_TO` (while set, only these addresses get email: for
+  testing), `BREVO_WEBHOOK_KEY`, `EMAIL_MERGE_MINUTES`.
 - **Setting up Brevo:** an API key (SMTP & API, API keys); a verified sender, then the `mail.start.ng` domain with
   the DNS records Brevo lists; the server's IP under Security, Authorised IPs; and a transactional webhook to
   `<API_URL>/email/webhooks/brevo?key=<BREVO_WEBHOOK_KEY>` for hard bounces, spam, blocked, invalid and unsubscribed.
