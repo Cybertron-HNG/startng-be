@@ -185,3 +185,15 @@ def test_the_page_html_and_share_card(env):
         assert made.url.endswith(f"/s/creator/{ids['tega']}")
         assert share.describe(db, "creator", str(ids["ada"])) is None
     assert client.get(f"/share/creator/{ids['tega']}/card.jpg").status_code == 200
+
+
+def test_one_player_is_not_plural_on_the_card(env, monkeypatch):
+    client, tokens, ids, Session = env
+    seed(Session, ids)
+    from app.features.creator_hub import card
+
+    with Session() as db:
+        monkeypatch.setattr(service, "unique_visitors", lambda db, games, days=30, today=None: 1)
+        assert card.describe(db, str(ids["tega"])).facts[1] == ("1", "player, 30 days")
+        monkeypatch.setattr(service, "unique_visitors", lambda db, games, days=30, today=None: 2)
+        assert card.describe(db, str(ids["tega"])).facts[1] == ("2", "players, 30 days")

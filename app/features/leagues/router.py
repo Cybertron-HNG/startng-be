@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ...db import get_db
 from ...models import User
+from ...routers.games import _player_name
 from ...security import current_user
 from . import service
 from .schemas import HistoryOut, HistoryRowOut, LeaguesOut, PlayerOut, RowOut, TableOut, TrackOut
@@ -21,7 +22,7 @@ def _track_or_404(track: str) -> str:
 
 def _row(row: service.Row, user_id: int) -> RowOut:
     u = row.user
-    return RowOut(place=row.place, player=PlayerOut(id=u.id, name=u.name, character=u.character), points=row.points,
+    return RowOut(place=row.place, player=PlayerOut(id=u.id, name=_player_name(u), character=u.character), points=row.points,
                   games=row.games, zone=row.zone, me=u.id == user_id)
 
 

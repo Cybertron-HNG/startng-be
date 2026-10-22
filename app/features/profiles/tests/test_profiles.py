@@ -78,6 +78,7 @@ def test_badges_are_awarded_once_and_show_on_the_page(env):
     page = client.get(f"/players/{ids['ada']}/profile").json()
     assert {b["key"] for b in page["badges"]} == {"first_score", "ten_games"}
     assert [b["key"] for b in client.get("/badges").json()] == [b.key for b in badges.CATALOG]
+    assert "daily_challenger" in {b.key for b in badges.CATALOG}  # earned in the daily challenge (A2), shown here
 
 
 def test_the_badge_rules(env):

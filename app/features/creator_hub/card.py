@@ -18,7 +18,7 @@ def describe(db: Session, item: str) -> share.Card | None:
     players = service.unique_visitors(db, [g.name for g in games])
     return share.Card(
         eyebrow="Creator", name=name, title="makes games on start.ng",
-        facts=[(str(len(games)), "game" if len(games) == 1 else "games"), (f"{players:,}", "players, 30 days")],
+        facts=[(str(len(games)), "game" if len(games) == 1 else "games"), (f"{players:,}", f"{'player' if players == 1 else 'players'}, 30 days")],
         cta=service.bio_of(db, user.id) or "Play their games, free in your browser", path=f"/by/{service.slug_for(user)}",
         text=f"Play {name}'s games on start.ng.")
 

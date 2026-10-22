@@ -16,11 +16,11 @@ PERMISSIONS: dict[str, str] = {
 }
 log = logging.getLogger(__name__)
 
-RANK_EVERY_SECONDS = 3600
+RANK_EVERY_SECONDS = 600
 
 
 async def run_forever() -> None:
-    """Rewrite game_rank every hour (reads also refresh it when it is more than two hours old)."""
+    """Rewrite game_rank every 10 minutes (reads also refresh it when it is more than 30 minutes old)."""
 
     def tick() -> int:
         if not flags.is_on(NAME):

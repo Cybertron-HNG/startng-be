@@ -20,6 +20,8 @@ CATALOG: list[Badge] = [
     Badge("top_10", "Top 10", "Held a place in the top 10 of a game"),
     Badge("tournament_winner", "Tournament winner", "Won a daily tournament"),
     Badge("ten_games", "Explorer", "Tried 10 different games"),
+    # Awarded by the daily challenge (A2, features/spotlight); listed here so it shows on the page.
+    Badge("daily_challenger", "Daily challenger", "Completed a daily challenge"),
 ]
 BY_KEY = {b.key: b for b in CATALOG}
 
