@@ -37,6 +37,7 @@ FEATURES: list[str] = [
     "creator_hub",  # T2 creator hub (Hamzat, for Tega)
     "kit",  # M1 the start.ng Kit: game_sessions (Mo)
     "leagues",  # M2 leagues (Mo)
+    "wardrobe",  # wardrobe rewards: coins, rarity items, the shop and game goals (Kaka)
 ]
 
 _loaded: dict[str, ModuleType] = {}
