@@ -415,7 +415,7 @@ the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes 
 - **Ranking** (`game_rank`, contract C10): per game, from the last 7 days: different people who opened it, scores per
   player, and the share of players who came back on another day, times a penalty when the Kit says sessions are short
   (a 10-second average keeps a third of the score; no Kit data, no penalty) and a 1.5x boost for games under a week old.
-  The background loop rewrites it every hour, and a read refreshes it when it is over two hours old. Session length comes
+  The background loop rewrites it every 10 minutes, and a read refreshes it when it is over 30 minutes old. Session length comes
   from `app.features.kit.service.average_session_seconds(db, game, since)` once the Kit (M1) publishes it.
 - `GET /discover/shelves`: `featured`, `staff` (chosen in the admin Featured tab), `new` (every game under 7 days old,
   whatever its rank), `most_played` (by rank), `most_improved` (growth against the week before, at least 3 people) and

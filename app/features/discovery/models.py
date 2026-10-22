@@ -11,7 +11,7 @@ def _now() -> datetime:
 
 
 class GameRank(Base):
-    """How well a game is doing right now (C10): one row per game, rewritten every hour from the last 7 days of play."""
+    """How well a game is doing right now (C10): one row per game, rewritten every 10 minutes from the last 7 days of play."""
 
     __tablename__ = "game_rank"
 

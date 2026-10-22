@@ -2,7 +2,7 @@
 
 Ranking (game_rank, contract C10) is how well a game is doing in the last 7 days: different people who opened it, scores per
 player, and how many players came back on another day, times a penalty when the Kit says sessions are very short (a game
-people quit in seconds sinks), times a boost for games under a week old. It is rewritten every hour.
+people quit in seconds sinks), times a boost for games under a week old. It is rewritten every 10 minutes.
 
 Shelves: Featured and Staff picks (chosen by admins; Featured needs an eligible game), New this week (every game under 7
 days old, whatever its rank, so beginners always show), Most played (by rank), Most improved (growth against the week
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 NAME = "discovery"
 WINDOW = timedelta(days=7)
 NEW_FOR = timedelta(days=7)
-STALE_AFTER = timedelta(hours=2)
+STALE_AFTER = timedelta(minutes=30)
 SHELF_SIZE = 8
 SHORT_SESSION = 30  # seconds: a Kit game whose sessions average less than this is penalised
 MIN_IMPROVED = 3  # people this week before a game can be "most improved"
