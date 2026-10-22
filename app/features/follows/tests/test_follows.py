@@ -154,6 +154,21 @@ def test_blocked_players_drop_out_of_lists_and_counts(env):
     with Session() as db:
         assert service.counts(db, ids["ada"]) == {"followers": 1, "following": 1, "friends": 1}
         assert service.friends_of(db, ids["ada"]) == {ids["tunde"]}
+        assert service.is_friend(db, ids["ada"], ids["tunde"]) and not service.is_friend(db, ids["ada"], ids["musa"])
+
+
+def test_follows_from_invites_dont_count_toward_the_daily_limit(env):
+    client, tokens, ids, Session = env
+    now = datetime.now(timezone.utc)
+    with Session() as db:
+        extra = [User(email=f"p{i}@example.com", name=f"P{i}") for i in range(service.DAILY_FOLLOW_LIMIT)]
+        db.add_all(extra)
+        db.flush()
+        # A popular invite link: a full day's worth of people accepted it, so Ada follows each of them back.
+        for u in extra:
+            db.add(Follow(follower_id=ids["ada"], target_user_id=u.id, created_at=now - timedelta(hours=1), via_invite=True))
+        db.commit()
+    assert client.put(f"/follows/{ids['tunde']}", headers=tokens["ada"]).status_code == 200
 
 
 def test_daily_follow_limit(env):

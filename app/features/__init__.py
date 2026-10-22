@@ -28,6 +28,9 @@ FEATURES: list[str] = [
     "game_health",  # H2 game health checks (Hamzat)
     "progress",
     "integrity",
+    "share_cards",
+    "challenges",
+    "creator_hub",  # T2 creator hub (Hamzat, for Tega)
 ]
 
 _loaded: dict[str, ModuleType] = {}
