@@ -73,8 +73,8 @@ def render_result(d: dict) -> Note:
         line = f"You won, with {pts}. Your name is on the past winners list."
     else:
         subject = f"You came {ordinal(place)} of {players} in the tournament"
-        line = f"You came {ordinal(place)} of {players}, with {pts}. {esc(d['winner'])} won."
-    html = f'<p style="font-size:18px;font-weight:700;margin:0 0 8px">{esc(subject)}</p><p>{line}</p>{_button(d["link"], "Try again today")}'
+        line = f"You came {ordinal(place)} of {players}, with {pts}. {d['winner']} won."
+    html = f'<p style="font-size:18px;font-weight:700;margin:0 0 8px">{esc(subject)}</p><p>{esc(line)}</p>{_button(d["link"], "Try again today")}'
     return Note(subject, html, f"{subject}\n\n{line}\n\nTry again today: {d['link']}")
 
 

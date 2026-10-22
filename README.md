@@ -34,6 +34,14 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   when fewer than 3 games qualify. `POST /tournaments/current/enter` (start.ng sign-in, not a game session)
   enters it. `GET /tournaments/recent?limit=7`: finished tournaments with their winner and top 3.
   `GET /tournaments/leaderboard?period=all|week&limit=50`: the overall leaderboard. See "Daily tournaments"
+- `GET /share/{kind}/{id}` (feature `share_cards`): `{url, text, image_url, square_image_url, title, path}` for sharing one
+  thing; `GET /share/{kind}/{id}/card.jpg?size=wide|square` is its card (1200x630 or 1080x1080) and `/page` its
+  start.ng/s/<kind>/<id> preview page. Features describe their own kind with `share_cards.service.register` and call
+  `service.make(db, kind, id)`; see `app/features/share_cards/service.py`
+- `POST /challenges` (feature `challenges`, signed in): `{game}` (your best run on it) or `{run_id}` makes a challenge link,
+  `start.ng/c/<code>`; the score is read from the run log. `GET /challenges/{code}` (anyone), `POST /challenges/{code}/accept`
+  (signed in: your runs from now on count), `DELETE /challenges/{code}` (its maker). Lasts 30 days; a beaten challenge
+  publishes `challenge_beaten` and emails the maker (topic `records`)
 
 ## Building a feature (start here)
 Every new feature lives in its own folder with one owner, so nobody edits the same files (the PRD, section 3).
@@ -53,7 +61,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 6. **Activity log:** `app.activity.record(db, user, "player", "<feature>.<what>", target)` shows it to admins.
 7. **Hiding a game:** `app.admin.hide_game(db, store, game, reason)` and `show_game(...)` hide it everywhere (lists,
    pages, its own address, tournaments) and bring it back. A feature's own reason: `register_hide_reason("...")`.
-8. **Migrations** start at `0030`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
+8. **Migrations** start at `0031`; renumber right before merging. Tests: `app/features/<feature>/tests`, run by
    `pytest` with the rest.
 
 ## Progress Engine (PRD D1)
@@ -304,6 +312,12 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
 - Players: `GET`/`PUT /email/me`. Visitors and email links: `POST /email/subscribe` `{email, topics}`,
   `POST /email/confirm` `{token}`, `POST /email/unsubscribe` (`{token, topic?}`, or `?token=` from mail apps).
   Brevo: `POST /email/webhooks/brevo?key=...`. Admins: `GET /admin/email` (the outbox), `POST /admin/email/test`.
+- **Newsletter:** admin permission `newsletter.send` (`newsletter.py`, table `email_newsletters`). An admin writes a
+  newsletter (plain text: `# heading`, blank line = new paragraph, `[words](https://link)`), sends themselves a test,
+  then sends it to everyone confirmed on the `newsletter` topic, once. Sending less than 14 days after the last one needs
+  `force` (the composer asks first). A subscriber who already had today's email gets it tomorrow at 9 AM instead of
+  missing it. `GET`/`POST /admin/newsletters`, `PUT`/`DELETE /admin/newsletters/{id}` (drafts only),
+  `POST /admin/newsletters/{id}/test`, `POST /admin/newsletters/{id}/send` `{force?}`.
 - **Settings:** `EMAIL_PROVIDER` (`log`, the default, writes emails to the server log instead of sending; `brevo`
   sends), `BREVO_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `EMAIL_ONLY_TO` (while set, only these addresses get email:
   for testing), `BREVO_WEBHOOK_KEY`, `EMAIL_MERGE_MINUTES`.
@@ -357,3 +371,19 @@ tournament record. **Never an email.**
   tried 10 games. They are awarded by rules registered with the Progress Engine (kind `badge`), once, after the run that
   earns them; players who already qualify get theirs on their next run. Add a badge with one `Badge` and one `Rule`.
 - The website adds other features' sections to the page (`registerProfileSection`).
+## Creator hub (PRD T2)
+`app/features/creator_hub`; flag `creator_hub` (the follower count needs `follows`, the card needs `share_cards`). Aggregates only:
+players are never identified to creators.
+- **Public page** `GET /by/{id}`: name and character, a short bio, their visible games (hidden ones are left out) with plays
+  in the last 30 days, total plays, different people who played in 30 days, and followers (S2). Never an email.
+  `GET /by/{id}/page` is the website's HTML with the creator's name and card in its tags (nginx asks for it on `/by/<id>-<name>`).
+  `PUT /me/creator-bio` `{bio}` (200 characters). A creator is anyone with a game live on start.ng; others are a 404.
+- **Top creators** `GET /by`: by different people who opened their games in the last 30 days, with their game counts.
+- **Dashboard** `GET /me/creator-dashboard` (signed in): per game (hidden ones marked) plays in 7 and 30 days and all time,
+  different people, signed-in players, repeat players (scores on two or more different days), scores sent, the 7-day change,
+  a 30-day trend, and average session length. Session length comes from the Kit (M1): the Kit publishes
+  `app.features.kit.service.average_session_seconds(db, game, since)`; until then it is `null`.
+- **Rollup:** every hour the background loop writes the finished days that aren't rolled up yet into `game_daily_stats`
+  (one row per game per day, Nigeria time), so history survives the 30-day deletion of raw plays. Days after the last
+  rollup (today) are counted live. A missed night is filled in by the next run.
+- **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
