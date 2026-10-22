@@ -255,3 +255,23 @@ def test_a_hidden_game_leaves_the_running_tournament(env):
     assert len(after["games"]) == len(current["games"]) - 1  # no new game joins halfway through the day
     admin_view = client.get("/admin/tournaments", headers=tokens["boss"]).json()["tournaments"][0]
     assert game not in [g["name"] for g in admin_view["games"]]
+
+
+def test_analytics_numbers(env):
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import GamePlay
+
+    client, tokens, ids, Session, _ = env
+    assert client.get("/admin/analytics", headers=tokens["player"]).status_code == 404  # admins only
+    now = datetime.now(timezone.utc)
+    with Session() as db:
+        db.add_all([GamePlay(game_name="g1", visitor=f"v{i}", at=now - timedelta(hours=i)) for i in range(3)])
+        db.add(GamePlay(game_name="g2", visitor="old", at=now - timedelta(days=20)))
+        db.commit()
+    a = client.get("/admin/analytics", headers=tokens["boss"]).json()
+    assert a["players"] == 5 and a["games"] == 6
+    assert a["plays_7"] == 3 and a["plays_30"] == 4
+    assert len(a["plays_per_day"]) == 30 and sum(d["n"] for d in a["plays_per_day"]) == 4
+    assert len(a["signups_per_day"]) == 30 and sum(d["n"] for d in a["signups_per_day"]) == 5
+    assert a["top_games_7"][0] == {"name": "g1", "title": "G1", "plays": 3}

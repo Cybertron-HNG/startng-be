@@ -462,6 +462,34 @@ class LogOut(BaseModel):
     at: datetime
 
 
+class DayCount(BaseModel):
+    day: str
+    n: int
+
+
+class TopGame(BaseModel):
+    name: str
+    title: str
+    plays: int
+
+
+class AnalyticsOut(BaseModel):
+    """How start.ng is doing: the numbers behind the admin overview."""
+    players: int
+    new_players_7: int
+    new_players_30: int
+    active_1: int  # players seen in the last day
+    active_7: int
+    active_30: int
+    games: int  # live games
+    new_games_7: int
+    plays_7: int
+    plays_30: int
+    plays_per_day: list[DayCount]  # the last 30 days, oldest first, zeros included
+    signups_per_day: list[DayCount]
+    top_games_7: list[TopGame]
+
+
 class OverviewOut(BaseModel):
     open_reports: int
     games_waiting: int  # games with reports waiting for a decision
