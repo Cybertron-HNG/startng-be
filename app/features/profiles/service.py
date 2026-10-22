@@ -51,6 +51,8 @@ progress.register_visibility("profiles", is_public)
 
 
 def slug_for(user: User) -> str:
+    if user.username:
+        return user.username
     name = slugify(_player_name(user))
     return f"{user.id}-{name}" if name else str(user.id)
 
