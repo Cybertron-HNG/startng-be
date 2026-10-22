@@ -240,16 +240,23 @@ def test_points_winner_and_overall_leaderboard(env, clock):
 
 
 def test_settling_is_done_once(env, clock):
-    client, tokens, _, Session = env
+    from app import events
+    finished = events.subscribe("tournament_finished")(lambda p: got.append(p))
+    got = []
+    client, tokens, ids, Session = env
     enter(client, tokens, "ada")
     play(client, tokens, "ada", "g0", 5)
     clock.at = END + timedelta(hours=1)
-    client.get("/tournaments/recent")
-    client.get("/tournaments/leaderboard")
-    with Session() as db:
-        t = db.scalars(select(Tournament)).first()
-        tournaments.settle(db, t, clock.at)  # already settled: nothing changes
+    try:
+        client.get("/tournaments/recent")
+        client.get("/tournaments/leaderboard")
+        with Session() as db:
+            t = db.scalars(select(Tournament)).first()
+            tournaments.settle(db, t, clock.at)  # already settled: nothing changes
+    finally:
+        events.unsubscribe("tournament_finished", finished)
     assert client.get("/tournaments/leaderboard").json()[0]["points"] == 10
+    assert len(got) == 1 and got[0]["winner_id"] == ids["ada"] and got[0]["players"] == 1  # the event fires once
 
 
 def test_ties_go_to_more_first_places_then_to_who_got_there_first(env, clock):

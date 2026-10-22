@@ -3,7 +3,9 @@ from sqlalchemy import create_engine
 
 from app.config import settings
 from app.db import Base
-from app import models  # noqa: F401  (register models)
+from app import features, models  # noqa: F401  (register models)
+
+features.load()  # each feature's own tables
 
 target_metadata = Base.metadata
 
