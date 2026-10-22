@@ -28,6 +28,7 @@ FEATURES: list[str] = [
     "game_health",  # H2 game health checks (Hamzat)
     "progress",
     "integrity",
+    "profiles",  # S1 player profiles and badges (Hamzat, for Seyi)
     "share_cards",
     "challenges",
     "creator_hub",  # T2 creator hub (Hamzat, for Tega)
