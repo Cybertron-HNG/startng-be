@@ -1,13 +1,13 @@
 """wardrobe: wallets, the coin ledger, owned and worn items, and game goals (app/features/wardrobe)
 
-Revision ID: 0040
-Revises: 0039
+Revision ID: 0041
+Revises: 0040
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0040"
-down_revision = "0039"
+revision = "0041"
+down_revision = "0040"
 branch_labels = None
 depends_on = None
 

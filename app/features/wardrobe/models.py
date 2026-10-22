@@ -1,4 +1,4 @@
-"""The wardrobe's own tables. Migration: alembic/versions/0040_wardrobe.py."""
+"""The wardrobe's own tables. Migration: alembic/versions/0041_wardrobe.py."""
 from datetime import date, datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
