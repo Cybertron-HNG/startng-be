@@ -42,9 +42,20 @@ class UserOut(BaseModel):
     id: int
     email: str
     name: str | None = None
+    username: str | None = None
     character: Character | None = None
 
     model_config = {"from_attributes": True}
+
+
+class UsernameIn(BaseModel):
+    username: str
+
+
+class UsernameCheck(BaseModel):
+    username: str
+    available: bool
+    reason: str | None = None
 
 
 class TokenOut(BaseModel):
