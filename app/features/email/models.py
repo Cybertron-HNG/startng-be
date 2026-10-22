@@ -70,6 +70,22 @@ class Email(Base):
     subscriber: Mapped[Subscriber] = relationship()
 
 
+class Newsletter(Base):
+    """A newsletter an admin wrote: a draft until it's sent to everyone on the newsletter topic (once)."""
+
+    __tablename__ = "email_newsletters"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject: Mapped[str] = mapped_column(String(150))
+    body: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))  # the admin's email
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_by: Mapped[str | None] = mapped_column(String(255))
+    recipients: Mapped[int | None] = mapped_column(Integer)  # how many were queued
+
+
 class Announcement(Base):
     """Something start.ng emailed everyone about once, so it's never sent twice (e.g. "tournament:12")."""
 

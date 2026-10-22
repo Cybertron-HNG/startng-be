@@ -1,13 +1,13 @@
 """spotlight (A2): game_of_the_week, daily_challenges and daily_challenge_completions
 
-Revision ID: 0039
-Revises: 0029
+Revision ID: 0037
+Revises: 0036
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0039"
-down_revision = "0029"
+revision = "0037"
+down_revision = "0036"
 branch_labels = None
 depends_on = None
 
