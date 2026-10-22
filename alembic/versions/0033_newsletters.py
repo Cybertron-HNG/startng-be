@@ -1,13 +1,13 @@
 """email (H1): email_newsletters, the newsletters admins write and send
 
-Revision ID: 0030
-Revises: 0029
+Revision ID: 0033
+Revises: 0032
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0030"
-down_revision = "0029"
+revision = "0033"
+down_revision = "0032"
 branch_labels = None
 depends_on = None
 
