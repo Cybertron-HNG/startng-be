@@ -1,13 +1,13 @@
 """challenges: challenge links ("beat my score") and the friends who took them on (app/features/challenges)
 
-Revision ID: 0030
-Revises: 0029
+Revision ID: 0032
+Revises: 0031
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0030"
-down_revision = "0029"
+revision = "0032"
+down_revision = "0031"
 branch_labels = None
 depends_on = None
 

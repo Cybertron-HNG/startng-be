@@ -316,7 +316,7 @@ def test_the_game_owner_sees_the_flags_on_their_game(env, both):
 
 def test_other_players_cannot_see_a_games_flags(env, both):
     _, client, tokens, ids = env
-    assert client.get("/games/lanedash/flags", headers=tokens[ids[1]]).status_code == 403
+    assert client.get("/games/lanedash/flags", headers=tokens[ids[1]]).status_code == 404
     assert client.get("/games/lanedash/flags").status_code == 401
     assert client.get("/games/nope/flags", headers=tokens[ids[0]]).status_code == 404
 
