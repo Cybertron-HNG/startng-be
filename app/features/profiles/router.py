@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...db import get_db
@@ -95,6 +96,15 @@ def player(user_id: int, viewer: User | None = Depends(optional_user), db: Sessi
     if user is None or not (me or service.is_public(db, user_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No player page here")
     return _out(db, user, me)
+
+
+@router.get("/players/by-username/{username}/profile", response_model=ProfileOut)
+def player_by_username(username: str, viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    """The same page, found by username (start.ng/p/<username>)."""
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No player page here")
+    return player(user.id, viewer, db)
 
 
 @router.get("/me/profile", response_model=ProfileOut)

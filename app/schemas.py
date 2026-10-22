@@ -42,9 +42,20 @@ class UserOut(BaseModel):
     id: int
     email: str
     name: str | None = None
+    username: str | None = None
     character: Character | None = None
 
     model_config = {"from_attributes": True}
+
+
+class UsernameIn(BaseModel):
+    username: str
+
+
+class UsernameCheck(BaseModel):
+    username: str
+    available: bool
+    reason: str | None = None
 
 
 class TokenOut(BaseModel):
@@ -449,6 +460,34 @@ class LogOut(BaseModel):
     target: str | None
     detail: dict | None
     at: datetime
+
+
+class DayCount(BaseModel):
+    day: str
+    n: int
+
+
+class TopGame(BaseModel):
+    name: str
+    title: str
+    plays: int
+
+
+class AnalyticsOut(BaseModel):
+    """How start.ng is doing: the numbers behind the admin overview."""
+    players: int
+    new_players_7: int
+    new_players_30: int
+    active_1: int  # players seen in the last day
+    active_7: int
+    active_30: int
+    games: int  # live games
+    new_games_7: int
+    plays_7: int
+    plays_30: int
+    plays_per_day: list[DayCount]  # the last 30 days, oldest first, zeros included
+    signups_per_day: list[DayCount]
+    top_games_7: list[TopGame]
 
 
 class OverviewOut(BaseModel):

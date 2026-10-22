@@ -12,9 +12,9 @@ from ..admin import AdminUser, current_admin, require, require_super
 from ..config import settings
 from ..db import get_db
 from ..game_store import GameStore, get_game_store
-from ..models import Activity, Admin, DeveloperContact, Game, GameReport, Role, Tournament, User
+from ..models import Activity, Admin, DeveloperContact, Game, GamePlay, GameReport, Role, Tournament, User
 from ..schemas import (
-    AdminIn, AdminMe, AdminOut, AdminRoleIn, AdminTournamentOut, AdminTournamentsOut, CloseIn, ContactIn, ContactOut,
+    AdminIn, AdminMe, AdminOut, AnalyticsOut, DayCount, TopGame, AdminRoleIn, AdminTournamentOut, AdminTournamentsOut, CloseIn, ContactIn, ContactOut,
     DeveloperOut, FlagIn, GameCard, LogOut, OverviewOut, Permission, ReportIn, ReportOut, RestoreIn, ReviewGameOut, RoleIn,
     RoleOut, TournamentGamesIn,
 )
@@ -93,6 +93,48 @@ def overview(admin: AdminUser = Depends(current_admin), db: Session = Depends(ge
         blocked_developers=count(select(User.id).where(User.blocked_at.is_not(None))),
         admins=count(select(Admin.id)) + len(adm.super_admins()),
     )
+
+
+@router.get("/analytics", response_model=AnalyticsOut)
+def analytics(admin: AdminUser = Depends(current_admin), db: Session = Depends(get_db)):
+    """The numbers for the overview: players, activity, games and plays over the last 30 days."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    ago = lambda days: now - timedelta(days=days)  # noqa: E731
+    count = lambda q: db.scalar(q) or 0  # noqa: E731
+
+    def per_day(column, since, *where) -> list[DayCount]:
+        rows = db.execute(select(func.date(column), func.count()).where(column >= since, *where).group_by(func.date(column))).all()
+        have = {str(d)[:10]: n for d, n in rows}
+        days = [(since + timedelta(days=i + 1)).date() for i in range(30)]
+        return [DayCount(day=d.isoformat(), n=have.get(d.isoformat(), 0)) for d in days]
+
+    top = db.execute(
+        select(GamePlay.game_name, func.count().label("n")).where(GamePlay.at >= ago(7)).group_by(GamePlay.game_name)
+        .order_by(func.count().desc()).limit(5)
+    ).all()
+    titles = {g.name: g for g in db.scalars(select(Game).where(Game.name.in_([n for n, _ in top]))).all()} if top else {}
+    live = Game.hidden.is_(None)
+    return AnalyticsOut(
+        players=count(select(func.count(User.id))),
+        new_players_7=count(select(func.count(User.id)).where(User.created_at >= ago(7))),
+        new_players_30=count(select(func.count(User.id)).where(User.created_at >= ago(30))),
+        active_1=count(select(func.count(User.id)).where(User.last_seen_at >= ago(1))),
+        active_7=count(select(func.count(User.id)).where(User.last_seen_at >= ago(7))),
+        active_30=count(select(func.count(User.id)).where(User.last_seen_at >= ago(30))),
+        games=count(select(func.count(Game.name)).where(live)),
+        new_games_7=count(select(func.count(Game.name)).where(live, Game.created_at >= ago(7))),
+        plays_7=count(select(func.count(GamePlay.id)).where(GamePlay.at >= ago(7))),
+        plays_30=count(select(func.count(GamePlay.id)).where(GamePlay.at >= ago(30))),
+        plays_per_day=per_day(GamePlay.at, ago(30)),
+        signups_per_day=per_day(User.created_at, ago(30)),
+        top_games_7=[TopGame(name=n, title=_title_of(n), plays=c) for n, c in top],
+    )
+
+
+def _title_of(name: str) -> str:
+    return " ".join(w.capitalize() for w in name.split("-"))
 
 
 @router.get("/permissions", response_model=list[Permission])
