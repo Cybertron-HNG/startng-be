@@ -252,21 +252,21 @@ def add_flag(db: Session, user_id: int, game_name: str, stats: dict, previous_be
 
 def decide(db: Session, flag: ScoreFlag, outcome: str, admin_email: str, note: str | None) -> None:
     """Record an admin's decision. Cleared: the run counts from now on (the Progress Engine releases it, and it becomes the
-    player's best if it beats their saved one). Confirmed: it stays out for good. The caller commits."""
+    player's best if it beats their saved one). Confirmed: it stays out for good. The caller commits.
+    Releasing the run commits, so it comes last: the decision, the new best and the released run are saved together."""
     flag.status, flag.reviewed_by, flag.note = outcome, admin_email, note
     flag.reviewed_at = datetime.now(timezone.utc)
     if outcome != "cleared":
         return
+    schema = _schema(db, flag.game_name)
+    if schema is not None:
+        row = db.scalar(select(Score).where(Score.user_id == flag.user_id, Score.game_name == flag.game_name))
+        first = flag.stats[schema[0]["key"]]
+        if row is None:
+            db.add(Score(user_id=flag.user_id, game_name=flag.game_name, best=first, stats=flag.stats))
+        elif boards.is_better(schema, flag.stats, boards.stats_of(schema, row.stats, row.best)):
+            row.best, row.stats = first, flag.stats
+        db.flush()
+        invalidate(flag.game_name)
     if flag.run_id is not None:
         progress.release_run(db, flag.run_id)
-    schema = _schema(db, flag.game_name)
-    if schema is None:
-        return
-    row = db.scalar(select(Score).where(Score.user_id == flag.user_id, Score.game_name == flag.game_name))
-    first = flag.stats[schema[0]["key"]]
-    if row is None:
-        db.add(Score(user_id=flag.user_id, game_name=flag.game_name, best=first, stats=flag.stats))
-    elif boards.is_better(schema, flag.stats, boards.stats_of(schema, row.stats, row.best)):
-        row.best, row.stats = first, flag.stats
-    db.flush()
-    invalidate(flag.game_name)
