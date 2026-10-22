@@ -1,11 +1,11 @@
 """Friends & follows (S2): who follows whom, and invite links that make two players friends.
 
 Friends are not stored separately: two players are friends when each one follows the other.
-Migration: alembic/versions/0029_follows.py (after the Blackburn H1/H2 chain, which ends at 0028).
+Migrations: alembic/versions/0029_follows.py and 0030_follows_via_invite.py.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...db import Base
@@ -27,6 +27,7 @@ class Follow(Base):
     follower_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    via_invite: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())  # made by accepting an invite link
 
 
 class FriendInvite(Base):
