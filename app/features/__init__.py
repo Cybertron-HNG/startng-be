@@ -29,6 +29,7 @@ FEATURES: list[str] = [
     "progress",
     "integrity",
     "share_cards",
+    "creator_hub",  # T2 creator hub (Hamzat, for Tega)
 ]
 
 _loaded: dict[str, ModuleType] = {}

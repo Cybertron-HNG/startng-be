@@ -348,3 +348,20 @@ uvicorn app.main:app --reload
 Dockerfile build pack, port 8000. The container runs `alembic upgrade head` before starting.
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
+
+## Creator hub (PRD T2)
+`app/features/creator_hub`; flag `creator_hub` (the follower count needs `follows`, the card needs `share_cards`). Aggregates only:
+players are never identified to creators.
+- **Public page** `GET /by/{id}`: name and character, a short bio, their visible games (hidden ones are left out) with plays
+  in the last 30 days, total plays, different people who played in 30 days, and followers (S2). Never an email.
+  `GET /by/{id}/page` is the website's HTML with the creator's name and card in its tags (nginx asks for it on `/by/<id>-<name>`).
+  `PUT /me/creator-bio` `{bio}` (200 characters). A creator is anyone with a game live on start.ng; others are a 404.
+- **Top creators** `GET /by`: by different people who opened their games in the last 30 days, with their game counts.
+- **Dashboard** `GET /me/creator-dashboard` (signed in): per game (hidden ones marked) plays in 7 and 30 days and all time,
+  different people, signed-in players, repeat players (scores on two or more different days), scores sent, the 7-day change,
+  a 30-day trend, and average session length. Session length comes from the Kit (M1): the Kit publishes
+  `app.features.kit.service.average_session_seconds(db, game, since)`; until then it is `null`.
+- **Rollup:** every hour the background loop writes the finished days that aren't rolled up yet into `game_daily_stats`
+  (one row per game per day, Nigeria time), so history survives the 30-day deletion of raw plays. Days after the last
+  rollup (today) are counted live. A missed night is filled in by the next run.
+- **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
