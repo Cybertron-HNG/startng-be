@@ -344,3 +344,16 @@ uvicorn app.main:app --reload
 Dockerfile build pack, port 8000. The container runs `alembic upgrade head` before starting.
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
+
+## Player profiles and badges (PRD S1)
+`app/features/profiles`; flag `profiles` (uses `progress` for level, streaks and badges). A page for every player: name,
+character, level and XP, streaks, badges, best score and rank per game (`rank_of`), most played games, favorites, and the
+tournament record. **Never an email.**
+- **Privacy:** public by default; `PUT /me/profile-settings` `{public, show_favorites, show_ranks, notice_seen}` switches
+  parts off. A private page answers 404 to everyone but its owner, and the Progress Engine's `GET /players/{id}/progress`
+  follows the same choice (`progress.register_visibility`). `notice_seen` drives the first-time "your page is public" notice.
+- **API:** `GET /players/{id}/profile` (public; your own page also returns `settings`), `GET /me/profile`, `GET /badges`.
+- **Badges** (`badges.py`): first score, 3-day streak, 7-day streak, Top 10 (held across two runs), tournament winner,
+  tried 10 games. They are awarded by rules registered with the Progress Engine (kind `badge`), once, after the run that
+  earns them; players who already qualify get theirs on their next run. Add a badge with one `Badge` and one `Rule`.
+- The website adds other features' sections to the page (`registerProfileSection`).
