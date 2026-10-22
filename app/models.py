@@ -14,6 +14,8 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # Their handle, lowercase and unique (app/usernames.py): the address of their page, start.ng/p/<username>.
+    username: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
     # The player's character, shared with every game: {"name": ..., "style": {...}}
     character: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(

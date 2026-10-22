@@ -8,8 +8,9 @@ from ..activity import mark_seen, record
 from ..config import settings
 from ..features.moderation import service as moderation
 from ..db import get_db
+from .. import usernames
 from ..models import User
-from ..schemas import Character, GoogleIn, LoginIn, RegisterIn, TokenOut, UserOut
+from ..schemas import Character, GoogleIn, LoginIn, RegisterIn, TokenOut, UserOut, UsernameCheck, UsernameIn
 from ..security import create_token, current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -28,6 +29,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
     user = User(email=email, name=body.name, password_hash=hash_password(body.password))
     db.add(user)
+    usernames.ensure(db, user)
     record(db, email, "player", "account.created", email, via="email")
     db.commit()
     db.refresh(user)
@@ -60,6 +62,7 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
     if user is None:
         user = User(email=email, name=info.get("name"), google_sub=info["sub"])
         db.add(user)
+        usernames.ensure(db, user)
         record(db, email, "player", "account.created", email, via="google")
     elif not user.google_sub:
         user.google_sub = info["sub"]
@@ -71,6 +74,9 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
     mark_seen(db, user)  # start.ng and its games call this on every visit
+    if not user.username:  # an account from before usernames
+        usernames.ensure(db, user)
+        db.commit()
     return user
 
 
@@ -82,3 +88,21 @@ def save_character(body: Character, user: User = Depends(current_user), db: Sess
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.put("/me/username", response_model=UserOut)
+def change_username(body: UsernameIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Choose a new username (the address of their page). 422 when it breaks the rules, 409 when it's taken."""
+    usernames.change(db, user, body.username)
+    db.refresh(user)
+    return user
+
+
+@router.get("/usernames/{name}", response_model=UsernameCheck)
+def check_username(name: str, db: Session = Depends(get_db)):
+    """Whether a username is free and allowed, so the page can say so while someone types."""
+    cleaned = usernames.clean(name)
+    why = usernames.problem(db, cleaned)
+    if why is None and usernames.is_taken(db, cleaned):
+        why = "Someone already has that username."
+    return UsernameCheck(username=cleaned, available=why is None, reason=why)
