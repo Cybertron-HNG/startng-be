@@ -29,6 +29,7 @@ FEATURES: list[str] = [
     "progress",
     "integrity",
     "share_cards",
+    "challenges",
 ]
 
 _loaded: dict[str, ModuleType] = {}

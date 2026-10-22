@@ -38,6 +38,10 @@ FastAPI backend for start.ng. Postgres + SQLAlchemy + Alembic. Email/password an
   thing; `GET /share/{kind}/{id}/card.jpg?size=wide|square` is its card (1200x630 or 1080x1080) and `/page` its
   start.ng/s/<kind>/<id> preview page. Features describe their own kind with `share_cards.service.register` and call
   `service.make(db, kind, id)`; see `app/features/share_cards/service.py`
+- `POST /challenges` (feature `challenges`, signed in): `{game}` (your best run on it) or `{run_id}` makes a challenge link,
+  `start.ng/c/<code>`; the score is read from the run log. `GET /challenges/{code}` (anyone), `POST /challenges/{code}/accept`
+  (signed in: your runs from now on count), `DELETE /challenges/{code}` (its maker). Lasts 30 days; a beaten challenge
+  publishes `challenge_beaten` and emails the maker (topic `records`)
 
 ## Building a feature (start here)
 Every new feature lives in its own folder with one owner, so nobody edits the same files (the PRD, section 3).

@@ -113,9 +113,9 @@ def _badge(d: ImageDraw.ImageDraw, cx: float, cy: float, r: int, badge: Badge) -
     if badge.suffix:
         d.text((x + vw + 2, base - value.size * .5), badge.suffix, font=sup, fill=ink, anchor="ls")
     if badge.label:
-        label = _font(round(r * .15), "Bold")
-        track = label.size * .28
         text = badge.label.upper()
+        label = _sized(text, "Bold", round(r * .15), round(r * .08), r * 1.05, .28)  # stays inside the ring where it narrows
+        track = label.size * .28
         _text(d, (cx - _tracked_width(text, label, track) / 2, base + r * .38), text, label, MUTED, track)
 
 
