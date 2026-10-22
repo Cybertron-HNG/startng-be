@@ -9,7 +9,7 @@ import smtplib
 import ssl
 from dataclasses import dataclass, field
 from email.message import EmailMessage
-from email.utils import parseaddr
+from email.utils import formatdate, make_msgid, parseaddr
 from typing import Protocol
 
 import requests
@@ -113,6 +113,8 @@ class SmtpProvider:
         email["From"] = f"{sender_name} <{sender_address}>" if sender_name else sender_address
         email["To"] = message.to
         email["Subject"] = message.subject
+        email["Date"] = formatdate(localtime=False)
+        email["Message-ID"] = make_msgid(domain=sender_address.rpartition("@")[2] or None)  # mail without these gets marked as spam
         if settings.email_reply_to:
             email["Reply-To"] = settings.email_reply_to
         for name, value in message.headers.items():
@@ -131,9 +133,16 @@ class SmtpProvider:
                         client.starttls(context=context)
                         client.ehlo()
                     self._login_and_send(client, email, sender_address)
+        except smtplib.SMTPAuthenticationError as error:
+            raise SendError(f"SMTP login was refused: {error}", retry=False)  # a wrong user or password won't fix itself
+        except smtplib.SMTPRecipientsRefused as error:
+            raise SendError(f"SMTP server refused the address: {error}", retry=False)
+        except smtplib.SMTPResponseException as error:
+            # 5xx is permanent (a refused address, a refused sender): don't retry it. 4xx and network trouble are tried again.
+            raise SendError(f"SMTP delivery failed: {error}", retry=not 500 <= error.smtp_code < 600)
         except (OSError, smtplib.SMTPException) as error:
             raise SendError(f"SMTP delivery failed: {error}")
-        return email.get("Message-ID", "")
+        return email["Message-ID"]
 
     def _login_and_send(self, client: smtplib.SMTP, email: EmailMessage, sender: str) -> None:
         if self.username:
