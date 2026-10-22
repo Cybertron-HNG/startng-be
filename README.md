@@ -304,6 +304,12 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
 - Players: `GET`/`PUT /email/me`. Visitors and email links: `POST /email/subscribe` `{email, topics}`,
   `POST /email/confirm` `{token}`, `POST /email/unsubscribe` (`{token, topic?}`, or `?token=` from mail apps).
   Brevo: `POST /email/webhooks/brevo?key=...`. Admins: `GET /admin/email` (the outbox), `POST /admin/email/test`.
+- **Newsletter:** admin permission `newsletter.send` (`newsletter.py`, table `email_newsletters`). An admin writes a
+  newsletter (plain text: `# heading`, blank line = new paragraph, `[words](https://link)`), sends themselves a test,
+  then sends it to everyone confirmed on the `newsletter` topic, once. Sending less than 14 days after the last one needs
+  `force` (the composer asks first). A subscriber who already had today's email gets it tomorrow at 9 AM instead of
+  missing it. `GET`/`POST /admin/newsletters`, `PUT`/`DELETE /admin/newsletters/{id}` (drafts only),
+  `POST /admin/newsletters/{id}/test`, `POST /admin/newsletters/{id}/send` `{force?}`.
 - **Settings:** `EMAIL_PROVIDER` (`log`, the default, writes emails to the server log instead of sending; `brevo`
   sends), `BREVO_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `EMAIL_ONLY_TO` (while set, only these addresses get email:
   for testing), `BREVO_WEBHOOK_KEY`, `EMAIL_MERGE_MINUTES`.
