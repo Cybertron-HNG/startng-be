@@ -14,10 +14,11 @@ from ...config import settings
 from ...db import get_db
 from ...models import User
 from ...security import current_user
-from . import service
+from . import newsletter, service
 from .models import Email
 
 router = APIRouter(tags=["email"])
+router.include_router(newsletter.router)
 
 
 class Topic(BaseModel):
