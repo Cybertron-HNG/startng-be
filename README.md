@@ -359,6 +359,20 @@ Dockerfile build pack, port 8000. The container runs `alembic upgrade head` befo
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
 
+## Categories, ratings and filters (PRD T1)
+`app/features/catalog`; flag `catalog` (ratings also need `progress`, for game opens); admin permission `ratings.moderate`.
+- **Categories:** Action, Racing, Puzzle, Card & board, Arcade, Adventure, Sports, Strategy, Educational. A game sets one in
+  its startng.json (`"category": "Puzzle"`, any capitals; anything else refuses the publish with the list), or the owner sets it
+  with `PUT /games/{name}/category` `{category}` (null clears it). **The file wins**: a publish whose startng.json has a
+  category replaces the owner's choice. A game with none is Uncategorized.
+- **Ratings:** `PUT /games/{name}/rating` `{stars: 1-5}` (again to change), `DELETE` to take it back,
+  `GET /games/{name}/rating` (totals, yours, and whether you can rate). One per player, not for your own game, and only
+  after you opened the game at least 60 seconds ago (the Progress Engine's `game_opens`). Stars show from 5 ratings;
+  ordering uses a smoothed score (`(3.5*5 + sum of stars) / (5 + count)`).
+- **For the website and other features (C12):** `GET /catalog` lists categories and each game's `category`, `rating_count`,
+  `rating_avg` and smoothed `score`; in Python `catalog.service.info(db, game)`. Totals live in their own table
+  (`game_catalog`), so nothing in `games` changes.
+- **Admins:** `GET /admin/ratings?game=`, `DELETE /admin/ratings/{id}` (logged).
 ## Player profiles and badges (PRD S1)
 `app/features/profiles`; flag `profiles` (uses `progress` for level, streaks and badges). A page for every player: name,
 character, level and XP, streaks, badges, best score and rank per game (`rank_of`), most played games, favorites, and the
