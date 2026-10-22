@@ -64,10 +64,17 @@ class Settings(BaseSettings):
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
-    # (local work and tests); "brevo" sends through Brevo with BREVO_API_KEY. EMAIL_ONLY_TO: while it's set, mail
-    # goes only to these comma-separated addresses and everyone else's is skipped (testing before go-live).
+    # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
+    # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before
+    # go-live).
     email_provider: str = "log"
     brevo_api_key: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
     email_from: str = "start.ng <hello@mail.start.ng>"
     email_reply_to: str = ""  # a monitored inbox for replies; empty: replies go to email_from
     email_only_to: str = ""
