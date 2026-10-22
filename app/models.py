@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -57,6 +57,8 @@ class Game(Base):
     # Whether the live version meets the game standards (app/checks.standards), checked on every publish and
     # update. None = published before the standards existed; such games still take part in tournaments for now.
     meets_standards: Mapped[bool | None] = mapped_column(Boolean)
+    # Whether the live version loads the start.ng Kit (https://start.ng/kit.js, PRD M1), set with meets_standards.
+    uses_kit: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Hidden from start.ng while admins look at it (app/admin.py): "reported" (a player reported it), "flagged"
     # (an admin flagged it) or "blocked" (its developer is blocked). None = listed as usual.
     hidden: Mapped[str | None] = mapped_column(String(20), index=True)

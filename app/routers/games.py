@@ -21,7 +21,7 @@ from ..db import get_db
 from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
 from ..models import Game, GamePlay, PendingGame, Score, User
-from ..checks import Problem, standards
+from ..checks import Problem, standards, uses_kit
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
@@ -126,6 +126,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.description = bundle.description
     # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
     game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
+    game.uses_kit = uses_kit([(f.path, f.data) for f in bundle.files])
     manifest.apply_sections(db, game, bundle.sections)  # features' own startng.json sections (app/manifest.py)
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again

@@ -86,6 +86,10 @@ BACK_LINK = re.compile(rb"""https?://(?:www\.)?start\.ng/?(?=["'`\s)<>?#\\]|$)""
 BRANDING = re.compile(rb"""(?<![\w./@-])start\.ng(?![\w-])""")  # the name written out, not as part of an address
 SHARE_ON_X = re.compile(rb"""(?:twitter\.com|x\.com)/intent/(?:tweet|post)\b""")
 STANDARDS_DOCS = "https://start.ng/docs#game-standards"
+# The start.ng Kit (PRD M1): <script src="https://start.ng/kit.js"> adds the back button and the "Made on start.ng"
+# badge itself, and its end-of-round card (startng.gameOver or startng.share) has the Share on X button.
+KIT_SCRIPT = re.compile(rb"""<script\b[^>]*\bsrc\s*=\s*["']?https://start\.ng/kit(?:/v\d+)?\.js(?:\?[^"'\s>]*)?(?=["'\s>])[^>]*>""", re.I)
+KIT_SHARE = re.compile(rb"""\bstartng\s*\.\s*(?:gameOver|share)\s*\(""")
 COVERS = {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"}
 
 
@@ -202,21 +206,42 @@ def inspect(files: list[tuple[str, bytes]]) -> tuple[list[Problem], list[Problem
     return _dedupe(errors)[:MAX_PROBLEMS], _dedupe(warnings)[:MAX_PROBLEMS]
 
 
+def kit_tags(files: list[tuple[str, bytes]]) -> list[bytes]:
+    """The <script> tags that load the start.ng Kit, from the game's HTML files."""
+    return [tag for path, data in files if _extension(path) in HTML for tag in KIT_SCRIPT.findall(data)]
+
+
+def uses_kit(files: list[tuple[str, bytes]]) -> bool:
+    return bool(kit_tags(files))
+
+
+def _kit_option_off(tags: list[bytes], option: bytes) -> bool:
+    """True when every Kit tag turns this part off, e.g. data-back="off"."""
+    off = re.compile(rb"""\bdata-""" + option + rb"""\s*=\s*["']?off\b""", re.I)
+    return all(off.search(tag) for tag in tags)
+
+
 def standards(files: list[tuple[str, bytes]]) -> list[Problem]:
-    """What's missing from a game's files to meet start.ng's standards (empty when it meets them all)."""
+    """What's missing from a game's files to meet start.ng's standards (empty when it meets them all). The Kit counts
+    for the back link and the name unless the game turned them off, and for sharing when the game calls
+    startng.gameOver() or startng.share()."""
     code = [data for path, data in files if _extension(path) in SCRIPT]
+    kit = kit_tags(files)
+    kit_back = bool(kit) and not _kit_option_off(kit, b"back")
+    kit_badge = bool(kit) and not _kit_option_off(kit, b"badge")
+    kit_share = bool(kit) and any(KIT_SHARE.search(d) for d in code)
     out: list[Problem] = []
-    if not any(BACK_LINK.search(d) for d in code):
+    if not kit_back and not any(BACK_LINK.search(d) for d in code):
         out.append(Problem(
             "missing_back_link",
             f'Game standards: players need a way back to start.ng. Add a link to https://start.ng, for example <a href="https://start.ng">Back to start.ng</a> ({STANDARDS_DOCS})',
         ))
-    if not any(BRANDING.search(d) for d in code):
+    if not kit_badge and not any(BRANDING.search(d) for d in code):
         out.append(Problem(
             "missing_branding",
             f'Game standards: show the start.ng name in the game, for example "Play more on start.ng" on its title or end screen ({STANDARDS_DOCS})',
         ))
-    if not any(SHARE_ON_X.search(d) for d in code):
+    if not kit_share and not any(SHARE_ON_X.search(d) for d in code):
         out.append(Problem(
             "missing_share",
             f"Game standards: when a round ends, let players share their result on X. Open https://twitter.com/intent/tweet?text=...&url=... from a Share button ({STANDARDS_DOCS})",
