@@ -367,3 +367,16 @@ the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes 
   A card's `target` must be a path on start.ng; anything else sends people to the home page.
 - **Kinds so far:** `tournament_result` (id `<tournament id>.<user id>`). Challenge, unlock, league_move,
   private_tournament, creator and profile register themselves when their features use it.
+
+## Challenge links (PRD B1)
+`app/features/challenges`; flag `challenges`. Needs `progress` (the run log) to have runs to challenge with, and `share` for the card.
+- A player turns one of their runs into a link, `start.ng/c/<code>` ("Loki scored 4,200 on Relic Hunter. Can you beat it?").
+  The score is read from the run log (their best unflagged run in the game, or the `run_id` they name, which must be theirs);
+  a score sent in the request is ignored. The same run gives the same link. Links last 30 days; the maker can delete one.
+- A friend who isn't signed in sees the challenge and the Play button; **accepting needs sign-in**, and only runs played after
+  accepting count. Their best run is kept, and the page says "300 short" until a run beats it (using the game's own stat order,
+  so lower-is-better games work).
+- When a run beats it, the challenger gets event `challenge_beaten` and (if they chose "records" emails) an email, once.
+- **API:** `POST /challenges` `{game, run_id?}`, `GET /challenges/mine`, `GET /challenges/{code}` (public; a signed-in friend
+  also gets their own progress), `POST /challenges/{code}/accept`, `DELETE /challenges/{code}`. Limits: 20 new a hour, 30 open.
+- The card (`share` kind `challenge`) is registered in `card.py`; the page `/s/challenge/<code>` shows it when the link is pasted.

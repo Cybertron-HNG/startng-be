@@ -29,6 +29,7 @@ FEATURES: list[str] = [
     "progress",
     "integrity",
     "share",  # B2 share cards (Hamzat, for Bumblebee)
+    "challenges",  # B1 challenge links (Hamzat, for Bumblebee)
 ]
 
 _loaded: dict[str, ModuleType] = {}
