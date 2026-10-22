@@ -11,20 +11,23 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import auto_update, covers, tournaments
+from .. import auto_update, covers, events, flags, manifest, tournaments
+from ..features import progress
+from ..features.integrity import service as integrity
 from ..activity import record
+from ..features.moderation import service as moderation
 from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
 from ..game_store import GameStore, get_game_store
 from ..models import Game, GamePlay, PendingGame, Score, User
-from ..checks import Problem, standards
+from ..checks import Problem, standards, uses_kit
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
     ScoreIn, ScoreOut,
 )
-from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, optional_user
+from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, lenient_user, optional_user
 from .. import leaderboard as boards
 from ..storage import game_url
 
@@ -72,10 +75,30 @@ def _download_and_check(repo: Repo) -> GameBundle:
         raise ApiError.rejected(err)
 
 
+def _word_problems(db: Session, name: str, created: bool, bundle: GameBundle) -> list[Problem]:
+    """The name filter (app/features/moderation), while it's on: a new game's name, and the description in its
+    startng.json. Live games keep their names (admins see any that fail in the Name filter tab). A description
+    start.ng found by itself (in the page or README) is just left out when it fails."""
+    if not moderation.enforcing():
+        return []
+    problems = []
+    if created and moderation.check_text(name.replace("-", " "), db):
+        problems.append(Problem("text_not_allowed", f"The name \"{name}\" has a word that isn't allowed on start.ng. Pick another name."))
+    if moderation.check_text(bundle.description, db):
+        if "description" in bundle.sections:
+            problems.append(Problem("text_not_allowed", "The description in startng.json has a word that isn't allowed on start.ng. Please change it.", "startng.json"))
+        else:
+            bundle.description = None
+    return problems
+
+
 def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner_id: int, repo: Repo, bundle: GameBundle,
               auto: bool = False) -> PublishOut:
     """Uploads a checked game under its name and records it, owned by owner_id. auto: start.ng's own update check."""
     created = game is None
+    problems = _word_problems(db, name, created, bundle)
+    if problems:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, problems[0].code, problems[0].message, problems, bundle.warnings)
     if created:
         game = Game(name=name, owner_id=owner_id, repo_url=repo.url, branch=repo.branch)
         db.add(game)
@@ -103,6 +126,8 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.description = bundle.description
     # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
     game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
+    game.uses_kit = uses_kit([(f.path, f.data) for f in bundle.files])
+    manifest.apply_sections(db, game, bundle.sections)  # features' own startng.json sections (app/manifest.py)
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
@@ -113,6 +138,10 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     else:
         record(db, db.get(User, owner_id), "developer", "game.published" if created else "game.updated", name)
     db.commit()
+    if created:
+        events.publish("game_published", {"game": name, "owner_id": owner_id})
+    else:
+        events.publish("game_updated", {"game": name, "owner_id": owner_id, "auto": auto})
     return PublishOut(
         name=name,
         url=game_url(name),
@@ -271,6 +300,7 @@ def check_game(
         bundle = read_game(download_repo(repo))
     except PublishError as err:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, err.code, str(err), errors + err.errors, err.warnings)
+    errors += _word_problems(db, name, linked is None and db.get(Game, name) is None, bundle)
     if errors:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, errors[0].code, errors[0].message, errors, bundle.warnings)
     return CheckOut(
@@ -393,8 +423,9 @@ def list_games(db: Session = Depends(get_db)):
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
-def count_play(name: str, request: Request, db: Session = Depends(get_db)):
-    """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed."""
+def count_play(name: str, request: Request, user: User | None = Depends(lenient_user), db: Session = Depends(get_db)):
+    """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed; a signed-in player's
+    open is also remembered (the Progress Engine)."""
     _game_or_404(db, name)
     _rate_limit(request, _plays, PLAYS_PER_HOUR, "Too many plays from here, try again later")
     visitor = visitor_of(request)
@@ -406,6 +437,8 @@ def count_play(name: str, request: Request, db: Session = Depends(get_db)):
         db.add(GamePlay(game_name=name, visitor=visitor, at=now))
     db.execute(delete(GamePlay).where(GamePlay.at < now - timedelta(days=PLAYS_KEPT_DAYS)))
     db.commit()
+    if user is not None and flags.is_on(progress.NAME):
+        progress.service.record_open(db, user.id, name)
 
 
 @router.get("/mine", response_model=list[GameOut])
@@ -521,7 +554,7 @@ def game_player_info(name: str, user: User = Depends(game_player), db: Session =
     return _player_out(user)
 
 
-@router.post("/{name}/scores", response_model=ScoreOut)
+@router.post("/{name}/scores", response_model=ScoreOut, response_model_exclude_unset=True)  # `unlocked` shows only when set
 def submit_score(
     name: str,
     body: ScoreIn,
@@ -531,6 +564,9 @@ def submit_score(
     """Save the player's run: their game's stats (startng.json) or a plain score. Only their best run is kept."""
     game = _game_or_404(db, name)
     schema = _schema(game)
+    on = flags.is_on("integrity")  # score integrity (PRD D2): a rate limit, the startng.json `max`, a fast leaderboard
+    if on:
+        integrity.check_rate(user.id, name)
     if body.stats is not None:
         try:
             stats = boards.check_stats(schema, body.stats)
@@ -541,9 +577,19 @@ def submit_score(
     else:
         keys = ", ".join(s["key"] for s in schema)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"send stats: {keys}")
+    if on:
+        integrity.check_limits(schema, stats)
     first = stats[schema[0]["key"]]
 
-    row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+    # Locked until the commit, so two runs sent at once are compared one after the other and a lower one can't overwrite a higher best.
+    mine = select(Score).where(Score.user_id == user.id, Score.game_name == name).with_for_update()
+    row = db.scalar(mine)
+    if on:  # a run that looks too good to be true is held for review, not scored
+        previous = boards.stats_of(schema, row.stats, row.best)[schema[0]["key"]] if row is not None else None
+        why = integrity.outlier_reason(db, name, schema, stats, previous)
+        if why:
+            return _held_back(db, user, name, schema, stats, previous, why, row)
+        top_before = integrity.previous_top(db, name)
     if row is None:
         row = Score(user_id=user.id, game_name=name, best=first, stats=stats)
         db.add(row)
@@ -552,7 +598,7 @@ def submit_score(
             db.commit()
         except IntegrityError:  # two first runs at once: compare with the one that won
             db.rollback()
-            row = db.scalar(select(Score).where(Score.user_id == user.id, Score.game_name == name))
+            row = db.scalar(mine)
             improved = None
     else:
         improved = None
@@ -561,11 +607,36 @@ def submit_score(
         if improved:
             row.best, row.stats = first, stats
             db.commit()
-    tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
+    counted = tournaments.record(db, game, user, stats, schema)  # also counts in today's tournament, if the player entered
+    events.publish("score_submitted", {"user_id": user.id, "game": name, "stats": stats})  # private tournaments, and more later
     best = boards.stats_of(schema, row.stats, row.best)
-    rows = _ranked(db, name, schema)
-    rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
-    return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best)
+    if on:
+        integrity.invalidate(name)
+        rank = integrity.rank_of(db, user.id, name)
+        if improved and rank == 1 and top_before not in (None, user.id):  # the record changed hands
+            events.publish("record_beaten", {"game": name, "user_id": user.id, "previous_user_id": top_before})
+    else:
+        rows = _ranked(db, name, schema)
+        rank = next(i for i, r in enumerate(rows) if r.user_id == user.id) + 1
+    extra = {}
+    if flags.is_on(progress.NAME):  # the Progress Engine (PRD D1): log the run, award what its rules say
+        running = tournaments.running(db) if counted else None
+        extra["unlocked"] = progress.service.after_run(
+            db, user.id, name, stats, running.id if running else None, rank_after=rank if on else None).unlocked
+    return ScoreOut(best=row.best, improved=improved, rank=rank, stats=best, **extra)
+
+
+def _held_back(db: Session, user: User, name: str, schema: list[dict], stats: dict, previous: int | None, why: str, row: Score | None) -> ScoreOut:
+    """A run that looks too good to be true: logged and flagged for an admin to review (score integrity, PRD D2). It isn't
+    saved as the player's best, doesn't reach the board or a tournament, earns nothing and publishes no event. The answer
+    looks like any other, so nobody can tell it was held back."""
+    run_id = progress.service.after_run(db, user.id, name, stats, flagged=True).run_id if flags.is_on(progress.NAME) else None
+    integrity.add_flag(db, user.id, name, stats, previous, why, run_id)
+    extra = {"unlocked": []} if flags.is_on(progress.NAME) else {}
+    if row is not None:
+        return ScoreOut(best=row.best, improved=False, rank=integrity.rank_of(db, user.id, name), stats=boards.stats_of(schema, row.stats, row.best), **extra)
+    first = stats[schema[0]["key"]]
+    return ScoreOut(best=first, improved=False, rank=integrity.hypothetical_rank(db, name, schema, first), stats=stats, **extra)
 
 
 def _ranked(db: Session, name: str, schema: list[dict]) -> list[Score]:
@@ -579,17 +650,22 @@ def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = De
     """A game's top players, ranked by its own stats (startng.json) or a plain score."""
     game = _game_or_404(db, name)
     schema = _schema(game)
-    return [
-        LeaderboardEntry(
-            rank=i + 1,
-            player_id=s.user_id,
-            name=_player_name(s.user),
-            color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
-            score=s.best,
-            stats=boards.stats_of(schema, s.stats, s.best),
-        )
-        for i, s in enumerate(_ranked(db, name, schema)[:limit])
-    ]
+
+    def build() -> list[LeaderboardEntry]:
+        top = integrity.ranked(db, name, limit) if flags.is_on("integrity") else _ranked(db, name, schema)[:limit]
+        return [
+            LeaderboardEntry(
+                rank=i + 1,
+                player_id=s.user_id,
+                name=_player_name(s.user),
+                color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
+                score=s.best,
+                stats=boards.stats_of(schema, s.stats, s.best),
+            )
+            for i, s in enumerate(top)
+        ]
+
+    return integrity.cached(name, limit, build) if flags.is_on("integrity") else build()
 
 
 @router.delete("/{name}/scores/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -603,5 +679,6 @@ def remove_score(name: str, player_id: int, user: User = Depends(current_user), 
     db.delete(row)
     record(db, user, "developer", "score.removed", name, player_id=player_id)
     db.commit()
+    integrity.invalidate(name)
     tournaments.remove_scores(db, name, player_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

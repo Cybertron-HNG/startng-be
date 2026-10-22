@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..activity import mark_seen, record
 from ..config import settings
+from ..features.moderation import service as moderation
 from ..db import get_db
 from ..models import User
 from ..schemas import Character, GoogleIn, LoginIn, RegisterIn, TokenOut, UserOut
@@ -75,6 +76,8 @@ def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
 
 @router.put("/me/character", response_model=UserOut)
 def save_character(body: Character, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if moderation.enforcing():
+        moderation.require_clean(db, body.name, "Your character's name")
     user.character = body.model_dump()
     db.commit()
     db.refresh(user)
