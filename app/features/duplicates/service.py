@@ -32,7 +32,11 @@ log = logging.getLogger(__name__)
 def name_key(name: str) -> str:
     """The name without versions, copies and separators: lane-dash-v2, lanedash-copy and lane-dash-2 -> lanedash."""
     n = name.lower()
-    n = re.sub(r"(-?(copy|clone|new|final|v\d+|\d+))+$", "", n)
+    while True:  # one suffix at a time: a nested repeat in one pattern can backtrack badly on long names
+        stripped = re.sub(r"-?(?:copy|clone|new|final|v\d+|\d+)$", "", n)
+        if stripped == n:
+            break
+        n = stripped
     return re.sub(r"[^a-z0-9]", "", n) or name
 
 
