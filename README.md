@@ -344,3 +344,18 @@ uvicorn app.main:app --reload
 Dockerfile build pack, port 8000. The container runs `alembic upgrade head` before starting.
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
+
+## Spotlight: Game of the Week and the daily challenge (PRD A2)
+`app/features/spotlight`; flag `spotlight` (uses `progress` for runs); admin permission `spotlight.edit`. Weekly jams are Phase 3.
+- **Game of the Week:** a pick for a week (Monday to Sunday, Nigeria time), chosen in the admin Spotlight tab: `PUT`
+  `/admin/spotlight/game-of-the-week` `{game, note?, week?}` (this week by default, or book a later one),
+  `DELETE ...?week=`, `GET /admin/spotlight`. A hidden game is never the pick. Other features read it with
+  `spotlight.service.game_of_the_week(db)` (the weekly digest, H1).
+- **Daily challenge:** one personal goal a day on one game ("Reach 800 in Relic"), made the first time anyone asks for it that
+  day. The game comes from those with at least 10 runs by 3 players in the last 14 days (never the same game two days
+  running); the goal is the first leaderboard stat's value that at least 40% of those runs reached, so it is reachable by
+  construction. A time game ("lower is better") gets a ceiling. It resets at 00:00 Nigeria time, uses only runs (never the
+  daily tournament's entries), ignores flagged runs and runs from before the day, and a player completes it once a day
+  (even if they played before looking at it). `GET /spotlight` (both) and `GET /spotlight/challenge`.
+- **Badge:** completing it earns `daily_challenger` through the Progress Engine (a D1 rule, once). The profile page's catalog
+  (S1) lists only its own badges, so add this one there to show it.
