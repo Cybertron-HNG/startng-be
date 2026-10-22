@@ -197,15 +197,14 @@ def style_overrides(db: Session, user_id: int) -> dict:
     return out
 
 
-_share: tuple[float, dict[str, float]] = (0.0, {})
+_share: tuple[float, dict[str, float]] | None = None  # (when, figures); None until worked out
 
 
 def owned_share(db: Session) -> dict[str, float]:
     """Item key -> the share of players (anyone with a score) who own it, 0 to 1. Kept for SHARE_TTL seconds."""
     global _share
-    at, shares = _share
-    if time.monotonic() - at < SHARE_TTL:
-        return shares
+    if _share is not None and time.monotonic() - _share[0] < SHARE_TTL:
+        return _share[1]
     players = db.scalar(select(func.count(func.distinct(Score.user_id)))) or 0
     counts = dict(db.execute(select(OwnedItem.item_key, func.count()).group_by(OwnedItem.item_key)).all())
     shares = {key: (counts.get(key, 0) / players if players else 0.0) for key in BY_KEY}
@@ -216,4 +215,4 @@ def owned_share(db: Session) -> dict[str, float]:
 def reset() -> None:
     """Forget cached figures (tests)."""
     global _share
-    _share = (0.0, {})
+    _share = None
