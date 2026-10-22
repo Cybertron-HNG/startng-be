@@ -28,6 +28,7 @@ FEATURES: list[str] = [
     "game_health",  # H2 game health checks (Hamzat)
     "progress",
     "integrity",
+    "discovery",  # A1 discovery: shelves and ranking (Hamzat, for Ade)
 ]
 
 _loaded: dict[str, ModuleType] = {}

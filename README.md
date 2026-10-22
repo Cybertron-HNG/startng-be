@@ -344,3 +344,20 @@ uvicorn app.main:app --reload
 Dockerfile build pack, port 8000. The container runs `alembic upgrade head` before starting.
 Set the variables from `.env.example`. GitHub secrets: `COOLIFY_WEBHOOK_URL` (optional `COOLIFY_TOKEN`);
 the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes on `main`.
+
+## Discovery: shelves and ranking (PRD A1)
+`app/features/discovery`; flag `discovery`; admin permission `featured.edit`. Games come back as names; the website has the games.
+- **Ranking** (`game_rank`, contract C10): per game, from the last 7 days: different people who opened it, scores per
+  player, and the share of players who came back on another day, times a penalty when the Kit says sessions are short
+  (a 10-second average keeps a third of the score; no Kit data, no penalty) and a 1.5x boost for games under a week old.
+  The background loop rewrites it every hour, and a read refreshes it when it is over two hours old. Session length comes
+  from `app.features.kit.service.average_session_seconds(db, game, since)` once the Kit (M1) publishes it.
+- `GET /discover/shelves`: `featured`, `staff` (chosen in the admin Featured tab), `new` (every game under 7 days old,
+  whatever its rank), `most_played` (by rank), `most_improved` (growth against the week before, at least 3 people) and
+  `continue_playing` (your own games from game opens; empty when signed out).
+- **Featuring:** `eligible_for_featuring(db, game)` needs the game standards, a cover, a description, a passing health
+  check (H2), a leaderboard, and `"mobile": true` in startng.json (a new section). Using the Kit is preferred, not
+  required. Staff picks have no checklist. Owners see theirs with `GET /games/{name}/featuring`.
+  Admins: `GET /admin/featured`, `PUT`/`DELETE /admin/featured/{featured|staff}/{game}`, `POST .../move?direction=up|down`.
+- **Play next** (C10): `GET /discover/next?after=<game>&limit=1-3`: best ranked first, games the player hasn't opened ahead
+  of those they have.
