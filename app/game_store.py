@@ -4,6 +4,7 @@ On the server this is the R2 games bucket, through app.storage. Without the R2 k
 LOCAL_GAMES_DIR set, it's a local folder laid out the same way (the Worker's dev-server.js serves
 it), so publishing can be tried on a laptop. Name and path rules are app.storage's either way.
 """
+import os
 import shutil
 from pathlib import Path
 from typing import Protocol
@@ -57,18 +58,19 @@ class LocalGameStore:
         self.root = Path(root).resolve()
 
     def _dir(self, game: str) -> Path:
-        folder = (self.root / storage.validate_game_name(game)).resolve()
-        if not folder.is_relative_to(self.root):
+        root = os.path.realpath(self.root)
+        folder = os.path.realpath(os.path.join(root, storage.validate_game_name(game)))
+        if not folder.startswith(root + os.sep):
             raise storage.StorageError("Invalid game name")
-        return folder
+        return Path(folder)
 
     def _file(self, game: str, path: str) -> Path:
         """A file inside the game's folder; anything that resolves outside it is refused."""
-        folder = self._dir(game)
-        target = (folder / storage.clean_path(path)).resolve()
-        if not target.is_relative_to(folder):
+        folder = os.path.realpath(self._dir(game))
+        target = os.path.realpath(os.path.join(folder, storage.clean_path(path)))
+        if not target.startswith(folder + os.sep):
             raise storage.StorageError("Invalid file path")
-        return target
+        return Path(target)
 
     def paths(self, game: str) -> list[str]:
         folder = self._dir(game)

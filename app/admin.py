@@ -138,7 +138,8 @@ def set_offline(store, name: str, hidden: bool) -> None:
     try:
         store.set_hidden(name, hidden)
     except Exception:
-        logging.getLogger(__name__).exception("Couldn't %s %r", "take offline" if hidden else "put back online", name)
+        safe = name.replace("\r", "").replace("\n", "")  # a game name can't add lines to the log
+        logging.getLogger(__name__).exception("Couldn't %s %s", "take offline" if hidden else "put back online", safe)
 
 
 def hide_game(db: Session, store, game: Game, why: str) -> None:
