@@ -1,13 +1,13 @@
 """leagues: rounds, members, groups and entries for the three league tracks (app/features/leagues)
 
-Revision ID: 0032
-Revises: 0029 (becomes 0031 once 0030 and 0031, the Kit's migrations, are merged)
+Revision ID: 0039
+Revises: 0038
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0032"
-down_revision = "0029"
+revision = "0039"
+down_revision = "0038"
 branch_labels = None
 depends_on = None
 

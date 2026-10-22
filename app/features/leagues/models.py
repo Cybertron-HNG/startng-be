@@ -1,4 +1,4 @@
-"""The leagues' own tables. Migration: alembic/versions/0032_leagues.py."""
+"""The leagues' own tables. Migration: alembic/versions/0039_leagues.py."""
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
