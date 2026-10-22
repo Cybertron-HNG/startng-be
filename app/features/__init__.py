@@ -29,6 +29,10 @@ FEATURES: list[str] = [
     "progress",
     "integrity",
     "catalog",  # T1 categories, ratings and filters (Hamzat, for Tega)
+    "profiles",  # S1 player profiles and badges (Hamzat, for Seyi)
+    "share_cards",
+    "challenges",
+    "creator_hub",  # T2 creator hub (Hamzat, for Tega)
 ]
 
 _loaded: dict[str, ModuleType] = {}
