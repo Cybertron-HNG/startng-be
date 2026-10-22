@@ -93,6 +93,42 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
   from your own `rules.py`. A rule gets the player's snapshot (after the run) and the run; awards are unique per
   (player, kind, key); a rule that raises is logged and skipped. Events: `run_recorded`, `award_unlocked`.
 
+## Wardrobe: coins, items and the shop
+`app/features/wardrobe`; flag `wardrobe` (needs `progress`; `integrity` gives the ranks that the top 10 and #1 rewards use).
+Players earn **coins** and **items** by playing any start.ng game, and items show on their one character everywhere.
+Coins are earned only: nobody can buy them with money.
+- **Coins** (`rewards.py`): first run of the day 10 and each game you've never played 25, capped with the game goals at
+  `DAILY_CAP` (300) a day; uncapped: 3/7/30-day streaks 30/100/500, each new level x10, top 10 on a game 150 and #1 400
+  (once per game, scaled down below 30 players, nothing for the top 10 of 10 or fewer), a daily tournament's top 3
+  300/200/100 (scaled down below 10 players), beating a challenge 50, a league promotion 75.
+  Every change is a row in `coin_ledger` with its reason, unique per (player, reason, ref), so nothing is paid twice;
+  the balance in `wallets` can't go below zero. Held runs (integrity) earn nothing until an admin clears them.
+- **Game goals** (`goals.py`): a game lists up to 10 in its startng.json, on its leaderboard stats. start.ng sets what
+  each pays from how hard it is: the share of the game's players whose best run meets it (50%+ easy 10, 20%+ medium 25,
+  5%+ hard 50, 1%+ very hard 100, fewer legendary 150; under 20 players "new", 20). Daily goals pay half and can be met
+  once a day. At most 150 coins a day from one game's goals. A `coins` key is ignored.
+  `{"rewards": {"goals": [{"key": "rich", "label": "Earn 20,000", "stat": "naira", "at_least": 20000},
+  {"key": "fast", "label": "Under 2 minutes", "stat": "time", "at_most": 120, "repeat": "daily"}]}}`
+- **Items** (`catalog.py`): six rarities. Common, uncommon and rare are in the shop (100 to 5,000 coins); epic, legendary
+  and limited can never be bought. Earned ones: explorer cap (5 games), streak scarf (7 days), flame aura (30 days) and
+  veteran jacket (level 10) are Progress Engine rules (`rules.py`, so they show in the score reply's `unlocked`); silver
+  crown (top 10) and gem crown (#1) need a board of 30 or more players; the tournament cape and champion's sash come
+  from winning a tournament and beating a challenge. Item keys never reuse a free character-creator value.
+- **Shop:** today's stock changes at midnight Nigeria time; 4 featured items are 20% off. Limited items sell only
+  between their dates.
+- **Wearing:** one item per slot (`hat`, `accessory`, `outfit`, `neck`, `back`, `aura`). `service.style_overrides`
+  gives games the `hat`/`accessory` values to use and every worn item in `items`; games fall back on unknown values.
+  Live rooms (the Hangout) already send each player's look with what they wear (`routers/live.py`).
+- **API:** `GET /wardrobe/items` (every item, its price today or `null`, `owned_share`), `GET /shop`,
+  `POST /shop/buy {item}`, `GET /me/wallet` (balance, coins from playing today, the cap, the last 50 changes),
+  `GET /me/wardrobe`, `POST /me/wardrobe/wear {item}`, `POST /me/wardrobe/take-off {slot}`,
+  `GET /players/{id}/wardrobe` (worn items and the three rarest; 404 when the profile is private),
+  `GET /games/{name}/goals` (each goal's tier, coins and how many players reach it).
+  Admin (`wardrobe.manage`): `POST /admin/wardrobe/coins {user_id, amount, note}` (negative takes back, never below
+  zero) and `POST /admin/wardrobe/items {user_id, item}`.
+- **Events:** publishes `coins_earned` and `wardrobe_item_unlocked`; listens to `run_recorded`, `tournament_finished`,
+  `challenge_beaten`, `league_promoted` and `award_unlocked`.
+
 ## Score integrity and fast leaderboards (PRD D2)
 `app/features/integrity`; flag `integrity` (off by default; with it off nothing below applies and scores work as before).
 Limits, a rate limit, the leaderboard layer, and outlier flags with a review queue.

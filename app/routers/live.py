@@ -3,6 +3,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
+from .. import flags
 from ..activity import mark_seen
 from ..db import SessionLocal, get_db
 from ..live import (
@@ -34,9 +35,15 @@ def ticket(name: str, user: User = Depends(current_user), db: Session = Depends(
     return TicketOut(ticket=create_ticket(user.id, name), expires_in=TICKET_SECONDS)
 
 
-def _resident(user: User) -> Resident:
+def _resident(user: User, db: Session | None = None) -> Resident:
     character = user.character or {}
-    return Resident(user.id, character.get("name") or user.name or "Player", character.get("style"))
+    style = character.get("style")
+    if db is not None and style and flags.is_on("wardrobe"):  # what they wear, so everyone in the room sees it
+        from ..features.wardrobe import service as wardrobe
+        worn = wardrobe.style_overrides(db, user.id)
+        if worn["items"]:
+            style = {**style, **worn}
+    return Resident(user.id, character.get("name") or user.name or "Player", style)
 
 
 def _load(make_session: sessionmaker, user_id: int, game: str) -> Resident | None:
@@ -45,7 +52,7 @@ def _load(make_session: sessionmaker, user_id: int, game: str) -> Resident | Non
         user = db.get(User, user_id)
         if user is None or db.get(Game, game) is None:
             return None
-        return _resident(user)
+        return _resident(user, db)
 
 
 @router.websocket("/{name}/live")
