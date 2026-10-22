@@ -1,13 +1,13 @@
 """creator hub (T2): game_daily_stats (the nightly rollup) and creator_profiles (bios)
 
-Revision ID: 0037
-Revises: 0029
+Revision ID: 0031
+Revises: 0030
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0037"
-down_revision = "0029"
+revision = "0031"
+down_revision = "0030"
 branch_labels = None
 depends_on = None
 

@@ -362,6 +362,12 @@ def send_due(db: Session, provider: EmailProvider | None = None, at: datetime | 
         return 0
     only_to, sent = _only_to(), 0
     for row in rows:
+        # Claim the row until its commit below. Another server sending at the same time skips it instead of sending
+        # it again (Postgres; SQLite has no row locks and runs one sender anyway).
+        row = db.scalar(select(Email).where(Email.id == row.id, Email.status == "queued")
+                        .with_for_update(skip_locked=True).execution_options(populate_existing=True))
+        if row is None:
+            continue
         sub = row.subscriber
         message, _ = render(row, sub)
         if sub.bad_at is not None:
