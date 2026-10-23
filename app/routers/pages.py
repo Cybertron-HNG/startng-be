@@ -37,6 +37,9 @@ FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hang
 
 _shell: tuple[float, str] | None = None
 
+# Features add their own addresses to the sitemap: SITEMAP_PROVIDERS.append(fn), where fn(db) returns [(path, last changed date or None)].
+SITEMAP_PROVIDERS: list = []
+
 
 def _site() -> str:
     return settings.site_url.rstrip("/")
@@ -192,5 +195,8 @@ def sitemap(db: Session = Depends(get_db)):
         urls.append(f"  <url><loc>{_esc(f'{site}/games/{name}')}</loc>{lastmod}</url>")
     for game in db.scalars(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).order_by(IndieGame.id)):
         urls.append(f"  <url><loc>{_esc(site + indie_path(game))}</loc></url>")
+    for provider in SITEMAP_PROVIDERS:
+        for path, when in provider(db):
+            urls.append(f"  <url><loc>{_esc(site + path)}</loc>{f'<lastmod>{when}</lastmod>' if when else ''}</url>")
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
     return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
