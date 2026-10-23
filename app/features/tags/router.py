@@ -80,8 +80,7 @@ def tag_page(slug: str = SLUG, page: int = Query(1, ge=1, le=1000), db: Session 
 @router.get("/games/{name}/tags", response_model=list[GameTagOut])
 def game_tags(name: str = GAME, db: Session = Depends(get_db)):
     """The approved tags of one game that have a public page, so its page can link to them."""
-    public = {t.slug for t, _ in service.public_tags(db)}
-    return [GameTagOut(slug=t.slug, label=t.label) for t in service.tags_of(db, name) if t.slug in public]
+    return [GameTagOut(slug=s, label=l) for s, l in service.links_for(db, name)]
 
 
 # ---- admin: suggest, review, approve

@@ -39,6 +39,9 @@ _shell: tuple[float, str] | None = None
 
 # Features add their own addresses to the sitemap: SITEMAP_PROVIDERS.append(fn), where fn(db) returns [(path, last changed date or None)].
 SITEMAP_PROVIDERS: list = []
+# Features add links to a game's server-written page: GAME_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "". Use the same
+# words and class names as the website's own part for that feature (src/features/<feature>), so both versions of the page agree.
+GAME_PAGE_PARTS: list = []
 
 
 def _site() -> str:
@@ -138,9 +141,10 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     }
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+    parts = "".join(part(db, game) for part in GAME_PAGE_PARTS)
     body = (
         f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}</p>"
-        f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p></main>'
+        f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p>{parts}</main>'
     )
     page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

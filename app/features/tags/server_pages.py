@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ... import flags
 from ...db import get_db
 from ...routers.games import _cover_url, _player_name
-from ...routers.pages import SHARE_IMAGE, SITEMAP_PROVIDERS, _get_shell, _page, _site, _title
+from ...routers.pages import GAME_PAGE_PARTS, SHARE_IMAGE, SITEMAP_PROVIDERS, _get_shell, _page, _site, _title
 from ...server_html import chrome, esc, game_card, tag_tile
 from ...storage import game_url
 from . import service
@@ -119,3 +119,17 @@ def sitemap_urls(db: Session) -> list[tuple[str, str | None]]:
 
 
 SITEMAP_PROVIDERS.append(sitemap_urls)
+
+
+def game_page_part(db: Session, game) -> str:
+    """The "Categories" links on a game's server-written page: the same words and classes as src/features/tags/GameTags.tsx."""
+    if not flags.is_on("tags"):
+        return ""
+    links = service.links_for(db, game.name)
+    if not links:
+        return ""
+    items = "".join(f'<li><a href="/categories/{esc(s)}">{esc(l)}</a></li>' for s, l in links)
+    return f'<section class="game-tags" aria-label="Categories"><p class="eyebrow">Categories</p><ul>{items}</ul></section>'
+
+
+GAME_PAGE_PARTS.append(game_page_part)

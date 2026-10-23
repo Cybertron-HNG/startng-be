@@ -247,3 +247,21 @@ def test_the_sitemap_lists_nothing_from_a_feature_that_is_off(env, monkeypatch):
     client, tokens, Session = env
     monkeypatch.setattr(settings, "features", "")
     assert "/categories" not in client.get("/pages/sitemap.xml").text
+
+
+def test_the_server_written_game_page_links_to_the_games_categories(env, monkeypatch):
+    client, tokens, Session = env
+    monkeypatch.setattr("app.routers.pages._get_shell", lambda: SHELL)
+    approve_all(client, tokens, "nigerian-themed", NAMES[:3])
+    approve_all(client, tokens, "lagos", NAMES[:1])  # one game only: no page, so no link
+    html = client.get(f"/pages/games/{NAMES[0]}").text
+    assert 'aria-label="Categories"' in html and 'href="/categories/nigerian-themed"' in html and ">Nigerian themed<" in html
+    assert 'href="/categories/web-games"' in html and "/categories/lagos" not in html
+
+
+def test_a_game_page_has_no_categories_block_while_the_flag_is_off(env, monkeypatch):
+    client, tokens, Session = env
+    monkeypatch.setattr("app.routers.pages._get_shell", lambda: SHELL)
+    approve_all(client, tokens, "nigerian-themed", NAMES[:3])
+    monkeypatch.setattr(settings, "features", "")
+    assert 'aria-label="Categories"' not in client.get(f"/pages/games/{NAMES[0]}").text

@@ -123,6 +123,12 @@ def public_tags(db: Session) -> list[tuple[Tag, int]]:
     return [(t, have[t.slug]) for t in tags]
 
 
+def links_for(db: Session, game_name: str) -> list[tuple[str, str]]:
+    """(slug, label) of a game's approved tags that have a public page: what its page links to."""
+    public = {t.slug for t, _ in public_tags(db)}
+    return [(t.slug, t.label) for t in tags_of(db, game_name) if t.slug in public]
+
+
 def games_of(db: Session, slug: str, page: int = 1) -> tuple[Tag, int, list[Game]]:
     """(tag, total games, the games on this page, newest first). Raises TagError(404) for an unknown tag or one that
     does not have a public page yet."""

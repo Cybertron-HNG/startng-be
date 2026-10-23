@@ -35,6 +35,15 @@ def _not_found(shell: str, name: str, kind: str) -> Response:
     return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
+def _category_links(db: Session, name: str) -> list[tuple[str, str]]:
+    """The game's categories that have a page, when the tags feature is on: its own pages link to them too."""
+    from ... import flags
+    if not flags.is_on("tags"):
+        return []
+    from ..tags import service as tags
+    return tags.links_for(db, name)
+
+
 @router.get("/pages/games/{name}/{kind}", response_class=Response, include_in_schema=False)
 def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_db)):
     shell = _get_shell()
@@ -71,6 +80,11 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
                           "image": image, "author": {"@type": "Person", "name": by}, "gamePlatform": "Web browser", "applicationCategory": "Game",
                           "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}))
 
+    cats = _category_links(db, game.name)
+    categories = (
+        '<div class="game-tags" aria-label="Categories"><p class="eyebrow">Categories</p><ul>'
+        + "".join(f'<li><a href="/categories/{_esc(s)}">{_esc(l)}</a></li>' for s, l in cats) + "</ul></div>"
+    ) if cats else ""
     others = "".join(f'<li><a href="/games/{game.name}/{k}">{_esc(gen.LABELS[k].format(t=title))}</a></li>' for k in kinds if k != kind)
     inner = (
         '<main class="container game-sub">'
@@ -79,7 +93,7 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
         f'<div class="game-sub-body">{gen.to_html(page.body)}</div>'
         f'<p class="game-sub-play"><a class="btn" href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> <a class="btn ghost" href="/games/{game.name}">{_esc(title)} on start.ng</a></p>'
         f'<nav class="game-sub-links" aria-label="More about {_esc(title)}"><h2>More about {_esc(title)}</h2><ul>{others}<li><a href="/games/{game.name}">{_esc(title)} leaderboard and details</a></li><li><a href="/categories">Browse games by category</a></li></ul></nav>'
-        "</main>"
+        f"{categories}</main>"
     )
     html = _page(shell, title=f"{page.title} · start.ng", description=page.description or f"{page.title} on start.ng", path=path, image=image, body=chrome(inner), extra_head="\n    ".join(extra))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
@@ -212,3 +226,18 @@ def admin_generate(body: GenerateBody, admin: AdminUser = Depends(manage), db: S
 from ...routers.pages import SITEMAP_PROVIDERS  # noqa: E402
 
 SITEMAP_PROVIDERS.append(service.sitemap_urls)
+
+
+def _game_page_part(db: Session, game) -> str:
+    """The "More about this game" links on a game's server-written page: the same words and classes as src/features/game_pages/GamePages.tsx."""
+    from ... import flags
+    if not flags.is_on("game_pages"):
+        return ""
+    title = _title(game.name)
+    items = "".join(f'<li><a href="/games/{_esc(game.name)}/{k}">{_esc(gen.LABELS[k].format(t=title))}</a></li>' for k in service.approved_kinds(db, game.name))
+    return f'<section class="game-tags" aria-label="More about this game"><p class="eyebrow">More about this game</p><ul>{items}</ul></section>' if items else ""
+
+
+from ...routers.pages import GAME_PAGE_PARTS  # noqa: E402
+
+GAME_PAGE_PARTS.append(_game_page_part)

@@ -305,3 +305,31 @@ def test_the_sitemap_lists_no_pages_while_the_flag_is_off(env, monkeypatch):
     _approve(client, tokens, Session, store, kind="faq")
     monkeypatch.setattr(settings, "features", "")
     assert "/games/lagos-apocalypto/faq" not in client.get("/pages/sitemap.xml").text
+
+
+def test_the_games_server_page_and_its_own_pages_link_to_each_other_and_to_categories(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    monkeypatch.setattr("app.routers.pages._get_shell", lambda: SHELL)
+    monkeypatch.setattr(settings, "features", "game_pages,tags")
+    from app.features.tags import service as tag_service
+    with Session() as db:
+        owner = db.query(User).first()
+        db.add_all([Game(name=f"extra-{i}", owner_id=owner.id, repo_url="z") for i in range(2)])
+        db.commit()
+        for n in ("lagos-apocalypto", "extra-0", "extra-1"):
+            tag_service.approve(db, n, ["nigerian-themed"])
+    _approve(client, tokens, Session, store, kind="faq")
+    game = client.get("/pages/games/lagos-apocalypto").text
+    assert 'aria-label="More about this game"' in game and 'href="/games/lagos-apocalypto/faq"' in game and "Lagos Apocalypto FAQ" in game
+    assert 'aria-label="Categories"' in game and 'href="/categories/nigerian-themed"' in game
+    sub = client.get("/pages/games/lagos-apocalypto/faq").text
+    assert 'aria-label="Categories"' in sub and 'href="/categories/nigerian-themed"' in sub
+    assert "More about this game" not in client.get("/pages/games/bare").text  # nothing approved for it
+
+
+def test_a_game_page_has_no_links_to_pages_while_the_flag_is_off(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    monkeypatch.setattr("app.routers.pages._get_shell", lambda: SHELL)
+    _approve(client, tokens, Session, store, kind="faq")
+    monkeypatch.setattr(settings, "features", "")
+    assert "More about this game" not in client.get("/pages/games/lagos-apocalypto").text
