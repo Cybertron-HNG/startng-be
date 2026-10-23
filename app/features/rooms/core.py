@@ -300,6 +300,9 @@ async def connect(ws: WebSocket, user, game: str, mode: str) -> None:
     conn = Conn(user_id=user.id, name=user.name, style=user.style, ws=ws, game=game)
     try:
         existing = rooms.get(user_room.get((game, user.id), ""))
+        if existing is not None and existing.status == "over":  # a finished game: starting again means a fresh room
+            user_room.pop((game, user.id), None)
+            existing = None
         if existing is not None and (mode in ("new", "match") or mode == existing.code):
             seat_index = next(i for i, s in enumerate(existing.seats) if s.user_id == user.id)
             await attach(existing, seat_index, conn)  # back to the room they're already in

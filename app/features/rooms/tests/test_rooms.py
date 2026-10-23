@@ -282,3 +282,18 @@ def test_tictactoe_rules():
 def test_the_game_list(env):
     client, _, _ = env
     assert client.get("/rooms/games").json() == [{"game": GAME, "min": 2, "max": 2}]
+
+
+def test_after_a_game_ends_new_and_match_start_fresh(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        first = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], first)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            ada.send_json({"type": "resign"})
+            ada.receive_json(), tunde.receive_json()
+    with client.websocket_connect(url(ids["ada"])) as ada2:
+        again = ada2.receive_json()
+        assert again["status"] == "waiting" and again["room"] != first
+    with client.websocket_connect(url(ids["tunde"], "match")) as tunde2:
+        assert tunde2.receive_json() == {"type": "waiting"}
