@@ -38,6 +38,7 @@ FEATURES: list[str] = [
     "kit",  # M1 the start.ng Kit: game_sessions (Mo)
     "leagues",  # M2 leagues (Mo)
     "wardrobe",  # wardrobe rewards: coins, rarity items, the shop and game goals (Kaka)
+    "rooms",  # refereed multiplayer games: rooms with a code, matchmaking and bots (Hamzat)
 ]
 
 _loaded: dict[str, ModuleType] = {}

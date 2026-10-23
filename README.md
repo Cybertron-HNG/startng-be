@@ -468,3 +468,20 @@ players are never identified to creators.
   (one row per game per day, Nigeria time), so history survives the 30-day deletion of raw plays. Days after the last
   rollup (today) are counted live. A missed night is filled in by the next run.
 - **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
+
+## Rooms: refereed multiplayer games (Hamzat)
+`app/features/rooms`; flag `rooms` (off by default). Rooms with a code to share, matchmaking, a bot, and coming back after a
+dropped connection, for games start.ng referees itself (tic-tac-toe first, then chess). The Hangout is not touched.
+- **Connect:** `POST /games/{game}/ticket` (like the Hangout), then the WebSocket
+  `/rooms/live?game=<game>&ticket=...&room=new|match|<CODE>`. `new` makes a room and gives its code, `match` joins the matchmaking
+  line, a code joins a friend's room. Asking for `new` or `match` while you are already in a room puts you back in it.
+- **Messages:** see the top of `core.py`. You send `move`, `resign`, `bot`, `ping`; you get `welcome`, `state` (your own view of the
+  game), `join`, `away`, `back`, `waiting`, `no_match`, `error`, `closed`.
+- **Times:** a room waits 15 minutes for a friend (matchmaking: 60 seconds, with a bot offered after 15); a dropped player keeps
+  their seat for 10 minutes, after which the other player wins; a room closes after 30 minutes without a move, 10 minutes with
+  nobody in it, 5 minutes after the game ends, or 4 hours at most.
+- **Limits:** 2 KB a message, 30 messages a second, 10 wrong room codes a minute.
+- **Other routes:** `GET /rooms/online?game=` (people in the game's rooms or in the line), `GET /rooms/games`.
+- **A new game** is a rules module in `app/features/rooms/games/` (the interface is in `base.py`) and one line in
+  `games/__init__.py`. The game also needs a published game with the same name (the ticket is for it).
+- Rooms live in this process's memory: a restart empties them, and more than one API instance would split players.

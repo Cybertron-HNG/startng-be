@@ -1,0 +1,284 @@
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from starlette.websockets import WebSocketDisconnect
+
+from app.config import settings
+from app.db import Base, get_db
+from app.features.rooms import core
+from app.features.rooms.games import tictactoe
+from app.live import create_ticket
+from app.main import app
+from app.models import Game, User
+from app.routers.live import get_sessionmaker
+
+GAME = "tic-tac-toe"
+
+
+@pytest.fixture
+def env(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, autoflush=False)
+
+    def override_db():
+        db = Session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_sessionmaker] = lambda: Session
+    monkeypatch.setattr(settings, "features", "rooms")
+    monkeypatch.setattr(core, "rooms", {})
+    monkeypatch.setattr(core, "user_room", {})
+    monkeypatch.setattr(core, "queues", {})
+    monkeypatch.setattr(core, "bad_codes", {})
+    now = [1000.0]
+    monkeypatch.setattr(core, "clock", lambda: now[0])
+    with Session() as db:
+        users = [User(email=f"{n}@example.com", name=n.title(), character={"name": n.title(), "style": {"body": "male"}}) for n in ("ada", "tunde", "chi")]
+        db.add_all(users)
+        db.flush()
+        db.add(Game(name=GAME, owner_id=users[0].id, repo_url="https://github.com/ada/ttt"))
+        db.commit()
+        ids = {u.name.lower(): u.id for u in users}
+    with TestClient(app) as client:
+        yield client, ids, now
+    app.dependency_overrides.clear()
+
+
+def url(user_id, room="new", game=GAME):
+    return f"/rooms/live?game={game}&ticket={create_ticket(user_id, game)}&room={room}"
+
+
+def test_it_is_off_until_the_flag_is_on(env, monkeypatch):
+    client, ids, _ = env
+    monkeypatch.setattr(settings, "features", "")
+    assert client.get("/rooms/online?game=tic-tac-toe").status_code == 404
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(url(ids["ada"])):
+            pass
+
+
+def test_a_bad_ticket_is_refused(env):
+    client, ids, _ = env
+    with client.websocket_connect(f"/rooms/live?game={GAME}&ticket=nope&room=new") as ws:
+        with pytest.raises(WebSocketDisconnect) as err:
+            ws.receive_json()
+    assert err.value.code == core.BAD_TICKET
+
+
+def test_a_friend_joins_by_code_and_they_play_to_a_win(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        hello = ada.receive_json()
+        assert hello["type"] == "welcome" and hello["status"] == "waiting" and hello["you"] == 0
+        code = hello["room"]
+        assert len(code) == 6 and set(code) <= set(core.CODE_ALPHABET)
+        with client.websocket_connect(url(ids["tunde"], code.lower())) as tunde:
+            assert ada.receive_json()["type"] == "join"
+            ada_start, tunde_start = ada.receive_json(), tunde.receive_json()
+            assert ada_start["status"] == tunde_start["status"] == "playing"
+            assert tunde_start["you"] == 1 and tunde_start["players"][0]["name"] == "Ada"
+            assert tunde_start["turn"] == 0
+            # X takes the top row; O plays elsewhere
+            for who, cell in ((ada, 0), (tunde, 3), (ada, 1), (tunde, 4), (ada, 2)):
+                who.send_json({"type": "move", "data": {"cell": cell}})
+                a, t = ada.receive_json(), tunde.receive_json()
+                assert a["type"] == t["type"] == "state"
+            assert a["result"] == {"winner": 0, "line": [0, 1, 2], "reason": "line"} and a["status"] == "over"
+            assert t["result"]["winner"] == 0
+
+
+def test_bad_moves_only_tell_the_sender(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            tunde.send_json({"type": "move", "data": {"cell": 0}})  # not O's turn
+            assert tunde.receive_json()["message"] == "It's not your turn."
+            ada.send_json({"type": "move", "data": {"cell": 99}})
+            assert ada.receive_json()["code"] == "bad_move"
+            ada.send_json({"type": "move", "data": {"cell": 0}})
+            ada.receive_json(), tunde.receive_json()
+            tunde.send_json({"type": "move", "data": {"cell": 0}})  # taken
+            assert tunde.receive_json()["message"] == "That square is taken."
+
+
+def test_a_wrong_code_and_a_full_room(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"], "ZZZZZZ")) as ws:
+        assert ws.receive_json() == {"type": "closed", "reason": "not_found"}
+        with pytest.raises(WebSocketDisconnect) as err:
+            ws.receive_json()
+    assert err.value.code == core.NOT_FOUND
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            with client.websocket_connect(url(ids["chi"], code)) as chi:
+                with pytest.raises(WebSocketDisconnect) as err:
+                    chi.receive_json()
+            assert err.value.code == core.ROOM_FULL
+
+
+def test_too_many_wrong_codes_slows_a_guesser_down(env):
+    client, ids, _ = env
+    for _ in range(core.BAD_CODES_PER_MINUTE):
+        with client.websocket_connect(url(ids["ada"], "ZZZZZZ")) as ws:
+            assert ws.receive_json()["reason"] == "not_found"
+    with client.websocket_connect(url(ids["ada"], "ZZZZZZ")) as ws:
+        with pytest.raises(WebSocketDisconnect) as err:
+            ws.receive_json()
+    assert err.value.code == core.TOO_MANY
+
+
+def test_a_dropped_player_comes_back_to_the_same_seat(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            ada.send_json({"type": "move", "data": {"cell": 4}})
+            ada.receive_json(), tunde.receive_json()
+            with client.websocket_connect(url(ids["tunde"], code)) as tunde_again:  # same player on a new connection
+                back = tunde_again.receive_json()
+                assert back["type"] == "welcome" and back["you"] == 1 and back["state"]["board"][4] == 0
+                with pytest.raises(WebSocketDisconnect) as err:  # the old connection is replaced
+                    for _ in range(5):
+                        tunde.receive_json()
+                assert err.value.code == core.REPLACED
+    # "new" also returns you to the room you are in, instead of making a second one
+    with client.websocket_connect(url(ids["ada"])) as ada2:
+        assert ada2.receive_json()["room"] == code
+
+
+def test_a_player_who_stays_away_forfeits_after_the_grace_time(env):
+    client, ids, now = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+        away = ada.receive_json()
+        assert away == {"type": "away", "seat": 1, "grace": core.SEAT_GRACE}
+        now[0] += core.SEAT_GRACE - 1
+        client.portal.call(core.sweep)
+        now[0] += 2
+        client.portal.call(core.sweep)
+        end = ada.receive_json()
+        assert end["status"] == "over" and end["result"] == {"winner": 0, "reason": "left"}
+
+
+def test_rooms_close_when_their_time_is_up(env):
+    client, ids, now = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        now[0] += core.WAIT_FOR_FRIEND + 1
+        client.portal.call(core.sweep)
+        assert ada.receive_json() == {"type": "closed", "reason": "nobody_came"}
+    assert core.rooms == {} and core.user_room == {}
+
+
+def test_an_empty_room_closes_after_the_rejoin_time(env):
+    client, ids, now = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+    for _ in range(100):  # the server notices the connection closing a moment later
+        if core.rooms[code].empty_since is not None:
+            break
+        time.sleep(0.02)
+    now[0] += core.EMPTY + 1
+    client.portal.call(core.sweep)
+    assert code not in core.rooms
+
+
+def test_matchmaking_pairs_two_players(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"], "match")) as ada:
+        assert ada.receive_json() == {"type": "waiting"}
+        assert client.get("/rooms/online?game=tic-tac-toe").json()["online"] == 1
+        with client.websocket_connect(url(ids["tunde"], "match")) as tunde:
+            a, t = ada.receive_json(), tunde.receive_json()
+            assert a["room"] == t["room"] and a["status"] == t["status"] == "playing"
+            assert (a["you"], t["you"]) == (0, 1)
+            assert client.get("/rooms/online?game=tic-tac-toe").json()["online"] == 2
+
+
+def test_the_matchmaking_line_offers_a_bot_and_then_gives_up(env):
+    client, ids, now = env
+    with client.websocket_connect(url(ids["ada"], "match")) as ada:
+        ada.receive_json()
+        now[0] += core.MATCH_OFFER + 1
+        client.portal.call(core.sweep)
+        assert ada.receive_json() == {"type": "no_match"}
+        now[0] += core.MATCH_WAIT
+        client.portal.call(core.sweep)
+        assert ada.receive_json() == {"type": "closed", "reason": "no_match"}
+
+
+def test_playing_a_bot_from_the_matchmaking_line(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"], "match")) as ada:
+        ada.receive_json()
+        ada.send_json({"type": "bot"})
+        assert ada.receive_json()["status"] == "waiting"  # the room with just them
+        joined = ada.receive_json()
+        assert joined["type"] == "join" and joined["player"]["bot"] is True
+        start = ada.receive_json()
+        assert start["status"] == "playing"
+        ada.send_json({"type": "move", "data": {"cell": 0}})
+        assert ada.receive_json()["type"] == "state"  # mine
+        reply = ada.receive_json()  # the bot answers
+        assert reply["type"] == "state" and reply["state"]["board"].count(1) == 1
+
+
+def test_a_bot_can_be_added_to_a_room_waiting_for_a_friend(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        ada.send_json({"type": "bot"})
+        assert ada.receive_json()["type"] == "join"
+        assert ada.receive_json()["status"] == "playing"
+
+
+def test_resigning_gives_the_win_to_the_other_player(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            ada.send_json({"type": "resign"})
+            assert ada.receive_json()["result"] == {"winner": 1, "reason": "resigned"}
+
+
+def test_big_messages_are_refused(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        ada.send_text("x" * (core.MAX_MESSAGE + 1))
+        assert ada.receive_json()["code"] == "too_big"
+
+
+def test_tictactoe_rules():
+    s = tictactoe.new_state(2)
+    for seat, cell in ((0, 0), (1, 1), (0, 3), (1, 4), (0, 6)):
+        s, err = tictactoe.apply(s, seat, {"cell": cell})
+        assert err is None
+    assert tictactoe.result(s) == {"winner": 0, "line": [0, 3, 6], "reason": "line"} and tictactoe.turn(s) is None
+    draw = {"board": [0, 1, 0, 0, 1, 1, 1, 0, 0], "turn": 0}
+    assert tictactoe.result(draw) == {"winner": None, "reason": "draw"}
+    # the bot wins when it can and blocks when it must
+    assert tictactoe.bot_move({"board": [1, 1, None, 0, 0, None, None, None, None], "turn": 1}, 1)["cell"] == 2
+    assert tictactoe.bot_move({"board": [0, 0, None, 1, None, None, None, None, None], "turn": 1}, 1)["cell"] == 2
+
+
+def test_the_game_list(env):
+    client, _, _ = env
+    assert client.get("/rooms/games").json() == [{"game": GAME, "min": 2, "max": 2}]
