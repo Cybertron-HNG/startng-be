@@ -462,6 +462,15 @@ class LogOut(BaseModel):
     at: datetime
 
 
+class LogPage(BaseModel):
+    """One page of the activity log: the entries, and how many there are in all for the search."""
+    items: list[LogOut]
+    total: int
+    page: int
+    pages: int
+    page_size: int
+
+
 class DayCount(BaseModel):
     day: str
     n: int
