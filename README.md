@@ -468,3 +468,12 @@ players are never identified to creators.
   (one row per game per day, Nigeria time), so history survives the 30-day deletion of raw plays. Days after the last
   rollup (today) are counted live. A missed night is filled in by the next run.
 - **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
+
+## Feature switches (admin page)
+A feature is on when the `FEATURES` setting lists it, **unless** a super admin has switched it in the admin page (the Features tab,
+`app/routers/feature_switches.py`, table `feature_switches`): a switch wins over the setting, both ways, and "use the server setting"
+removes it. No redeploy: the process that took the change sees it at once, others within 10 seconds (`flags.CACHE_SECONDS`).
+- `GET /admin/features` (every feature, whether it is on, where that comes from, a caution for ones that change real behaviour) and
+  `PUT /admin/features/{name}` `{enabled: true | false | null}`, super admins only; each change is in the activity log.
+- `GET /features` (public) lists what is on after the switches are applied. Without the table (before the migration) the setting alone decides.
+- Tests don't read switches from a database (`FEATURE_SWITCHES` is off in `tests/conftest.py`); the switch tests turn it on.
