@@ -4,8 +4,8 @@ average, rating count and smoothed score.
 Categories are a fixed list. A game sets its own in startng.json ("category": "Puzzle"); the owner can also set it in Your
 games. The file wins when the game is published or updated. A game with none is "Uncategorized" (None here).
 
-Ratings are 1 to 5 stars, one per player, editable, and only from players who opened the game at least RATE_AFTER ago
-(the Progress Engine's game_opens, C4). Stars show once a game has MIN_SHOWN ratings; ordering uses a smoothed average
+Ratings are 1 to 5 stars, one per player, editable, and only from players who have played the game: they opened it from
+start.ng (the Progress Engine's game_opens, C4) or saved a score in it. There is no waiting time. Stars show once a game has MIN_SHOWN ratings; ordering uses a smoothed average
 so one 5-star vote doesn't outrank fifty 4.6s.
 """
 from dataclasses import dataclass
@@ -16,13 +16,13 @@ from sqlalchemy.orm import Session
 
 from ... import manifest
 from ...features.progress import service as progress
-from ...models import Game
+from ...features.progress.models import Run
+from ...models import Game, Score
 from .models import GameCatalog, GameRating
 
 NAME = "catalog"
 
 CATEGORIES = ["Action", "Racing", "Puzzle", "Card & board", "Arcade", "Adventure", "Sports", "Strategy", "Educational"]
-RATE_AFTER = timedelta(seconds=60)  # how long ago the player must have first opened the game
 MIN_SHOWN = 5  # stars show from this many ratings
 PRIOR_STARS, PRIOR_WEIGHT = 3.5, 5  # the smoothing: every game starts with this many imaginary 3.5-star votes
 
@@ -118,15 +118,23 @@ def refresh(db: Session, game_name: str) -> GameCatalog:
     return row
 
 
+def has_played(db: Session, user_id: int, game_name: str) -> bool:
+    """They opened the game from start.ng, or they saved a score in it (an open is not recorded when someone reaches a game by
+    its own address, or while their sign-in had run out, but a score is always theirs)."""
+    if progress.game_open(db, user_id, game_name) is not None:
+        return True
+    scored = db.scalar(select(func.count()).select_from(Score).where(Score.user_id == user_id, Score.game_name == game_name))
+    ran = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user_id, Run.game_name == game_name))
+    return bool(scored or ran)
+
+
 def can_rate(db: Session, user_id: int, game: Game, at: datetime | None = None) -> tuple[bool, str | None]:
-    """Whether the player may rate the game now, and if not why (shown to them)."""
+    """Whether the player may rate the game now, and if not why (shown to them). Anyone who has played it may, for as long as it
+    is available."""
     if game.owner_id == user_id:
         return False, "You can't rate your own game"
-    opened = progress.game_open(db, user_id, game.name)
-    if opened is None:
+    if not has_played(db, user_id, game.name):
         return False, "Play the game before you rate it"
-    if (at or now()) - _utc(opened.first_at) < RATE_AFTER:
-        return False, "Play for a minute, then you can rate it"
     return True, None
 
 
