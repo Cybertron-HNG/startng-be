@@ -6,7 +6,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/startng"
     jwt_secret: str = "change-me"
-    jwt_expire_minutes: int = 1440
+    # How long a sign-in lasts without a visit, and that it renews with every visit (app/security.py): a week by default, and
+    # a year for someone who chose to stay signed in.
+    session_days: int = 7
+    remember_days: int = 365
     google_client_id: str = ""
     cors_origins: str = "http://localhost:5173"
     # Games call the API from their own address (<name>.start.ng; <name>.start.localhost while testing)
