@@ -192,8 +192,7 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
             elif found.status == "missing":
                 log.info("%s: its repo or branch is gone or private; the game stays as it is", game.name)
             if not republished:
-                # A check alone isn't an update: keep updated_at, which orders the game list and
-                # sets how often the game is checked.
+                # A check alone isn't an update: keep updated_at, which sets how often the game is checked.
                 game.updated_at = Game.updated_at
             game.checked_at = now
             db.commit()
