@@ -374,6 +374,19 @@ server's own check.)
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
+## GitHub App: pushes go live straight away (F1)
+`app/features/github_app`; flag `github_app`.
+- Owners install the start.ng GitHub App on their game's repo (Your games links to it: `GET /github/app`). GitHub then
+  calls `POST /github/webhook` on every push, signed with `GITHUB_WEBHOOK_SECRET` (`X-Hub-Signature-256`, checked on
+  the raw body). A push to the branch the game is published from (or the repo's default branch) republishes it in the
+  background, the same way `app/auto_update.py` does (`auto_update.update_to`): an update that can't go live is shown
+  to the owner, and a GitHub or storage hiccup is tried again by the regular check. GitHub sending the same push again
+  does nothing (that commit is live already). Checking every few minutes stays for repos without the app.
+- **Setting it up (an owner of the GitHub org):** create a GitHub App with permissions Contents: read and Metadata:
+  read, subscribed to the Push event, webhook URL `<API_URL>/github/webhook` and a long random webhook secret. Put the
+  secret in `GITHUB_WEBHOOK_SECRET` and the app's short name (from github.com/apps/<slug>) in `GITHUB_APP_SLUG`.
+  Public repos need no private key.
+
 ## Tournament emails (PRD H1)
 `app/features/email/tournament_mail.py`, part of the `email` feature.
 - At 6 PM one tournament ends and the next starts. Everyone on the `tournament` topic (visitors too) gets who won and

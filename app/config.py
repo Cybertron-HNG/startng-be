@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # limit from 60 checks an hour to 5,000; without one it still works, slowly.
     auto_update: bool = True
     github_token: str = ""
+    # F1: the start.ng GitHub App. GitHub calls POST /github/webhook on every push to a repo that has the app, signed
+    # with this secret, and the game updates straight away (checking every few minutes stays as the fallback).
+    # GITHUB_APP_SLUG names the app, for the "install it" link in Your games: github.com/apps/<slug>.
+    github_webhook_secret: str = ""
+    github_app_slug: str = ""
     update_check_seconds: int = 300  # games updated in the last 30 days (newer: every minute; older: hourly)
     # Daily tournaments (app/tournaments.py): each runs 24 hours and ends at tournament_end_hour, local time
     # (UTC + tournament_utc_offset; Nigeria is UTC+1 all year), so the winner is named in the evening.
