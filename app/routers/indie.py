@@ -17,7 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
-from .. import covers
+from .. import covers, flags
 from ..activity import record
 from ..features.moderation import service as moderation
 from ..db import get_db
@@ -81,8 +81,17 @@ def _recent_plays(db: Session) -> dict[int, int]:
     return {gid: count for gid, count in rows}
 
 
-def _out(g: IndieGame, user: User | None = None, plays: int = 0) -> IndieGameOut:
+def _categories(db: Session, game_id: int) -> list[str]:
+    if not flags.is_on("tags"):
+        return []
+    from ..features.tags import service as tags
+
+    return tags.indie_labels(db, game_id)
+
+
+def _out(g: IndieGame, user: User | None = None, plays: int = 0, categories: list[str] | None = None) -> IndieGameOut:
     return IndieGameOut(
+        categories=categories or [],
         id=g.id, name=g.name, url=g.url, description=g.description, by=_player_name(g.owner, "A creator"),
         cover_path=f"/indie/{g.id}/cover.webp", created_at=g.created_at, mine=bool(user and user.id == g.owner_id), plays=plays,
     )
@@ -118,7 +127,7 @@ def get_indie_game(game_id: int, user: User | None = Depends(optional_user), db:
     game = db.scalar(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).where(IndieGame.id == game_id))
     if not game:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No game with that id")
-    return _out(game, user, _recent_plays(db).get(game.id, 0))
+    return _out(game, user, _recent_plays(db).get(game.id, 0), _categories(db, game.id))
 
 
 @router.post("/{game_id}/plays", status_code=status.HTTP_204_NO_CONTENT)
@@ -154,16 +163,30 @@ def submit_indie_game(
     if db.scalar(select(IndieGame.id).where(IndieGame.url == url)):
         raise ApiError(status.HTTP_409_CONFLICT, "already_listed", "That game is already listed")
     cover = _cover(body.cover)
+    picked, other = [], None
+    if flags.is_on("tags"):  # the categories the creator picked (up to 5), or their own words if none fit
+        from ..features.tags import service as tags
+
+        try:
+            picked = tags.check_choice(body.categories)
+        except tags.manifest.SchemaError as err:
+            raise _bad("bad_categories", str(err).removeprefix("startng.json: ")) from None
+        other = tags.parse_other(body.other_category)
+        if other and moderation.enforcing():
+            moderation.require_clean(db, other, "The category")
     game = IndieGame(owner_id=user.id, name=name, url=url, description=description, cover=cover)
     db.add(game)
     record(db, user, "developer", "indie.added", name, url=url)
     try:
+        db.flush()  # the link is unique: a clash shows up here
+        if picked or other:
+            tags.set_indie(db, game.id, picked, other)
         db.commit()
     except IntegrityError:  # someone listed the same link between the check above and now
         db.rollback()
         raise ApiError(status.HTTP_409_CONFLICT, "already_listed", "That game is already listed") from None
     db.refresh(game)
-    return _out(game, user)
+    return _out(game, user, categories=_categories(db, game.id))
 
 
 @router.get("/{game_id}/cover.webp")
