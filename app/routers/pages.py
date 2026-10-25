@@ -298,13 +298,15 @@ def _pagination(page: int, pages: int) -> str:
     return f'<nav class="pagination" aria-label="Pages">{prev}<span class="numbers">{numbers}</span>{nxt}</nav>'
 
 
-def _games_body(games: list[Game], page: int) -> str:
+def _games_body(games: list[Game], page: int) -> str | None:
+    """None for a page past the last one."""
     cards = [HANGOUT_CARD] + [
         (_title(g.name), f"/games/{g.name}", game_url(g.name).removeprefix("https://"), _player_name(g.owner, "A builder"))
         for g in games
     ]
     pages = max(1, -(-len(cards) // PER_PAGE))
-    page = min(page, pages)  # a page past the end shows the last one, as the app does
+    if page > pages:
+        return None
     shown = cards[(page - 1) * PER_PAGE:page * PER_PAGE]
     start = (page - 1) * PER_PAGE + 1
     count = f"{start}–{start + len(shown) - 1} of {len(cards)}" if pages > 1 else f"{len(cards)} {'game' if len(cards) == 1 else 'games'}"
@@ -329,8 +331,12 @@ def _games_body(games: list[Game], page: int) -> str:
 def games_page(page: int = Query(1, ge=1, le=100_000), db: Session = Depends(get_db)):
     """/games' text as HTML for inside #root, one page of games at a time (?page=2), like home_page: nginx includes
     it in the games page it serves itself, so search engines can follow every page to every game. Searches and
-    filters (?q=, ?category= ...) aren't rendered here: nginx keeps those addresses out of search results."""
-    return Response(_games_body(_visible_games(db), page), media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+    filters (?q=, ?category= ...) aren't rendered here: nginx keeps those addresses out of search results.
+    A page past the last one is a 404, which nginx turns into the site's 404 page (the app shows "Page not found")."""
+    body = _games_body(_visible_games(db), page)
+    if body is None:
+        return Response("No such page", status_code=404, media_type="text/plain", headers={"Cache-Control": "public, max-age=60"})
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
 @router.get("/sitemap.xml", response_class=Response)

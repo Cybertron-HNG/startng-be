@@ -281,7 +281,7 @@ def test_games_page_text_pages_like_the_app(env):
     last = client.get("/pages/games?page=3").text
     assert '<span class="count">41–45 of 45</span>' in last
     assert '<a href="/games?page=2" rel="prev"' in last and "/hangout" not in last
-    assert client.get("/pages/games?page=99").text == last  # past the end: the last page, as the app does
+    assert client.get("/pages/games?page=4").status_code == 404  # past the end: nginx serves the 404 page
     assert client.get("/pages/games?page=0").status_code == 422
 
 
