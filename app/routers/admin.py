@@ -563,9 +563,12 @@ def activity_log(
             for r in db.scalars(q).all()]
 
 
+BACKSLASH = chr(92)  # the character LIKE escapes with (see the escape= arguments below)
+
+
 def _escape(text: str) -> str:
     """The text with LIKE's special characters escaped (a % or _ typed in the search is not a wildcard)."""
-    return text.replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+    return text.replace(BACKSLASH, BACKSLASH * 2).replace("%", BACKSLASH + "%").replace("_", BACKSLASH + "_")
 
 
 def _like(text: str) -> str:
@@ -591,15 +594,15 @@ def search_log(
     if q and q.strip():
         pattern = _like(q.strip())
         where.append(or_(
-            Activity.actor.ilike(pattern, escape="\\"), Activity.action.ilike(pattern, escape="\\"),
-            Activity.target.ilike(pattern, escape="\\"), cast(Activity.detail, Text).ilike(pattern, escape="\\"),
+            Activity.actor.ilike(pattern, escape=BACKSLASH), Activity.action.ilike(pattern, escape=BACKSLASH),
+            Activity.target.ilike(pattern, escape=BACKSLASH), cast(Activity.detail, Text).ilike(pattern, escape=BACKSLASH),
         ))
     if kind:
         where.append(Activity.kind == kind)
     if action:
-        where.append(Activity.action.like(_escape(action) + "%", escape="\\") if action.endswith(".") else Activity.action == action)
+        where.append(Activity.action.like(_escape(action) + "%", escape=BACKSLASH) if action.endswith(".") else Activity.action == action)
     if actor and actor.strip():
-        where.append(Activity.actor.ilike(_like(actor.strip()), escape="\\"))
+        where.append(Activity.actor.ilike(_like(actor.strip()), escape=BACKSLASH))
     if since:
         where.append(Activity.at >= datetime.combine(since, time.min, tzinfo=timezone.utc))
     if until:
