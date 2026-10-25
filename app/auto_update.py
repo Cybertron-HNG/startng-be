@@ -28,7 +28,7 @@ import requests
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from .config import settings
 from .db import SessionLocal
@@ -133,9 +133,35 @@ class Summary:
     paused_until: datetime | None = None
 
 
+def update_to(db: Session, store: GameStore, game: Game, sha: str, now: datetime) -> str:
+    """Republish a game from its repo because its branch moved to `sha` (a check found it, or GitHub told us: the
+    GitHub App's push webhook). Returns "updated", "retry" (a GitHub or storage hiccup: the same commit is tried
+    again later) or "failed" (this commit can't go live; the owner sees why in Your games). The caller commits."""
+    from .routers.games import _download_and_check, _put_live  # the same steps as publishing
+
+    try:
+        repo = parse_repo_url(game.repo_url, game.branch)
+        _put_live(db, store, game, game.name, game.owner_id, repo, _download_and_check(repo), auto=True)
+        log.info("Updated %s to %s", game.name, sha)
+        outcome = "updated"
+    except (HTTPException, PublishError) as err:
+        errors = getattr(err, "errors", None) or [Problem("invalid", str(getattr(err, "detail", err)))]
+        if errors[0].code in TRY_AGAIN:
+            # Keep the old commit and fingerprint, so the next check sees this commit as new again and retries it.
+            log.warning("Couldn't update %s to %s yet: %s", game.name, sha, errors[0].message)
+            return "retry"
+        # Not retried until the next new commit: a broken commit stays broken. The owner sees why in Your games.
+        detail = str(getattr(err, "detail", err))
+        log.warning("Couldn't update %s to %s: %s", game.name, sha, detail)
+        record(db, None, "system", "game.update_failed", game.name, commit=sha[:7], detail=detail[:200])
+        game.update_problem = {"commit": sha, "at": now.isoformat(), "detail": detail, "errors": [p.as_dict() for p in errors]}
+        outcome = "failed"
+    game.last_commit = sha
+    return outcome
+
+
 def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | None = None, store: GameStore | None = None) -> Summary:
     """Checks the games that are due and republishes the ones whose branch has moved."""
-    from .routers.games import _download_and_check, _put_live  # the same steps as publishing
 
     now = now or datetime.now(timezone.utc)
     summary = Summary(updated=[])
@@ -160,40 +186,17 @@ def check_due_games(make_session: sessionmaker = SessionLocal, now: datetime | N
             if found.status == "fresh":
                 if found.sha != game.last_commit:  # a new commit, or no commit recorded yet
                     downloads += 1
-                    try:
-                        repo = parse_repo_url(game.repo_url, game.branch)
-                        _put_live(db, store, game, game.name, game.owner_id, repo, _download_and_check(repo), auto=True)
+                    outcome = update_to(db, store, game, found.sha, now)
+                    if outcome == "updated":
                         summary.updated.append(game.name)
                         republished = True
-                        log.info("Updated %s to %s", game.name, found.sha)
-                    except (HTTPException, PublishError) as err:
-                        errors = getattr(err, "errors", None) or [Problem("invalid", str(getattr(err, "detail", err)))]
-                        if errors[0].code in TRY_AGAIN:
-                            # A GitHub or storage hiccup: keep the old commit and fingerprint, so
-                            # the next check sees this commit as new again and retries it.
-                            log.warning("Couldn't update %s to %s yet: %s", game.name, found.sha, errors[0].message)
-                            retry = True
-                        else:
-                            # Not retried until the next new commit: a broken commit stays broken.
-                            # The owner sees why in Your games.
-                            detail = str(getattr(err, "detail", err))
-                            log.warning("Couldn't update %s to %s: %s", game.name, found.sha, detail)
-                            record(db, None, "system", "game.update_failed", game.name, commit=found.sha[:7], detail=detail[:200])
-                            game.update_problem = {
-                                "commit": found.sha,
-                                "at": now.isoformat(),
-                                "detail": detail,
-                                "errors": [p.as_dict() for p in errors],
-                            }
-                    if not retry:
-                        game.last_commit = found.sha
+                    retry = outcome == "retry"
                 if not retry:
                     game.commit_etag = found.etag
             elif found.status == "missing":
                 log.info("%s: its repo or branch is gone or private; the game stays as it is", game.name)
             if not republished:
-                # A check alone isn't an update: keep updated_at, which orders the game list and
-                # sets how often the game is checked.
+                # A check alone isn't an update: keep updated_at, which sets how often the game is checked.
                 game.updated_at = Game.updated_at
             game.checked_at = now
             db.commit()

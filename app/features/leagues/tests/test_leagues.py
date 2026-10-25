@@ -412,6 +412,24 @@ def test_a_full_group_starts_another(env):
     assert sorted(got[u].seat for u in ids[:30]) == list(range(1, 31))
 
 
+def test_a_seat_left_by_a_deleted_account_is_given_out_again(env):
+    Session = env
+    ids, new = users(Session, 5), users(Session, 2)
+    for i, uid in enumerate(ids):
+        run(Session, uid, "tap", i, T0 + timedelta(seconds=i))
+    gone = entries(Session, "daily", T0)[ids[1]]
+    with Session() as db:  # deleting an account removes its entries (ON DELETE CASCADE; SQLite here doesn't cascade)
+        db.query(LeagueEntry).filter(LeagueEntry.user_id == ids[1]).delete()
+        db.query(User).filter(User.id == ids[1]).delete()
+        db.commit()
+    for i, uid in enumerate(new):  # before the fix, the first of these clashed with seat 5 and was never seated
+        run(Session, uid, "tap", 10 + i, T0 + timedelta(minutes=1, seconds=i))
+    got = entries(Session, "daily", T0)
+    assert got[new[0]].group_id == gone.group_id and got[new[0]].seat == gone.seat
+    assert got[new[1]].seat == 6
+    assert sorted(e.seat for e in got.values()) == [1, 2, 3, 4, 5, 6]
+
+
 # ---- the API
 
 

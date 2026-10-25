@@ -6,7 +6,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/startng"
     jwt_secret: str = "change-me"
-    jwt_expire_minutes: int = 1440
+    # How long a sign-in lasts without a visit, and that it renews with every visit (app/security.py): a week by default, and
+    # a year for someone who chose to stay signed in.
+    session_days: int = 7
+    remember_days: int = 365
     google_client_id: str = ""
     cors_origins: str = "http://localhost:5173"
     # Games call the API from their own address (<name>.start.ng; <name>.start.localhost while testing)
@@ -36,6 +39,11 @@ class Settings(BaseSettings):
     # limit from 60 checks an hour to 5,000; without one it still works, slowly.
     auto_update: bool = True
     github_token: str = ""
+    # F1: the start.ng GitHub App. GitHub calls POST /github/webhook on every push to a repo that has the app, signed
+    # with this secret, and the game updates straight away (checking every few minutes stays as the fallback).
+    # GITHUB_APP_SLUG names the app, for the "install it" link in Your games: github.com/apps/<slug>.
+    github_webhook_secret: str = ""
+    github_app_slug: str = ""
     update_check_seconds: int = 300  # games updated in the last 30 days (newer: every minute; older: hourly)
     # Daily tournaments (app/tournaments.py): each runs 24 hours and ends at tournament_end_hour, local time
     # (UTC + tournament_utc_offset; Nigeria is UTC+1 all year), so the winner is named in the evening.
@@ -74,6 +82,8 @@ class Settings(BaseSettings):
     # The key the daily agent sends (Authorization: Bearer <key>) to read the games that need pages and save the pages it wrote.
     # Empty (the default) shuts that door: the agent routes answer 404.
     agent_api_key: str = ""
+    # Switches an admin sets in the admin page (table feature_switches) win over FEATURES. Off in tests.
+    feature_switches: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before

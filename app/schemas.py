@@ -10,15 +10,18 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     name: str | None = None
+    remember: bool = False  # stay signed in
 
 
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    remember: bool = False  # stay signed in
 
 
 class GoogleIn(BaseModel):
     id_token: str
+    remember: bool = False  # stay signed in
 
 
 class CharacterStyle(BaseModel):
@@ -463,6 +466,15 @@ class LogOut(BaseModel):
     target: str | None
     detail: dict | None
     at: datetime
+
+
+class LogPage(BaseModel):
+    """One page of the activity log: the entries, and how many there are in all for the search."""
+    items: list[LogOut]
+    total: int
+    page: int
+    pages: int
+    page_size: int
 
 
 class DayCount(BaseModel):

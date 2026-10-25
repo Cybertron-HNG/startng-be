@@ -26,6 +26,7 @@ FEATURES: list[str] = [
     "duplicates",  # H2 duplicate finder (Hamzat)
     "email",  # H1 email and notifications (Hamzat)
     "game_health",  # H2 game health checks (Hamzat)
+    "github_app",  # F1 GitHub App: a push updates the game straight away (Hamzat)
     "progress",
     "integrity",
     "spotlight",  # A2 Game of the Week and the daily challenge (Hamzat, for Ade)
