@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ... import flags
 from ...db import get_db
 from ...routers.games import _cover_url, _player_name
-from ...routers.pages import GAME_PAGE_PARTS, SHARE_IMAGE, SITEMAP_PROVIDERS, _get_shell, _page, _site, _title
+from ...routers.pages import GAME_PAGE_PARTS, INDIE_PAGE_PARTS, SHARE_IMAGE, SITEMAP_PROVIDERS, _get_shell, _page, _site, _title
 from ...server_html import chrome, esc, game_card, tag_tile
 from ...storage import game_url
 from . import service
@@ -133,3 +133,17 @@ def game_page_part(db: Session, game) -> str:
 
 
 GAME_PAGE_PARTS.append(game_page_part)
+
+
+def indie_page_part(db: Session, game) -> str:
+    """The categories of an independent creator's game, on its own page only (not links: these games are not on the category pages)."""
+    if not flags.is_on("tags"):
+        return ""
+    labels = service.indie_labels(db, game.id)
+    if not labels:
+        return ""
+    items = "".join(f"<li>{esc(l)}</li>" for l in labels)
+    return f'<section class="game-tags" aria-label="Categories"><p class="eyebrow">Categories</p><ul class="plain">{items}</ul></section>'
+
+
+INDIE_PAGE_PARTS.append(indie_page_part)
