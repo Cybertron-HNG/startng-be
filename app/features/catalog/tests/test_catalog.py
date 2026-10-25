@@ -60,8 +60,21 @@ def test_a_player_who_never_opened_a_game_cant_rate_it(env):
     r = client.put("/games/lane-dash/rating", json={"stars": 5}, headers=tokens["ada"])
     assert r.status_code == 403 and "Play the game" in r.json()["detail"]
     assert client.get("/games/lane-dash/rating", headers=tokens["ada"]).json()["can_rate"] is False
-    opened(Session, ids["ada"], seconds_ago=10)  # opened, but not a minute ago
-    assert "minute" in client.put("/games/lane-dash/rating", json={"stars": 5}, headers=tokens["ada"]).json()["detail"]
+    opened(Session, ids["ada"], seconds_ago=1)  # opened a moment ago: that is enough, there is no waiting time
+    assert client.get("/games/lane-dash/rating", headers=tokens["ada"]).json()["can_rate"] is True
+    assert client.put("/games/lane-dash/rating", json={"stars": 5}, headers=tokens["ada"]).status_code == 200
+
+
+def test_a_saved_score_counts_as_playing_even_when_the_open_was_never_recorded(env):
+    from app.features.progress.models import Run
+
+    client, tokens, ids, Session = env
+    assert client.get("/games/lane-dash/rating", headers=tokens["ada"]).json()["can_rate"] is False
+    with Session() as db:  # no GameOpen row: they reached the game by its own address
+        db.add(Run(user_id=ids["ada"], game_name="lane-dash", score=40, stats={"score": 40}))
+        db.commit()
+    assert client.get("/games/lane-dash/rating", headers=tokens["ada"]).json()["can_rate"] is True
+    assert client.get("/games/relic/rating", headers=tokens["ada"]).json()["can_rate"] is False  # only that game
 
 
 def test_owners_cant_rate_their_own_game_and_signed_out_cant_rate(env):
