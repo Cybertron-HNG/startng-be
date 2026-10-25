@@ -395,6 +395,19 @@ server's own check.)
 - The email loop settles and announces each tournament itself, once (`email_announcements`), within 3 hours of its
   start, so it goes out even when nobody opens start.ng at 6 PM.
 
+## Problem reports (F10)
+`app/features/support`; flag `support`; admin permission `support.reports`. The AI answers from our docs come later.
+- Signed-in players report a problem with start.ng itself (not with one game: that's a game report) from the Help
+  button on every page: what happened, plus the page (a path only: no query string, which can carry codes) and the
+  browser ("Chrome 130 on Windows"), never more. At most `SUPPORT_REPORTS_PER_DAY` (5) a day each.
+- Admins see each report with earlier ones that look like it (shared words, the same page counts a little extra) and
+  sort it: **confirmed** (a real bug: the reporter gets `SUPPORT_BUG_REWARD` coins, 50, through the wardrobe wallet,
+  once per report and at most `SUPPORT_REWARDS_PER_DAY`, 3, paid reports a day; needs the `wardrobe` flag),
+  **duplicate** (of an earlier report: a thank-you, no coins), **not a bug**, or **fixed** (after confirmed). Nothing is
+  paid before an admin confirms it. The reporter sees the status, the admins' note and the coins in Help.
+- Players: `POST /support/reports` `{what, page, browser}`, `GET /support/reports/mine`. Admins:
+  `GET /admin/support/reports?status=`, `POST /admin/support/reports/{id}` `{status, note, duplicate_of}`.
+
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate

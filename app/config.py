@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
+    # F10 problem reports (app/features/support): coins for a report an admin marks as a real bug (through the wardrobe
+    # wallet, once per report), at most SUPPORT_REWARDS_PER_DAY paid reports per player a day; and how many reports one
+    # player can send a day.
+    support_bug_reward: int = 50
+    support_rewards_per_day: int = 3
+    support_reports_per_day: int = 5
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before
