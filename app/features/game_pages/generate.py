@@ -62,11 +62,12 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
     if kind == "about":
         if not text and len(f.features) < 2:
             return "No description or README text to write from. The creator can add a description in startng.json."
-        parts = ["## What is %s?" % t]
+        parts = ["## What is %s about?" % t]
         if f.description:
             parts.append(_sentence(f.description))
         if f.story and f.story != f.description:
             parts.append(_sentence(f.story))
+        parts += [_sentence(x) for x in f.about_more[:3]]
         glance = [f"Made by {f.creator}"]
         if f.published:
             glance.append(f"On start.ng since {f.published}")

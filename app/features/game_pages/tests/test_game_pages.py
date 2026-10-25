@@ -461,3 +461,26 @@ def test_games_in_the_same_category_are_linked_when_tags_is_on(env, monkeypatch)
     assert 'class="game-link" href="/games/lagos-apocalypto"' not in page  # not itself
     monkeypatch.setattr(settings, "features", "game_pages")  # tags off: no "games like this", the page still works
     assert "Games like" not in client.get("/pages/games/lagos-apocalypto/about").text
+
+
+# ---- more of the game's own words, and a warning when there is nothing to say
+
+def test_more_of_the_readme_and_the_games_own_page_is_used():
+    f = F.Facts(title="Moon Run")
+    readme = (b"# Moon Run\n\nA calm night runner through a sleeping city, where every rooftop is a new ledge to cross.\n\n"
+              b"## Why we made it\nWe wanted a game you can play slowly, at the end of a long day, with nothing chasing you.\n\n"
+              b"## How to play\n1. Tap to jump\n\n## Features\n- Ten levels\n")
+    F.from_readme(readme, f)
+    assert f.description == "A calm night runner through a sleeping city, where every rooftop is a new ledge to cross."
+    assert f.about_more == ["We wanted a game you can play slowly, at the end of a long day, with nothing chasing you."]
+    page = b"<html><body><p>The city sleeps, but the rooftops are awake. Follow the lantern light and do not wake anyone up.</p><p>Tap to jump</p></body></html>"
+    F.from_page(page, f)
+    assert "The city sleeps, but the rooftops are awake. Follow the lantern light and do not wake anyone up." in f.about_more
+    assert "Tap to jump" not in f.about_more  # a control, not a story
+
+
+def test_the_about_page_tells_what_the_game_is_about_in_the_games_own_words():
+    f = F.Facts(title="Moon Run", creator="Ada", description="A calm night runner.", about_more=["The city sleeps, but the rooftops are awake."], features=["Ten levels"])
+    body = gen.build("about", f, "moon-run").body
+    assert body.startswith("## What is Moon Run about?")
+    assert "A calm night runner." in body and "The city sleeps, but the rooftops are awake." in body
