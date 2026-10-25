@@ -1,13 +1,13 @@
 """support (F10): problem_reports, players' reports of problems with start.ng
 
-Revision ID: 0047
-Revises: 0042
+Revision ID: 0049
+Revises: 0048
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0047"
-down_revision = "0042"  # renumber right before merging (0043 to 0046 are taken by open PRs)
+revision = "0049"
+down_revision = "0048"
 branch_labels = None
 depends_on = None
 
