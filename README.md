@@ -500,6 +500,7 @@ dropped connection, for games start.ng referees itself (tic-tac-toe first, then 
 - **Other routes:** `GET /rooms/online?game=` (people in the game's rooms or in the line), `GET /rooms/games`.
 - **A new game** is a rules module in `app/features/rooms/games/` (the interface is in `base.py`) and one line in
   `games/__init__.py`. The game also needs a published game with the same name (the ticket is for it).
+- **Relay rooms:** a published game that start.ng does not referee gets a room that only carries messages (`&seats=2..8` when it makes one, 4 by default; a code is needed, no matchmaking or bots). A player sends `{type: "send", data, to?}` and the others get `{type: "message", from: seat, data}`; `{type: "set_state", version, data}` writes the room's shared state (8 KB at most) and is refused with `state_conflict` (and the newer state) if the version is old; a joiner's `welcome` carries `shared: {version, data}`. The creator is seat 0 (`host`). Same limits as the other rooms (2 KB a message, 30 a second).
 - Rooms live in this process's memory: a restart empties them, and more than one API instance would split players.
 ## Staying signed in
 A sign-in (the token the website keeps) lasts `SESSION_DAYS` (7) without a visit, or `REMEMBER_DAYS` (365) when the person ticked "Keep
