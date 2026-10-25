@@ -29,10 +29,12 @@ def _standing(st: service.Standing) -> StandingOut:
 
 
 def _summary(db: Session, t: PrivateTournament, user: User | None) -> dict:
+    joined = bool(user) and service.is_member(db, t, user.id)
     return dict(
         code=t.code, title=t.title, owner=_player_name(t.owner), starts_at=tournaments.utc(t.starts_at), ends_at=tournaments.utc(t.ends_at),
-        finished=service.ended(t), members=service.member_count(db, t), games=[g.game_name for g in t.games],
-        joined=bool(user) and service.is_member(db, t, user.id), mine=bool(user) and t.owner_id == user.id,
+        finished=service.ended(t), members=service.member_count(db, t),
+        games=[] if t.by_admin and not joined else [g.game_name for g in t.games],  # F9: register to see the games
+        joined=joined, mine=bool(user) and t.owner_id == user.id, by_admin=bool(t.by_admin), max_members=t.max_members,
     )
 
 

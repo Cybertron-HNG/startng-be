@@ -78,13 +78,15 @@ def card_png(t: PrivateTournament, members: int, owner: str) -> bytes:
     for line in lines:
         d.text((70, y), line, font=big, fill=INK)
         y += 82
-    # the picked games, side by side: their covers sum up what the tournament is about
-    games = [g.game_name for g in t.games][:5]
+    # the picked games, side by side: their covers sum up what the tournament is about. F9: an admin's tournament keeps
+    # its games for the people who register.
+    games = [] if t.by_admin else [g.game_name for g in t.games][:5]
     gap, ty = 16, 360
-    tw = (W - 140 - gap * (len(games) - 1)) // len(games)
-    tw = min(tw, 220)
+    tw = min((W - 140 - gap * (len(games) - 1)) // max(1, len(games)), 220)
     th = int(tw * .62)
-    urls = [_cover_url(g.game) for g in t.games[:5]]  # read here: the database session isn't for other threads
+    if not games:
+        d.text((70, ty + 40), "Register to see the games", font=ImageFont.load_default(size=40), fill=INK)
+    urls = [_cover_url(g.game) for g in t.games[:len(games)]]  # read here: the database session isn't for other threads
     with ThreadPoolExecutor(max_workers=5) as pool:
         covers = list(pool.map(lambda url: _fetch(url) if url else None, urls))
     for i, (name, data) in enumerate(zip(games, covers)):
@@ -93,7 +95,8 @@ def card_png(t: PrivateTournament, members: int, owner: str) -> bytes:
         d.rounded_rectangle((x, ty, x + tw, ty + th), radius=2, outline=INK, width=2)
         d.text((x, ty + th + 8), textwrap.shorten(_title(name), width=max(8, tw // 14), placeholder="…"), font=ImageFont.load_default(size=22), fill=INK)
     d.rounded_rectangle((70, 535, W - 70, 597), radius=16, fill=LIME)
-    sub = f"{len(t.games)} {'game' if len(t.games) == 1 else 'games'} · {members} {'player' if members == 1 else 'players'} · by {owner}"
+    count = "" if t.by_admin else f"{len(t.games)} {'game' if len(t.games) == 1 else 'games'} · "
+    sub = f"{count}{members} {'player' if members == 1 else 'players'} · by {owner}"
     d.text((96, 566), sub, font=ImageFont.load_default(size=30), fill=INK, anchor="lm")
     out = io.BytesIO()
     img.save(out, "PNG", optimize=True)
@@ -105,6 +108,9 @@ def page_html(shell: str, t: PrivateTournament, members: int, owner: str) -> str
     games = ", ".join(_title(g.game_name) for g in t.games)
     title = f"{t.title} · tournament with friends · start.ng"
     description = f"{owner} invited you to \"{t.title}\" on start.ng: {len(t.games)} {'game' if len(t.games) == 1 else 'games'} ({games}), {members} {'player' if members == 1 else 'players'}. Join and see where you stand."
+    if t.by_admin:  # F9: the games are for the people who register
+        title = f"{t.title} · start.ng tournament"
+        description = f"You're invited to \"{t.title}\" on start.ng. {members} {'player has' if members == 1 else 'players have'} registered. Register to see the games and play."
     path = f"/friends/{t.code}"
     image = f"{settings.api_url.rstrip('/')}/private-tournaments/{t.code}/card.png"
     body = f"<main><h1>{pages._esc(t.title)}</h1><p>{pages._esc(description)}</p></main>"
