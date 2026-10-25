@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ... import manifest
+from ... import flags, manifest, tournaments
 from ...features.game_health.models import GameHealth
 from ...features.progress.models import GameOpen, Run
 from ...models import Game, GamePlay
@@ -258,12 +258,53 @@ def shelves(db: Session, user_id: int | None, at: datetime | None = None) -> dic
     }
 
 
-def play_next(db: Session, after: str, user_id: int | None, limit: int = 3, at: datetime | None = None) -> list[str]:
-    """One to three games to play after this one: the best ranked, those the player hasn't opened first."""
+def _tournament_next(db: Session, after: str, user_id: int | None, limit: int, at: datetime | None) -> tuple[str, list[str]] | None:
+    """When the game is in a tournament that is on now and that this player can see, the tournament's other games, in its order
+    starting after this one, the ones they have not opened first: (the tournament's name, games). The tournaments that count are
+    a private one they are a member of (only members may know its games), then today's public one. None when the game is in none
+    of them, or is the only game in the one it is in (so the player still gets suggestions)."""
+    at = at or tournaments.now()
+    found: list[tuple[str, list[str]]] = []
+    if user_id and flags.is_on("private_tournaments"):
+        from ..private_tournaments.models import PrivateTournament, PrivateTournamentMember
+
+        rows = db.scalars(
+            select(PrivateTournament).join(PrivateTournamentMember, PrivateTournamentMember.tournament_id == PrivateTournament.id)
+            .where(PrivateTournamentMember.user_id == user_id, PrivateTournament.starts_at <= at, PrivateTournament.ends_at > at)
+            .order_by(PrivateTournament.ends_at)).all()
+        found += [(t.title, [g.game_name for g in t.games]) for t in rows]
+    today = tournaments.running(db, at)  # never makes one
+    if today is not None:
+        found.append(("today's tournament", [g.game_name for g in today.games]))
+    opened = set(db.scalars(select(GameOpen.game_name).where(GameOpen.user_id == user_id)).all()) if user_id else set()
+    for title, names in found:
+        if after not in names:
+            continue
+        i = names.index(after)
+        rotated = names[i + 1:] + names[:i]  # the ones after this one first, then back to the start
+        visible = set(db.scalars(select(Game.name).where(Game.name.in_(rotated), Game.hidden.is_(None))).all())
+        others = [n for n in rotated if n in visible]
+        if others:
+            return title, ([n for n in others if n not in opened] + [n for n in others if n in opened])[:limit]
+    return None
+
+
+def play_next_with_context(db: Session, after: str, user_id: int | None, limit: int = 3, at: datetime | None = None) -> tuple[list[str], str | None]:
+    """Games to play after this one, and the tournament they come from when the game is in one that is on now. Inside a
+    tournament only that tournament's games are offered; a game that is in none gets the best ranked games, as before."""
+    in_tournament = _tournament_next(db, after, user_id, limit, at)
+    if in_tournament is not None:
+        return in_tournament[1], in_tournament[0]
     ensure_fresh(db, at)
     ranks = list(db.scalars(select(GameRank).join(Game, Game.name == GameRank.game_name).where(Game.hidden.is_(None), GameRank.game_name != after)
                             .order_by(GameRank.score.desc(), GameRank.game_name)).all())
     names = [r.game_name for r in ranks]
     opened = set(db.scalars(select(GameOpen.game_name).where(GameOpen.user_id == user_id)).all()) if user_id else set()
     fresh = [n for n in names if n not in opened]
-    return (fresh + [n for n in names if n in opened])[:limit]
+    return (fresh + [n for n in names if n in opened])[:limit], None
+
+
+def play_next(db: Session, after: str, user_id: int | None, limit: int = 3, at: datetime | None = None) -> list[str]:
+    """One to three games to play after this one (contract C10): inside a tournament, that tournament's games; otherwise the best
+    ranked, those the player hasn't opened first."""
+    return play_next_with_context(db, after, user_id, limit, at)[0]

@@ -28,6 +28,9 @@ MAX_ACTIVE_OWNED = 5  # tournaments a player can have running at once
 MAX_MEMBERS = 200
 MIN_HOURS = 24
 MAX_HOURS = 720  # 30 days
+# F9: tournaments admins make on the admin page (a start time, any length up to a month, a bigger cap)
+ADMIN_MIN_HOURS = 1
+ADMIN_MAX_MEMBERS = 5000
 
 
 class Refused(Exception):
@@ -81,13 +84,51 @@ def create(db: Session, owner: User, title: str, games: list[str], hours: int, a
     return t
 
 
+def create_for_admin(db: Session, admin: User, title: str, games: list[str], starts_at: datetime, ends_at: datetime,
+                     max_members: int | None = None, at: datetime | None = None) -> PrivateTournament:
+    """F9: an admin's tournament to share in a group by its link. It may start later; only people who register see
+    its games and standings; the admin who made it isn't a member, and no per-player limit applies."""
+    at = at or tournaments.now()
+    starts_at, ends_at = tournaments.utc(starts_at), tournaments.utc(ends_at)
+    names = list(dict.fromkeys(games))
+    if not 1 <= len(names) <= 5:
+        raise Refused("games", "Pick between 1 and 5 games.")
+    if starts_at < at - timedelta(minutes=5):
+        raise Refused("starts_at", "The start can't be in the past.")
+    if not timedelta(hours=ADMIN_MIN_HOURS) <= ends_at - starts_at <= timedelta(hours=MAX_HOURS):
+        raise Refused("duration", "A tournament runs from 1 hour to 30 days.")
+    if max_members is not None and not 2 <= max_members <= ADMIN_MAX_MEMBERS:
+        raise Refused("max_members", f"The player limit is from 2 to {ADMIN_MAX_MEMBERS}.")
+    allowed = set(tournaments.eligible_games(db))
+    bad = [n for n in names if n not in allowed]
+    if bad:
+        raise Refused("game_not_allowed", f"{bad[0]} can't be used: it needs a leaderboard and to be listed on start.ng.")
+    t = PrivateTournament(
+        code=secrets.token_urlsafe(8), owner_id=admin.id, title=title.strip(), starts_at=starts_at, ends_at=ends_at,
+        by_admin=True, max_members=max_members, games=[PrivateTournamentGame(game_name=n, position=i) for i, n in enumerate(names)],
+    )
+    db.add(t)
+    log_activity(db, admin, "admin", "private_tournament.created", t.code, title=t.title, games=names)
+    db.commit()
+    return t
+
+
+def admin_made(db: Session) -> list[PrivateTournament]:
+    """F9: every tournament admins made, the ones still to come or running first, then the ones that ended."""
+    rows = db.scalars(select(PrivateTournament).where(PrivateTournament.by_admin.is_(True))).all()
+    now = tournaments.now()
+    live = sorted((t for t in rows if not ended(t, now)), key=lambda t: tournaments.utc(t.starts_at))
+    done = sorted((t for t in rows if ended(t, now)), key=lambda t: tournaments.utc(t.ends_at), reverse=True)
+    return live + done
+
+
 def join(db: Session, t: PrivateTournament, user: User, at: datetime | None = None) -> None:
     """Join by the invite link. Joining twice is fine. Runs before joining don't count."""
     if is_member(db, t, user.id):
         return
     if ended(t, at):
         raise Refused("ended", "This tournament has ended.")
-    if member_count(db, t) >= MAX_MEMBERS:
+    if member_count(db, t) >= (t.max_members or MAX_MEMBERS):
         raise Refused("full", "This tournament is full.")
     db.add(PrivateTournamentMember(tournament_id=t.id, user_id=user.id))
     try:

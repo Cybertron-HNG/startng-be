@@ -28,6 +28,7 @@ class ShelvesOut(BaseModel):
 
 class NextOut(BaseModel):
     games: list[str]
+    tournament: str | None = None  # the tournament these come from, when the game is in one that is on now
 
 
 class CheckOut(BaseModel):
@@ -54,7 +55,8 @@ def shelves(user: User | None = Depends(optional_user), db: Session = Depends(ge
 def play_next(after: str = Query(..., max_length=40), limit: int = Query(3, ge=1, le=3), user: User | None = Depends(optional_user),
               db: Session = Depends(get_db)):
     """One to three games to play after this one (contract C10)."""
-    return NextOut(games=service.play_next(db, after, user.id if user else None, limit))
+    games, tournament = service.play_next_with_context(db, after, user.id if user else None, limit)
+    return NextOut(games=games, tournament=tournament)
 
 
 def _featuring(db: Session, game: Game) -> FeaturingOut:

@@ -1,7 +1,7 @@
 """Private tournaments' own tables. Migration: alembic/versions/0019_private_tournaments.py."""
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...db import Base
@@ -22,6 +22,10 @@ class PrivateTournament(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # F9: made by an admin on the admin page, to share in a group. Only people who register (join) see its games, and
+    # it can start later. Its maker isn't a member. max_members: None means MAX_MEMBERS.
+    by_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_members: Mapped[int | None] = mapped_column(Integer)
 
     owner: Mapped[User] = relationship()
     games: Mapped[list["PrivateTournamentGame"]] = relationship(order_by="PrivateTournamentGame.position", cascade="all, delete-orphan")

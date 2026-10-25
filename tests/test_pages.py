@@ -180,3 +180,169 @@ def test_one_indie_game_as_json_and_in_the_sitemap(env):
     assert client.get(f"/indie/{game_id}").json()["mine"] is False
     assert client.get("/indie/999").status_code == 404
     assert f"<loc>https://start.ng/creators/{game_id}-moon-garden</loc>" in client.get("/pages/sitemap.xml").text
+
+
+def test_homepage_text_lists_every_game_a_to_z(env):
+    client, *_ = env
+    add_game(env, "moon-garden")
+    add_game(env, "lane-dash")
+    res = client.get("/pages/home")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    text = res.text
+    assert not text.startswith("<!doctype") and "<html" not in text  # only what goes inside #root
+    assert "<h1>Good vibes.<br><mark>Good games.</mark></h1>" in text
+    assert "Every game on start.ng, A to Z (2)" in text
+    lane, moon = text.index('<a href="/games/lane-dash">Lane Dash</a>'), text.index('<a href="/games/moon-garden">Moon Garden</a>')
+    assert lane < moon  # A to Z
+    assert "<span>by Ada</span>" in text
+    assert "See all" not in text  # only past the 8 cards the homepage shows
+
+
+def test_homepage_text_leaves_out_hidden_games_and_the_hangout(env):
+    from app.db import get_db
+    from app.main import app
+
+    client, *_ = env
+    add_game(env, "lane-dash")
+    add_game(env, "hangout")
+    db = next(app.dependency_overrides[get_db]())
+    db.add(Game(name="copy-cat", owner_id=1, repo_url="https://github.com/ada/copy-cat", hidden="reported"))
+    db.commit()
+    text = client.get("/pages/home").text
+    assert "/games/lane-dash" in text
+    assert "/games/hangout" not in text and "/games/copy-cat" not in text
+    assert "A to Z (1)" in text
+
+
+def test_homepage_text_has_the_about_and_questions_and_escapes_names(env):
+    from app.db import get_db
+    from app.main import app
+    from app.models import User
+
+    client, *_ = env
+    db = next(app.dependency_overrides[get_db]())
+    db.get(User, 1).character = {"name": "Ada <b>Bold</b>"}
+    db.commit()
+    add_game(env, "lane-dash")
+    text = client.get("/pages/home").text
+    assert "by Ada &lt;b&gt;Bold&lt;/b&gt;" in text and "<b>Bold</b>" not in text
+    assert "Nigeria&#x27;s home for browser games" in text  # escaped like every other text
+    assert "<summary>Is it free?</summary>" in text
+    assert '<a class="btn" href="/docs">Read the docs</a>' in text
+
+
+def test_homepage_with_no_games_and_with_many(env):
+    client, *_ = env
+    assert "A to Z" not in client.get("/pages/home").text  # nothing to list yet
+    for i in range(9):
+        add_game(env, f"game-{i}")
+    assert '<a class="btn" href="/games">See all 9 games →</a>' in client.get("/pages/home").text
+
+
+def test_games_page_text_lists_the_hangout_then_newest_first(env):
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import get_db
+    from app.main import app
+
+    client, *_ = env
+    add_game(env, "moon-garden")
+    add_game(env, "lane-dash")
+    db = next(app.dependency_overrides[get_db]())
+    now = datetime.now(timezone.utc)
+    db.get(Game, "moon-garden").updated_at = now
+    db.get(Game, "lane-dash").updated_at = now - timedelta(days=1)
+    db.add(Game(name="copy-cat", owner_id=1, repo_url="https://github.com/ada/copy-cat", hidden="reported"))
+    db.commit()
+    res = client.get("/pages/games")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    text = res.text
+    assert "<html" not in text  # only what goes inside #root
+    assert "<h1>All games from the community</h1>" in text
+    assert '<span class="count">3 games</span>' in text  # the Hangout counts, as on the real page
+    hangout, moon, lane = (text.index(f'<a href="{href}">') for href in ("/hangout", "/games/moon-garden", "/games/lane-dash"))
+    assert hangout < moon < lane
+    assert "<p>moon-garden.start.ng</p>" in text and '<span class="by">by Ada</span>' in text
+    assert "copy-cat" not in text
+    assert "pagination" not in text  # one page only
+
+
+def test_games_page_text_pages_like_the_app(env):
+    client, *_ = env
+    for i in range(44):  # 45 cards with the Hangout: 3 pages
+        add_game(env, f"game-{i:02d}")
+    first = client.get("/pages/games").text
+    assert '<span class="count">1–20 of 45</span>' in first
+    assert '<span class="off">← Previous</span>' in first
+    assert '<a href="/games?page=2" rel="next" aria-label="Next page">Next →</a>' in first
+    assert '<a href="/games" aria-label="Page 1" aria-current="page">1</a>' in first
+    last = client.get("/pages/games?page=3").text
+    assert '<span class="count">41–45 of 45</span>' in last
+    assert '<a href="/games?page=2" rel="prev"' in last and "/hangout" not in last
+    assert client.get("/pages/games?page=4").status_code == 404  # past the end: nginx serves the 404 page
+    assert client.get("/pages/games?page=0").status_code == 422
+
+
+def test_games_page_text_with_no_games_says_so(env):
+    client, *_ = env
+    text = client.get("/pages/games").text
+    assert "No community games yet" in text and '<a href="/hangout">The Hangout</a>' in text
+    assert '<span class="count">1 game</span>' in text
+
+
+def test_creators_page_text_lists_the_newest_first(env):
+    client, *_ = env
+    older = add_indie("Moon Garden", "Grow plants.")
+    newer = add_indie("Sky <Hop>", "Jump.")
+    res = client.get("/pages/creators")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/html")
+    text = res.text
+    assert "<html" not in text  # only what goes inside #root
+    assert "<h1>Games by independent creators</h1>" in text
+    assert '<span class="count">2 games</span>' in text
+    assert text.index(f'href="/creators/{newer}-sky-hop"') < text.index(f'href="/creators/{older}-moon-garden"')
+    assert "<h3>Sky &lt;Hop&gt;</h3>" in text and "<Hop>" not in text
+    assert "<p>ada.itch.io</p>" in text and '<span class="by">by Ada</span>' in text
+    assert f'src="https://api.start.ng/indie/{older}/cover.webp"' in text
+    assert "pagination" not in text
+
+
+def test_creators_page_text_pages_like_games(env):
+    client, *_ = env
+    assert "No games from independent creators yet" in client.get("/pages/creators").text
+    for i in range(21):
+        add_indie(f"Game {i}")
+    first = client.get("/pages/creators").text
+    assert '<span class="count">1–20 of 21</span>' in first
+    assert '<a href="/creators?page=2" rel="next" aria-label="Next page">Next →</a>' in first
+    last = client.get("/pages/creators?page=2").text
+    assert '<span class="count">21–21 of 21</span>' in last and '<a href="/creators" rel="prev"' in last
+    assert client.get("/pages/creators?page=3").status_code == 404  # past the end: nginx serves the 404 page
+    assert client.get("/pages/creators?page=0").status_code == 422
+
+
+def test_sitemap_lists_feature_pages_only_while_they_are_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    monkeypatch.setattr(settings, "features", "")
+    text = client.get("/pages/sitemap.xml").text
+    assert all(p not in text for p in ("/spotlight", "/shop", "/friends", "<loc>https://start.ng/by</loc>"))
+    monkeypatch.setattr(settings, "features", "spotlight,wardrobe,creator_hub,private_tournaments")
+    text = client.get("/pages/sitemap.xml").text
+    for p in ("/spotlight", "/shop", "/by", "/friends"):
+        assert f"<loc>https://start.ng{p}</loc>" in text
+
+
+def test_friends_page_text_only_while_the_feature_is_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    monkeypatch.setattr(settings, "features", "")
+    assert client.get("/pages/friends").status_code == 404
+    monkeypatch.setattr(settings, "features", "private_tournaments")
+    text = client.get("/pages/friends").text
+    assert "<h1>Tournament with friends</h1>" in text and "Pick up to 5 games" in text
+    assert "1 day, 3 days, 1 week, 2 weeks or 1 month" in text and "<html" not in text

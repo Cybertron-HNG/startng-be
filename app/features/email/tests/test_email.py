@@ -75,6 +75,20 @@ def test_players_choose_their_topics(env):
     assert "List-Unsubscribe" in sent[0].headers and sent[0].headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
 
 
+def test_the_email_shell_keeps_the_look_and_unsubscribe_links(env):
+    client, tokens, ids, Session = env
+    client.put("/email/me", json={"topics": ["results"]}, headers=tokens["ada"])
+    service.notify(ids["ada"], "test_result", {"place": 3})
+    sent = send(Session).sent[0]
+    assert sent.html.startswith("<!doctype html>")
+    assert f"background:{service.CARD}" in sent.html  # the start.ng card colour
+    assert "You placed 3" in sent.html
+    assert "Choose your emails" in sent.html and "Unsubscribe from everything" in sent.html
+    assert "Stop these emails" in sent.html  # one topic, so the footer can stop just that
+    assert "You placed 3" in sent.text and "Choose your emails" in sent.text
+    assert "<p>" not in sent.text  # the plain-text alternative stays plain
+
+
 def test_visitors_double_opt_in(env):
     client, tokens, ids, Session = env
     assert client.post("/email/subscribe", json={"email": "Fan@Example.com"}).status_code == 202
