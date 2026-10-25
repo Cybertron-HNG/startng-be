@@ -370,3 +370,55 @@ def test_the_reviewed_file_is_clean():
     service.reviewed.cache_clear()
     data = json.loads(service.REVIEWED_FILE.read_text())
     assert data and all(isinstance(g, str) and 1 <= len(s) <= service.CREATOR_MAX and all(x in service._CHOOSABLE for x in s) and len(set(s)) == len(s) for g, s in data.items())
+
+
+# ---- independent creators' games: categories on the game's own page only
+
+def _indie(Session, name="Moon Garden", url="https://moon.example/play"):
+    from app.models import IndieGame
+
+    with Session() as db:
+        owner = db.scalar(select(User).where(User.email == "ada@example.com"))
+        g = IndieGame(owner_id=owner.id, name=name, url=url, description="Grow plants on the moon.", cover=b"x")
+        db.add(g)
+        db.commit()
+        return g.id
+
+
+def test_indie_categories_are_saved_and_replaced(env):
+    _, _, Session = env
+    gid = _indie(Session)
+    with Session() as db:
+        service.set_indie(db, gid, service.check_choice(["Brainy games", "cosy-and-relaxing", "brainy-games"]), "Gardening")
+        service.set_indie(db, gid, ["cosy-and-relaxing"], "Gardening")
+        db.commit()
+        assert service.indie_labels(db, gid) == ["Cosy and relaxing"]
+        assert service.set_indie(db, gid, ["archery"]) == ["archery"] and service.indie_labels(db, gid) == ["Archery"]
+
+
+def test_indie_games_stay_out_of_the_category_counts(env):
+    _, _, Session = env
+    gid = _indie(Session)
+    with Session() as db:
+        before = service.counts(db)
+        service.set_indie(db, gid, ["archery", "brainy-games"])
+        db.commit()
+        assert service.counts(db) == before
+
+
+def test_old_independent_games_get_their_reviewed_categories(env, monkeypatch):
+    _, _, Session = env
+    gid = _indie(Session)
+    monkeypatch.setattr(service, "indie_reviewed", lambda: {gid: ["brainy-games"], 9999: ["archery"]})
+    with Session() as db:
+        assert service.refresh_indie(db) == 1 and service.refresh_indie(db) == 0
+        assert service.indie_labels(db, gid) == ["Brainy games"]
+
+
+def test_choices_endpoint_and_reviewed_indie_file(env):
+    client, _, _ = env
+    groups = client.get("/tags/choices").json()
+    assert "Words people search" not in [g["name"] for g in groups] and groups[0]["tags"][0]["slug"]
+    service.indie_reviewed.cache_clear()
+    data = json.loads(service.INDIE_REVIEWED_FILE.read_text())
+    assert data and all(1 <= len(s) <= service.CREATOR_MAX and all(x in service._CHOOSABLE for x in s) for s in data.values())

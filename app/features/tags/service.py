@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 from ... import flags, manifest
 from ...config import settings
 from ...db import SessionLocal
-from ...models import Game
-from .models import GameTag, Tag, TagRequest
+from ...models import Game, IndieGame
+from .models import GameTag, IndieGameTag, IndieTagRequest, Tag, TagRequest
 from .rules import GROUPS, GROUP_ORDER, MIN_GAMES
 
 log = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ async def run_forever() -> None:
         if not flags.is_on("tags"):
             return 0
         with SessionLocal() as db:
-            return refresh_missing(db)
+            return refresh_missing(db) + refresh_indie(db)
 
     while True:
         try:
@@ -346,3 +346,63 @@ def requests_by_game(db: Session) -> dict[str, list[str]]:
 
 manifest.register_section("categories", parse_categories, apply_categories)
 manifest.register_section("other_category", parse_other, apply_other)
+
+
+# ---- independent creators' games: the categories they picked are saved with the game and shown on the game's own page only
+
+INDIE_REVIEWED_FILE = Path(__file__).with_name("indie_reviewed.json")
+
+
+@lru_cache(maxsize=1)
+def indie_reviewed() -> dict[int, list[str]]:
+    """The categories start.ng chose, by reading the independent games that were listed before creators could pick (game id -> slugs)."""
+    try:
+        data = json.loads(INDIE_REVIEWED_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+    return {int(i): [s for s in slugs if s in _CHOOSABLE] for i, slugs in data.items() if str(i).isdigit() and isinstance(slugs, list)}
+
+
+def choices() -> list[dict]:
+    """The categories a creator can pick from, by group: what the submit form shows."""
+    return [{"name": g, "tags": [{"slug": slug, "label": label} for slug, label, _b, _r in tags]} for g, tags in GROUPS.items() if g != "Words people search"]
+
+
+def check_choice(slugs: list[str]) -> list[str]:
+    """Slugs (or names as shown) picked on the submit form, checked the same way as in startng.json. Raises manifest.SchemaError."""
+    return parse_categories(slugs)
+
+
+def set_indie(db: Session, indie_id: int, slugs: list[str], other: str | None = None) -> list[str]:
+    """Save the categories of an independent game (replacing any), and the creator's own words if none fit. Does not commit."""
+    tags = ensure_tags(db)
+    db.execute(delete(IndieGameTag).where(IndieGameTag.indie_id == indie_id))
+    db.flush()
+    for slug in dict.fromkeys(slugs):
+        db.add(IndieGameTag(indie_id=indie_id, tag_id=tags[slug].id))
+    if other and db.scalar(select(IndieTagRequest.id).where(IndieTagRequest.indie_id == indie_id, IndieTagRequest.text == other)) is None:
+        db.add(IndieTagRequest(indie_id=indie_id, text=other))
+    db.flush()
+    return list(dict.fromkeys(slugs))
+
+
+def indie_labels(db: Session, indie_id: int) -> list[str]:
+    """The names of an independent game's categories, in the order of the list."""
+    rows = db.scalars(select(Tag).join(IndieGameTag, IndieGameTag.tag_id == Tag.id).where(IndieGameTag.indie_id == indie_id)).all()
+    order = {g: i for i, g in enumerate(GROUP_ORDER)}
+    return [t.label for t in sorted(rows, key=lambda t: (order.get(t.group_name, 99), t.position))]
+
+
+def refresh_indie(db: Session, limit: int = AUTO_PER_ROUND) -> int:
+    """Independent games listed before creators could pick: give them the categories that were chosen by reading them. A game that
+    already has categories (its creator picked) is left alone."""
+    chosen = indie_reviewed()
+    if not chosen:
+        return 0
+    have = set(db.scalars(select(IndieGameTag.indie_id).distinct()).all())
+    todo = [i for i in db.scalars(select(IndieGame.id).where(IndieGame.id.in_(list(chosen)))).all() if i not in have][:limit]
+    for i in todo:
+        set_indie(db, i, chosen[i])
+    if todo:
+        db.commit()
+    return len(todo)

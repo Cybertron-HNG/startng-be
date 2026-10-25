@@ -39,6 +39,30 @@ class GameTag(Base):
     source: Mapped[str] = mapped_column(String(10), default="rules")
 
 
+class IndieGameTag(Base):
+    """A category an independent creator picked for their game. Shown only on the game's own page: independent games are not
+    on the category pages or the home page."""
+
+    __tablename__ = "indie_game_tags"
+    __table_args__ = (UniqueConstraint("indie_id", "tag_id", name="uq_indie_game_tags"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    indie_id: Mapped[int] = mapped_column(ForeignKey("indie_games.id", ondelete="CASCADE"), index=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), index=True)
+
+
+class IndieTagRequest(Base):
+    """The category an independent creator wrote under "other" because none of ours fit. Read by an admin; never shown to players."""
+
+    __tablename__ = "indie_tag_requests"
+    __table_args__ = (UniqueConstraint("indie_id", "text", name="uq_indie_tag_requests"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    indie_id: Mapped[int] = mapped_column(ForeignKey("indie_games.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class TagRequest(Base):
     """A category a creator wrote under "other" in startng.json because none of ours fit. Not shown to players: an admin reads them
     and adds a tag to the list when many games ask for the same thing."""
