@@ -72,17 +72,50 @@ def test_the_about_page_says_only_what_we_know(env):
     assert {"BreadcrumbList", "VideoGame"} <= kinds
 
 
-def test_the_faq_page_answers_four_questions_from_the_same_facts(env):
+def test_the_faq_page_answers_questions_from_the_same_facts(env):
     client, game_id, _ = env
     text = client.get(f"/pages/creators/{game_id}/faq").text
     assert "<title>Moon Garden FAQ · start.ng</title>" in text
     faq = next(d for d in ld(text) if d["@type"] == "FAQPage")
     questions = [q["name"] for q in faq["mainEntity"]]
-    assert questions == ["What is Moon Garden?", "Who made Moon Garden?", "Where can I play Moon Garden?", "Is Moon Garden made by start.ng?"]
+    assert questions == ["What is Moon Garden?", "Who made Moon Garden?", "Where can I play Moon Garden?", "Is Moon Garden made by start.ng?",
+                         "When was Moon Garden added to start.ng?", "Does Moon Garden have a leaderboard on start.ng?"]
     answers = {q["name"]: q["acceptedAnswer"]["text"] for q in faq["mainEntity"]}
     assert answers["What is Moon Garden?"] == DESCRIPTION
     assert "ada.itch.io" in answers["Where can I play Moon Garden?"]
     assert answers["Is Moon Garden made by start.ng?"].startswith("No.")
+    assert re.fullmatch(r"Moon Garden was added to start.ng in [A-Z][a-z]+ \d{4}\.", answers["When was Moon Garden added to start.ng?"])
+    assert answers["Does Moon Garden have a leaderboard on start.ng?"].startswith("No.")
+
+
+def test_the_about_page_has_the_facts_at_a_glance(env):
+    client, game_id, _ = env
+    text = client.get(f"/pages/creators/{game_id}/about").text
+    assert "<h2>Moon Garden at a glance</h2>" in text
+    assert "Made by Ada, an independent creator" in text
+    assert re.search(r"On start.ng since [A-Z][a-z]+ \d{4}", text)
+    assert "Hosted by its creator at ada.itch.io, outside start.ng" in text
+    assert "Opens in a new tab from its page on start.ng" in text
+
+
+def test_other_independent_games_are_linked_as_cards_read_live(env):
+    client, game_id, Session = env
+    with Session() as db:
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        tunde = User(email="tunde@example.com", name="Tunde", google_sub="g-tunde")
+        db.add(tunde)
+        db.flush()
+        mine = IndieGame(owner_id=ada.id, name="Star Hop", url="https://ada.itch.io/star-hop", description="Hop between stars before they go out.", cover=b"x")
+        theirs = IndieGame(owner_id=tunde.id, name="Dungeon Dave", url="https://tunde.itch.io/dave", description="A tiny dungeon crawler for one sitting.", cover=b"x")
+        db.add_all([mine, theirs])
+        db.commit()
+        mine_id, theirs_id = mine.id, theirs.id
+    page = client.get(f"/pages/creators/{game_id}/about").text
+    assert "More games by Ada" in page and "More games by independent creators" in page
+    assert f'class="game-link" href="/creators/{mine_id}-star-hop"' in page
+    assert f'class="game-link" href="/creators/{theirs_id}-dungeon-dave"' in page
+    assert f'class="game-link" href="/creators/{game_id}-moon-garden"' not in page  # not itself
+    assert f"/indie/{mine_id}/cover.webp" in page
 
 
 def test_what_a_creator_typed_is_never_written_as_html(env):
