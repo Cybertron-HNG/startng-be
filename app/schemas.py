@@ -216,6 +216,8 @@ class IndieGameIn(BaseModel):
     url: str
     description: str
     cover: str  # the picture as a data URL: data:image/png;base64,... (PNG, JPEG or WebP, 2 MB or less)
+    categories: list[str] = []  # up to 5 of start.ng's categories (GET /tags/choices); used only while the tags feature is on
+    other_category: str | None = None  # a category of the creator's own, when none fit: an admin reads it
 
 
 class IndieGameOut(BaseModel):
@@ -228,6 +230,7 @@ class IndieGameOut(BaseModel):
     created_at: datetime
     mine: bool = False  # the signed-in user submitted it (they can remove it)
     plays: int = 0  # opened from start.ng in the last 7 days
+    categories: list[str] = []  # the names of its categories; filled on the game's own page (GET /indie/{id}), not in the list
 
 
 # ---- Daily tournaments (app/tournaments.py)

@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
+    # Game pages (app/features/game_pages) approve themselves when the facts they are written from are enough and the text passes
+    # the safety check (service.is_safe). GAME_PAGES_AUTO_APPROVE=false puts every approval back with a person. A page an admin
+    # takes down or edits stays as the admin left it.
+    game_pages_auto_approve: bool = True
+    # Tags (app/features/tags) work on their own: every new, updated and existing game gets the rules' suggestions, and they are
+    # approved without a person, except the tags that make a claim about a place or a people (NEEDS_A_PERSON in the tags service),
+    # which wait for one. TAGS_AUTO_APPROVE=false puts every approval back with a person.
+    tags_auto_approve: bool = True
+    # The key the daily agent sends (Authorization: Bearer <key>) to read the games that need pages and save the pages it wrote.
+    # Empty (the default) shuts that door: the agent routes answer 404.
+    agent_api_key: str = ""
     # Switches an admin sets in the admin page (table feature_switches) win over FEATURES. Off in tests.
     feature_switches: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending

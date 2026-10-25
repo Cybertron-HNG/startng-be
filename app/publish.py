@@ -282,6 +282,13 @@ def read_game(archive: bytes) -> GameBundle:
     bundle.description = bundle.description or _guess_description(bundle.files, readme)
     found, bundle.warnings = inspect([(f.path, f.data) for f in bundle.files])
     errors += found
+    if not bundle.description:
+        bundle.warnings.append(Problem(
+            "thin_page",
+            "start.ng found nothing to say about your game on its own page (start.ng/games/<name>). Add a \"description\" and a "
+            "\"story\" to startng.json, or a paragraph about the game in a README, and its page will tell people what it is about",
+            MANIFEST,
+        ))
     if settings.enforce_game_standards:
         errors += standards([(f.path, f.data) for f in bundle.files])
     if errors:

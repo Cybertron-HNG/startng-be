@@ -40,6 +40,14 @@ FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hang
 
 _shell: tuple[float, str] | None = None
 
+# Features add their own addresses to the sitemap: SITEMAP_PROVIDERS.append(fn), where fn(db) returns [(path, last changed date or None)].
+SITEMAP_PROVIDERS: list = []
+# Features add links to a game's server-written page: GAME_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "". Use the same
+# words and class names as the website's own part for that feature (src/features/<feature>), so both versions of the page agree.
+GAME_PAGE_PARTS: list = []
+# The same for a game by an independent creator (/creators/<id>-<name>): INDIE_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "".
+INDIE_PAGE_PARTS: list = []
+
 
 def _site() -> str:
     return settings.site_url.rstrip("/")
@@ -138,9 +146,10 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     }
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+    parts = "".join(part(db, game) for part in GAME_PAGE_PARTS)
     body = (
         f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}</p>"
-        f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p></main>'
+        f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p>{parts}</main>'
     )
     page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
@@ -177,9 +186,10 @@ def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depend
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     }
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+    parts = "".join(part(db, game) for part in INDIE_PAGE_PARTS)
     body = (
         f"<main><h1>{_esc(game.name)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}, an independent creator</p>"
-        f'<p><a href="/creators">All games by independent creators</a></p></main>'
+        f'<p><a href="/creators">All games by independent creators</a></p>{parts}</main>'
     )
     page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
@@ -349,5 +359,8 @@ def sitemap(db: Session = Depends(get_db)):
         urls.append(f"  <url><loc>{_esc(f'{site}/games/{name}')}</loc>{lastmod}</url>")
     for game in db.scalars(select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner)).order_by(IndieGame.id)):
         urls.append(f"  <url><loc>{_esc(site + indie_path(game))}</loc></url>")
+    for provider in SITEMAP_PROVIDERS:
+        for path, when in provider(db):
+            urls.append(f"  <url><loc>{_esc(site + path)}</loc>{f'<lastmod>{when}</lastmod>' if when else ''}</url>")
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
     return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
