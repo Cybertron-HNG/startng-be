@@ -118,7 +118,7 @@ def test_check_says_a_good_game_would_go_live(env, monkeypatch):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["ok"] is True and body["name"] == "lane-dash" and body["update"] is False
-    assert codes_of(body["warnings"]) == ["no_cover", "no_start_ng_player"]
+    assert codes_of(body["warnings"]) == ["no_cover", "no_start_ng_player", "thin_page"]
     assert storage.paths("lane-dash") == []  # nothing was published
     assert client.get("/games").json() == []
 
@@ -162,7 +162,7 @@ def test_publish_refuses_with_codes_and_reports_warnings(env):
 
     archives["zip"] = make_zip(GAME)
     res = client.post("/games/publish", json={"repo_url": "https://github.com/ada/x"}, headers=tokens["ada"])
-    assert res.status_code == 200 and codes_of(res.json()["warnings"]) == ["no_cover", "no_start_ng_player"]
+    assert res.status_code == 200 and codes_of(res.json()["warnings"]) == ["no_cover", "no_start_ng_player", "thin_page"]
 
 
 def test_uploading_a_live_repo_again_updates_its_game(env):
@@ -234,3 +234,18 @@ def test_a_github_hiccup_is_retried_not_skipped(env, monkeypatch):
         game = db.get(Game, "lane-dash")
         assert game.last_commit == "a" * 40 and game.commit_etag is None  # still seen as new next time
         assert game.update_problem is None
+
+
+def test_a_game_with_nothing_to_say_about_itself_gets_a_warning_and_one_that_does_not(env):
+    client, _, tokens, archives = env
+    repo = {"repo_url": "https://github.com/ada/Lane-Dash"}
+    archives["zip"] = make_zip(GAME)
+    res = client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert "thin_page" in codes_of(res.json()["warnings"])
+    assert "start.ng/games/<name>" in next(w for w in res.json()["warnings"] if w["code"] == "thin_page")["message"]
+    archives["zip"] = make_zip({**GAME, "startng.json": '{"description": "Dodge the lava and climb as high as you can."}'})
+    res = client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert "thin_page" not in codes_of(res.json()["warnings"])
+    archives["zip"] = make_zip({**GAME, "index.html": '<!doctype html><meta name="description" content="Dodge the lava, climb the tower and beat your friends."><script src="src/game.js"></script>'})
+    res = client.post("/games/publish", json=repo, headers=tokens["ada"])
+    assert "thin_page" not in codes_of(res.json()["warnings"])  # found in the game's own page
