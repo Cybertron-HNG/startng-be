@@ -38,6 +38,7 @@ class HealthOut(BaseModel):
     checked_at: datetime | None
     last_ok_at: datetime | None
     unhealthy_since: datetime | None
+    hidden: str | None = None  # why it's hidden, if it is ("needs_fixing": a health check just hid it)
 
 
 class Overview(BaseModel):
@@ -48,7 +49,7 @@ class Overview(BaseModel):
 def _out(row: GameHealth, game: Game) -> HealthOut:
     return HealthOut(game=game.name, url=game_url(game.name), owner=_player_name(game.owner, game.owner.email),
                      status=row.status, failures=row.failures, problems=row.problems or [], checked_at=row.checked_at,
-                     last_ok_at=row.last_ok_at, unhealthy_since=row.unhealthy_since)
+                     last_ok_at=row.last_ok_at, unhealthy_since=row.unhealthy_since, hidden=game.hidden)
 
 
 def _store(store: GameStore | None) -> GameStore:

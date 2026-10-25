@@ -142,7 +142,9 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
         events.publish("game_published", {"game": name, "owner_id": owner_id})
     else:
         events.publish("game_updated", {"game": name, "owner_id": owner_id, "auto": auto})
+    db.refresh(game)  # a feature may have hidden it (game review: new games wait for an admin)
     return PublishOut(
+        hidden=game.hidden if created else None,  # never another account's reason, on an anonymous update
         name=name,
         url=game_url(name),
         repo_url=repo.url,

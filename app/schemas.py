@@ -113,6 +113,9 @@ class PublishOut(BaseModel):
     size_bytes: int
     skipped: list[str]  # files left out because the games host doesn't serve their type
     warnings: list[ProblemOut] = []  # things worth fixing that didn't stop the game going live
+    # Why it isn't on start.ng's lists yet, if it isn't: "in_review" (an admin looks at every new game first; its
+    # address works meanwhile). None: listed.
+    hidden: str | None = None
 
 
 class PendingOut(BaseModel):
