@@ -14,5 +14,8 @@ def test_settings(monkeypatch):
     monkeypatch.setattr(settings, "enforce_game_standards", False)
     # Pages approve themselves in production; most tests want to see a draft, so they start with it off (each has its own tests).
     monkeypatch.setattr(settings, "game_pages_auto_approve", False)
+    # Tags and game pages approve themselves in production; most tests want to see a draft, so they start with it off (each has its own tests).
+    monkeypatch.setattr(settings, "tags_auto_approve", False)
     monkeypatch.setattr(settings, "email_provider", "log")  # never sends real email
     monkeypatch.setattr(settings, "email_only_to", "")
+    monkeypatch.setattr(settings, "feature_switches", False)  # admin switches come from a database; tests that want them turn this on

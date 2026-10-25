@@ -41,6 +41,6 @@ def game_card(name: str, title: str, by: str, host: str, cover_url: str | None) 
 def tag_tile(slug: str, label: str, games: int) -> str:
     a, b = colors_for(slug)
     return (
-        f'<a class="tag-tile" href="/categories/{esc(slug)}" style="background: linear-gradient(135deg, {a}, {b})">'
+        f'<a class="tag-tile" href="/categories/{esc(slug)}" style="background: url(/category-art/{esc(slug)}.webp) center / cover, linear-gradient(135deg, {a}, {b})">'
         f'<b>{esc(label)}</b><span>{games} {"game" if games == 1 else "games"}</span></a>'
     )

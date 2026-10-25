@@ -1,3 +1,4 @@
+import json
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -29,6 +30,7 @@ def env(monkeypatch):
             db.close()
 
     monkeypatch.setattr(settings, "features", "tags")
+    monkeypatch.setattr(service, "reviewed", lambda: {})  # the real list is for the real games; these tests have their own
     monkeypatch.setattr(settings, "super_admin_emails", "owner@example.com")
     app.dependency_overrides[get_db] = override_db
     with Session() as db:
@@ -265,3 +267,158 @@ def test_a_game_page_has_no_categories_block_while_the_flag_is_off(env, monkeypa
     approve_all(client, tokens, "nigerian-themed", NAMES[:3])
     monkeypatch.setattr(settings, "features", "")
     assert 'aria-label="Categories"' not in client.get(f"/pages/games/{NAMES[0]}").text
+
+
+# ---- tags work on their own
+
+def _rows(Session, game):
+    with Session() as db:
+        return {r.tag_id: r.status for r in db.scalars(select(GameTag).where(GameTag.game_name == game)).all()}
+
+
+def test_a_game_is_suggested_and_the_safe_tags_are_approved(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        approved = service.refresh_game(db, "jollof-rush-3d")
+        again = service.refresh_game(db, "jollof-rush-3d")
+        slugs = {t.id: t.slug for t in service.ensure_tags(db).values()}
+    assert "3d-games" in approved and again == []
+    assert {slugs[i]: s for i, s in _rows(Session, "jollof-rush-3d").items()}["3d-games"] == "approved"
+
+
+def test_tags_about_a_place_wait_for_a_person(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        approved = service.refresh_game(db, "lagos-apocalypto")
+        slugs = {t.id: t.slug for t in service.ensure_tags(db).values()}
+    assert not set(approved) & service.NEEDS_A_PERSON
+    rows = {slugs[i]: s for i, s in _rows(Session, "lagos-apocalypto").items()}
+    assert rows["nigerian-themed"] == "suggested"
+
+
+def test_a_rejected_tag_is_not_brought_back(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        tags = service.ensure_tags(db)
+        db.add(GameTag(game_name="jollof-rush-3d", tag_id=tags["3d-games"].id, status="rejected"))
+        db.commit()
+        service.refresh_game(db, "jollof-rush-3d")
+    assert _rows(Session, "jollof-rush-3d")[service.ensure_tags(Session()).get("3d-games").id] == "rejected"
+
+
+def test_switched_off_only_suggests(env):
+    _, _, Session = env  # tags_auto_approve is False in tests by default
+    with Session() as db:
+        assert service.refresh_game(db, "jollof-rush-3d") == []
+    assert set(_rows(Session, "jollof-rush-3d").values()) == {"suggested"}
+
+
+def test_the_job_covers_games_that_have_no_tags_and_respects_the_limit(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        assert service.refresh_missing(db, limit=2) == 2
+    with Session() as db:
+        assert service.refresh_missing(db, limit=50) >= 1
+
+
+# ---- creators choose their own categories (startng.json); the games that were live first were reviewed
+
+def test_categories_accept_slugs_and_names_and_refuse_the_rest():
+    assert service.parse_categories(["endless-runners", "3D games", "Brainy games"]) == ["endless-runners", "3d-games", "brainy-games"]
+    for bad in ["racing", ["racing"], ["web-games"], ["endless-runners"] * 1 + ["3d-games", "archery", "survival", "lagos", "educational"], [1]]:
+        with pytest.raises(service.manifest.SchemaError):
+            service.parse_categories(bad)
+    assert service.parse_other("  Rhythm   games ") == "Rhythm games" and service.parse_other(5) is None and len(service.parse_other("x" * 90)) == 40
+
+
+def test_the_creators_choice_is_approved_and_the_rules_stay_out(env):
+    _, _, Session = env
+    with Session() as db:
+        service.suggest_game(db, "jollof-rush-3d")  # the rules had guessed
+        game = db.get(Game, "jollof-rush-3d")
+        service.apply_categories(db, game, ["brainy-games"])
+        service.apply_other(db, game, "Rhythm")
+        service.apply_other(db, game, "Rhythm")
+        db.commit()
+        assert [t.slug for t in service.tags_of(db, "jollof-rush-3d") if not t.everywhere] == ["brainy-games"]
+        assert service.suggest_game(db, "jollof-rush-3d") == 0 and service.refresh_game(db, "jollof-rush-3d") == []
+        assert service.review_queue(db, True, 50, 0)[0]["requested"] == ["Rhythm"]
+
+
+def test_an_admin_choice_is_not_overwritten_by_the_creator(env):
+    _, _, Session = env
+    with Session() as db:
+        service.approve(db, "tower-stack", ["stack-and-timing"])
+        service.apply_categories(db, db.get(Game, "tower-stack"), ["survival"])
+        assert [t.slug for t in service.tags_of(db, "tower-stack") if not t.everywhere] == ["stack-and-timing"]
+
+
+def test_reviewed_games_get_their_reviewed_tags(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(service, "reviewed", lambda: {"budget-panic": ["simulation-and-management", "money-and-careers", "educational"]})
+    with Session() as db:
+        service.suggest_game(db, "budget-panic")  # old rule guesses exist
+        assert service.refresh_missing(db, limit=50) >= 1
+        assert {t.slug for t in service.tags_of(db, "budget-panic") if not t.everywhere} == {"simulation-and-management", "money-and-careers", "educational"}
+
+
+def test_the_reviewed_file_is_clean():
+    service.reviewed.cache_clear()
+    data = json.loads(service.REVIEWED_FILE.read_text())
+    assert data and all(isinstance(g, str) and 1 <= len(s) <= service.CREATOR_MAX and all(x in service._CHOOSABLE for x in s) and len(set(s)) == len(s) for g, s in data.items())
+
+
+# ---- independent creators' games: categories on the game's own page only
+
+def _indie(Session, name="Moon Garden", url="https://moon.example/play"):
+    from app.models import IndieGame
+
+    with Session() as db:
+        owner = db.scalar(select(User).where(User.email == "ada@example.com"))
+        g = IndieGame(owner_id=owner.id, name=name, url=url, description="Grow plants on the moon.", cover=b"x")
+        db.add(g)
+        db.commit()
+        return g.id
+
+
+def test_indie_categories_are_saved_and_replaced(env):
+    _, _, Session = env
+    gid = _indie(Session)
+    with Session() as db:
+        service.set_indie(db, gid, service.check_choice(["Brainy games", "cosy-and-relaxing", "brainy-games"]), "Gardening")
+        service.set_indie(db, gid, ["cosy-and-relaxing"], "Gardening")
+        db.commit()
+        assert service.indie_labels(db, gid) == ["Cosy and relaxing"]
+        assert service.set_indie(db, gid, ["archery"]) == ["archery"] and service.indie_labels(db, gid) == ["Archery"]
+
+
+def test_indie_games_stay_out_of_the_category_counts(env):
+    _, _, Session = env
+    gid = _indie(Session)
+    with Session() as db:
+        before = service.counts(db)
+        service.set_indie(db, gid, ["archery", "brainy-games"])
+        db.commit()
+        assert service.counts(db) == before
+
+
+def test_old_independent_games_get_their_reviewed_categories(env, monkeypatch):
+    _, _, Session = env
+    gid = _indie(Session)
+    monkeypatch.setattr(service, "indie_reviewed", lambda: {gid: ["brainy-games"], 9999: ["archery"]})
+    with Session() as db:
+        assert service.refresh_indie(db) == 1 and service.refresh_indie(db) == 0
+        assert service.indie_labels(db, gid) == ["Brainy games"]
+
+
+def test_choices_endpoint_and_reviewed_indie_file(env):
+    client, _, _ = env
+    groups = client.get("/tags/choices").json()
+    assert "Words people search" not in [g["name"] for g in groups] and groups[0]["tags"][0]["slug"]
+    service.indie_reviewed.cache_clear()
+    data = json.loads(service.INDIE_REVIEWED_FILE.read_text())
+    assert data and all(1 <= len(s) <= service.CREATOR_MAX and all(x in service._CHOOSABLE for x in s) for s in data.values())

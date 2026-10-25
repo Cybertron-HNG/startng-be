@@ -63,6 +63,12 @@ def list_tags(db: Session = Depends(get_db)):
     return TagsOut(total_games=total, groups=[g for g in groups if g.tags])
 
 
+@router.get("/tags/choices")
+def tag_choices():
+    """The categories a creator can pick from (the submit form for independent games): groups of {slug, label}."""
+    return service.choices()
+
+
 @router.get("/tags/{slug}", response_model=TagPageOut)
 def tag_page(slug: str = SLUG, page: int = Query(1, ge=1, le=1000), db: Session = Depends(get_db)):
     try:
@@ -89,6 +95,7 @@ class ReviewRow(BaseModel):
     game: str
     approved: list[str]
     suggested: list[str]
+    requested: list[str] = []  # what the creator wrote under "other_category" (none of our categories fit)
 
 
 class SetTags(BaseModel):
