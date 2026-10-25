@@ -197,3 +197,26 @@ def test_one_player_is_not_plural_on_the_card(env, monkeypatch):
         assert card.describe(db, str(ids["tega"])).facts[1] == ("1", "player, 30 days")
         monkeypatch.setattr(service, "unique_visitors", lambda db, games, days=30, today=None: 2)
         assert card.describe(db, str(ids["tega"])).facts[1] == ("2", "players, 30 days")
+
+
+def test_the_page_links_each_game_and_the_sitemap_lists_creators(env, monkeypatch):
+    client, tokens, ids, Session = env
+    html = client.get(f"/by/{ids['tega']}/page").text
+    assert '<li><a href="/games/lane-dash">Lane Dash</a></li>' in html and '<a href="/by">See top creators</a>' in html
+    sitemap = client.get("/pages/sitemap.xml").text
+    assert "<loc>https://start.ng/by</loc>" in sitemap
+    assert f"<loc>https://start.ng/by/{ids['tega']}-tega-games</loc>" in sitemap and f"<loc>https://start.ng/by/{ids['dele']}-dele</loc>" in sitemap
+    assert f"/by/{ids['ada']}" not in sitemap  # no games, no page
+    monkeypatch.setattr(settings, "features", "")
+    assert "/by" not in client.get("/pages/sitemap.xml").text  # off: the pages answer 404, so they aren't listed
+
+
+def test_the_board_text_for_search_engines(env):
+    client, tokens, ids, Session = env
+    assert "No plays yet this month." in client.get("/pages/by").text
+    seed(Session, ids)
+    text = client.get("/pages/by").text
+    assert "<h1>Top creators</h1>" in text
+    tega = f'<li><a href="/by/{ids["tega"]}-tega-games"><span class="rk">1</span><span class="nm"><b>Tega Games</b><em>2 games</em></span>'
+    assert tega + '<span class="num">4 <em>players</em></span></a></li>' in text
+    assert f'href="/by/{ids["dele"]}-dele"><span class="rk">2</span>' in text and "example.com" not in text

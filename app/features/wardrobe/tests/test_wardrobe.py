@@ -316,3 +316,17 @@ def test_the_live_room_shows_what_players_wear(env, monkeypatch):
     assert live._load(Session, ids["tunde"], "snake").style is None  # no character yet: the starting look, as before
     monkeypatch.setattr(settings, "features", "progress,integrity")
     assert live._load(Session, ids["ada"], "snake").style == look  # the wardrobe off: exactly as before
+
+
+def test_the_shop_text_for_search_engines(env, monkeypatch):
+    client, tokens, ids, Session = env
+    shop = client.get("/shop").json()
+    text = client.get("/pages/shop").text
+    assert "<h1>Shop</h1>" in text and "Epic and Legendary items can't be bought" in text
+    first = shop["featured"][0]
+    assert (f'<li class="wd-item r-{first["rarity"]}"><strong>{first["name"]}</strong>' in text
+            and f'🪙 {first["price"]:,}<span class="tag">20% off</span>' in text)
+    assert all(f"<strong>{i['name']}</strong>" in text for i in shop["items"])
+    assert "Nobody has it yet" in text
+    monkeypatch.setattr(settings, "features", "progress,integrity")
+    assert client.get("/pages/shop").status_code == 404
