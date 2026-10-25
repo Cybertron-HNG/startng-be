@@ -1,13 +1,13 @@
 """private tournaments made by admins (F9): private_tournaments.by_admin and max_members
 
-Revision ID: 0046
-Revises: 0045
+Revision ID: 0048
+Revises: 0047
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0046"
-down_revision = "0045"  # renumber right before merging
+revision = "0048"
+down_revision = "0047"
 branch_labels = None
 depends_on = None
 
