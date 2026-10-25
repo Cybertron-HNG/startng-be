@@ -300,14 +300,15 @@ def _pagination(page: int, pages: int, base: str = "/games") -> str:
     """The same page links as the app's (src/Pagination.tsx): first, last, and two either side of this page (base: /games or /creators)."""
     if pages <= 1:
         return ""
+    # Everything from the page number is escaped too: FastAPI makes it a whole number, but the HTML shouldn't rely on that.
     def href(n: int) -> str:
-        return base if n == 1 else f"{base}?page={n}"
+        return _esc(base if n == 1 else f"{base}?page={n}")
 
     shown = sorted(n for n in {1, pages, page - 2, page - 1, page, page + 1, page + 2} if 1 <= n <= pages)
     current = ' aria-current="page"'
     numbers = "".join(
         ('<span class="gap">…</span>' if i and n - shown[i - 1] > 1 else "")
-        + f'<a href="{href(n)}" aria-label="Page {n}"{current if n == page else ""}>{n}</a>'
+        + f'<a href="{href(n)}" aria-label="Page {_esc(str(n))}"{current if n == page else ""}>{_esc(str(n))}</a>'
         for i, n in enumerate(shown)
     )
     prev = f'<a href="{href(page - 1)}" rel="prev" aria-label="Previous page">← Previous</a>' if page > 1 else '<span class="off">← Previous</span>'
@@ -338,7 +339,7 @@ def _games_body(games: list[Game], page: int) -> str | None:
     return (
         f"{NAV}<main>"
         '<section id="games" class="container all-games"><div class="section-head"><h1>All games from the community</h1></div>'
-        f'<div class="list-tools"><span class="count">{count}</span></div>{empty}<div class="grid">{items}</div>'
+        f'<div class="list-tools"><span class="count">{_esc(count)}</span></div>{empty}<div class="grid">{items}</div>'
         f"{_pagination(page, pages)}</section>"
         f"</main>{FOOTER}"
     )
@@ -387,7 +388,7 @@ def _creators_body(games: list[IndieGame], page: int) -> str | None:
         f"{NAV}<main>"
         '<section class="container all-games creators-page"><div class="section-head"><h1>Games by independent creators</h1></div>'
         "<div class=\"creators-intro\"><p>Made and hosted by creators outside start.ng. Tap a card to read about a game, or play it on the creator's own site.</p></div>"
-        f'<div class="list-tools"><span class="count">{count}</span></div>{empty}<div class="grid">{items}</div>'
+        f'<div class="list-tools"><span class="count">{_esc(count)}</span></div>{empty}<div class="grid">{items}</div>'
         f'{_pagination(page, pages, "/creators")}</section>'
         f"</main>{FOOTER}"
     )

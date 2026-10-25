@@ -115,6 +115,7 @@ def indie_sub_page(game_id: int = GAME_ID, kind: str = KIND, db: Session = Depen
     if game is None:
         return _not_found(shell, game_id, kind)
 
+    kind = next(k for k in INDIE_KINDS if k == kind)  # our own word for it, not the request's text (KIND only lets these through)
     name, site = game.name, _site()
     by = _player_name(game.owner, "an independent creator")
     base = indie_path(game)

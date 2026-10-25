@@ -204,7 +204,8 @@ def ordered_steps(body: str) -> list[str]:
 
 def shingles(body: str, title: str, n: int = 4) -> set[str]:
     """Words in groups of n, with the game's name taken out, to tell whether two pages say nearly the same thing."""
-    body = re.sub(r"[a-z0-9-]+\.start\.ng", "x.start.ng", body, flags=re.I)  # a game's own address is not what the page says
+    # A game's own address is not what the page says. A name is at most 63 characters, which also keeps this quick on long text.
+    body = re.sub(r"(?<![a-z0-9-])[a-z0-9-]{1,63}\.start\.ng", "x.start.ng", body, flags=re.I)
     words = re.sub(re.escape(title), "X", body, flags=re.I).lower().split()
     return {" ".join(words[i:i + n]) for i in range(max(1, len(words) - n + 1))}
 

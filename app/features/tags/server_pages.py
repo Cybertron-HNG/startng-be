@@ -77,15 +77,16 @@ def category_page(slug: str = SLUG, page: int = Query(1, ge=1, le=1000), db: Ses
         return _not_found(shell, path)
 
     site = _site()
+    path = f"/categories/{tag.slug}"  # the stored slug, not the request's text
     h = heading(tag.label)
     href = lambda n: path + (f"?page={n}" if n > 1 else "")
     cards = "".join(game_card(g.name, _title(g.name), _player_name(g.owner, "a builder"), game_url(g.name).split("://", 1)[-1], _cover_url(g)) for g in games)
     related = [(t, n) for t, n in service.public_tags(db) if t.group_name == tag.group_name and t.slug != tag.slug and not t.everywhere][:4]
     pager = ""
     if pages > 1:
-        prev = f'<a class="btn ghost" href="{href(page - 1)}" rel="prev">← Previous</a>' if page > 1 else "<span></span>"
-        nxt = f'<a class="btn ghost" href="{href(page + 1)}" rel="next">Next →</a>' if page < pages else "<span></span>"
-        pager = f'<nav class="tags-pager" aria-label="Pages of games">{prev}<span class="count">Page {page} of {pages}</span>{nxt}</nav>'
+        prev = f'<a class="btn ghost" href="{esc(href(page - 1))}" rel="prev">← Previous</a>' if page > 1 else "<span></span>"
+        nxt = f'<a class="btn ghost" href="{esc(href(page + 1))}" rel="next">Next →</a>' if page < pages else "<span></span>"
+        pager = f'<nav class="tags-pager" aria-label="Pages of games">{prev}<span class="count">Page {esc(str(page))} of {pages}</span>{nxt}</nav>'
     more = ""
     if related:
         more = '<div class="tags-group"><h2>More like this</h2><div class="tag-tiles">' + "".join(tag_tile(t.slug, t.label, n) for t, n in related) + "</div></div>"
