@@ -49,8 +49,29 @@ def upgrade() -> None:
     )
     op.create_index("ix_tag_requests_game_name", "tag_requests", ["game_name"])
 
+    op.create_table(
+        "indie_game_tags",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("indie_id", sa.Integer(), sa.ForeignKey("indie_games.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), nullable=False),
+        sa.UniqueConstraint("indie_id", "tag_id", name="uq_indie_game_tags"),
+    )
+    op.create_index("ix_indie_game_tags_indie_id", "indie_game_tags", ["indie_id"])
+    op.create_index("ix_indie_game_tags_tag_id", "indie_game_tags", ["tag_id"])
+    op.create_table(
+        "indie_tag_requests",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("indie_id", sa.Integer(), sa.ForeignKey("indie_games.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("text", sa.String(40), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("indie_id", "text", name="uq_indie_tag_requests"),
+    )
+    op.create_index("ix_indie_tag_requests_indie_id", "indie_tag_requests", ["indie_id"])
+
 
 def downgrade() -> None:
+    op.drop_table("indie_tag_requests")
+    op.drop_table("indie_game_tags")
     op.drop_table("tag_requests")
     op.drop_table("game_tags")
     op.drop_table("tags")
