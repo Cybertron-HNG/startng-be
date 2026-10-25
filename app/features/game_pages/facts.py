@@ -23,6 +23,9 @@ class Facts:
     creator: str = "a builder"
     description: str | None = None
     story: str | None = None
+    messages: list[str] = field(default_factory=list)  # lines the game itself shows or says (from its source, app/brief.py)
+    hints: list[str] = field(default_factory=list)  # the ones that tell the player what to do
+    notes: list[str] = field(default_factory=list)  # opening comments in its source: kept for the reviewer, not shown
     about_more: list[str] = field(default_factory=list)  # more of what the game says about itself: README paragraphs, then its own page's text
     controls: list[str] = field(default_factory=list)  # things like "WASD or the arrow keys to move"
     steps: list[str] = field(default_factory=list)  # ordered how-to-play steps
@@ -209,6 +212,37 @@ def from_page(raw: bytes | None, facts: Facts) -> None:
         facts.controls, facts.sources["controls"] = seen[:8], "the game's page"
 
 
+# A line from a game that tells the player what to do ("RUN! Escape the boulder", "Climb the ledge", "Press R to reload")
+INSTRUCTION = re.compile(
+    r"^(press|click|tap|hold|use|climb|collect|avoid|find|escape|take|reach|run|jump|pull|push|open|defeat|survive|get|move|aim|shoot|dodge|"
+    r"swipe|drag|grab|follow|keep|save|rescue|catch|stack|match|drive|steer|fly|swim|dash|slide|hide|wait|watch|don't|do not|try|stay)\b",
+    re.I,
+)
+MAX_SHOWN = 8
+
+
+def from_brief(brief: dict | None, facts: Facts, readme_found: bool) -> None:
+    """What the game's repo says about it (app/brief.py): its README when the game's own files have none, and its own messages."""
+    if not isinstance(brief, dict):
+        return
+    readme = brief.get("readme")
+    if isinstance(readme, str) and readme.strip() and not readme_found:
+        from_readme(readme.encode("utf-8"), facts)
+        facts.sources.setdefault("readme", "the game's repo")
+    hints, said = [], []
+    raw_messages = brief.get("messages")
+    for m in raw_messages if isinstance(raw_messages, list) else []:
+        m = clean(m, 200) if isinstance(m, str) else ""
+        if not m or m in hints or m in said:
+            continue
+        (hints if INSTRUCTION.match(m) or CONTROL_WORDS.search(m) else said).append(m)
+    if hints or said:
+        facts.hints, facts.messages = hints[:MAX_SHOWN], said[:MAX_SHOWN]
+        facts.sources["messages"] = "the game's source"
+    raw_notes = brief.get("notes")
+    facts.notes = [clean(n, 200) for n in (raw_notes if isinstance(raw_notes, list) else [])[:6] if isinstance(n, str) and clean(n, 200)]
+
+
 def read_facts(store, game, tags: list[str]) -> Facts:
     """Facts for a Game row, read from its files through a GameStore (R2 on the server, a folder on a laptop)."""
     from ...routers.pages import _player_name, _title
@@ -223,6 +257,7 @@ def read_facts(store, game, tags: list[str]) -> Facts:
         from_readme(store.read_file(game.name, readme) if readme else None, f)
         index = next((p for p in INDEX_PATHS if p in paths), None)
         from_page(store.read_file(game.name, index) if index else None, f)
+    from_brief(getattr(game, "brief", None), f, readme_found=any(n in paths for n in README_NAMES))
     if game.leaderboard:
         f.leaderboard = [clean(c.get("label") or c.get("key") or "", 40) for c in game.leaderboard if isinstance(c, dict)]
         f.leaderboard = [c for c in f.leaderboard if c]

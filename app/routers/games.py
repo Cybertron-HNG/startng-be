@@ -124,6 +124,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.repo_url, game.branch = repo.url, repo.branch
     game.leaderboard = bundle.leaderboard
     game.description = bundle.description
+    game.brief = bundle.brief
     # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
     game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
     game.uses_kit = uses_kit([(f.path, f.data) for f in bundle.files])

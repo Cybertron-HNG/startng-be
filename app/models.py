@@ -56,6 +56,9 @@ class Game(Base):
     leaderboard: Mapped[list | None] = mapped_column(JSON)
     # One line about the game from its startng.json, shown on its page at start.ng/games/<name> (None: the page writes one)
     description: Mapped[str | None] = mapped_column(String(300))
+    # What the game's repo says about it (app/brief.py): its README, its own messages, opening comments, file names. Read when it is
+    # published; the pages about the game are written from it. None until the game is next published or backfilled.
+    brief: Mapped[dict | None] = mapped_column(JSON)
     # Whether the live version meets the game standards (app/checks.standards), checked on every publish and
     # update. None = published before the standards existed; such games still take part in tournaments for now.
     meets_standards: Mapped[bool | None] = mapped_column(Boolean)

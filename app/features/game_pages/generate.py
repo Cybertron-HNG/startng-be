@@ -37,6 +37,9 @@ def _and(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+MAX_SAID = 8  # lines quoted from the game on a page
+
+
 def _how(stat: dict) -> str:
     """"highest first", "fastest first" (a time) or "lowest first": how one leaderboard column ranks."""
     if stat["order"] == "lowest":
@@ -60,7 +63,7 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
     title = LABELS[kind].format(t=t)
     text = f.description or f.story
     if kind == "about":
-        if not text and len(f.features) < 2:
+        if not text and len(f.features) < 2 and not f.about_more and len(f.messages) + len(f.hints) < 3:
             return "No description or README text to write from. The creator can add a description in startng.json."
         parts = ["## What is %s about?" % t]
         if f.description:
@@ -81,6 +84,9 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
         parts += [f"## {t} at a glance"] + [f"- {x}" for x in glance]
         if len(f.features) >= 1:
             parts += ["## Features"] + [f"- {x}" for x in f.features]
+        quoted = (f.messages + f.hints)[:MAX_SAID]
+        if quoted:
+            parts += [f"## What {t} says", f"Some of what {t} tells you as you play:"] + [f"- “{x}”" for x in quoted]
         if f.board:
             parts += ["## How scoring works", ranking(f)]
         parts += [f"## Play {t}", f"{t} is free to play in your browser on start.ng, with nothing to download. It was made by {f.creator}."]
@@ -88,7 +94,7 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
             parts.append(f"It is a game for people who like {_and([x.lower() for x in f.tags[:4]])}.")
         return Draft(title, _meta(_first_sentence(text) if text else f"{t} is a free browser game on start.ng", "Play free in your browser on start.ng"), "\n\n".join(parts))
     if kind == "how-to-play":
-        if not f.controls and not f.steps:
+        if not f.controls and not f.steps and len(f.hints) < 2:
             return "No controls or steps found in the game's files. The creator can add a \"controls\" or \"howToPlay\" list in startng.json."
         parts = []
         if text:
@@ -97,6 +103,8 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
             parts += ["## Controls"] + [f"- {x}" for x in f.controls]
         if f.steps:
             parts += ["## How to play"] + [f"{i}. {x}" for i, x in enumerate(f.steps, 1)]
+        if f.hints:
+            parts += [f"## What {t} tells you to do"] + [f"- “{x}”" for x in f.hints[:MAX_SAID]]
         if f.board:
             parts += ["## Scoring and the leaderboard", ranking(f)]
         start = [f"Open {t} at {name}.start.ng. It runs in your browser, so there is nothing to download."]
@@ -105,12 +113,12 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
         if f.walkthrough:
             start.append(f"Stuck? {t} has a walkthrough with tips from its creator.")
         parts += ["## Before you start", "\n\n".join(start)]
-        lead = f.steps[0] if f.steps else f.controls[0]
+        lead = f.steps[0] if f.steps else f.controls[0] if f.controls else f.hints[0]
         return Draft(title, _meta(f"How to play {t}", lead, "Free in your browser on start.ng"), "\n\n".join(parts))
     if kind == "faq":
         qa: list[tuple[str, str]] = []
         unique = 0
-        said = bool(text or f.controls or f.steps)  # something the game itself said: tags and a leaderboard alone are not enough
+        said = bool(text or f.controls or f.steps or f.hints)  # something the game itself said: tags and a leaderboard alone are not enough
         if text:
             qa.append((f"What is {t}?", _sentence(text if len(text) <= 300 else _first_sentence(text, 300)))); unique += 1
         qa.append((f"Is {t} free to play?", f"Yes. You can play {t} for free in your browser on start.ng."))
