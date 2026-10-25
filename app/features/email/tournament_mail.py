@@ -44,8 +44,49 @@ def _local_time(when: datetime) -> str:
 
 
 def _button(link: str, label: str) -> str:
-    return (f'<p><a href="{esc(link)}" style="display:inline-block;background:#d9f99d;color:#1d1d1b;padding:10px 16px;'
-            f'border-radius:10px;font-weight:700;text-decoration:none">{esc(label)}</a></p>')
+    return service.button(link, label, arrow=True)
+
+
+def _eyebrow(text: str) -> str:
+    return (f'<p style="margin:0 0 12px;font:700 11px/1.4 {service.MONO};letter-spacing:.18em;'
+            f'text-transform:uppercase;color:{service.MUTED}">{esc(text)}</p>')
+
+
+def _game_row(index: int, name: str) -> str:
+    """One game as a numbered row, like the numbered steps on the website."""
+    number = f"{index:02d}"
+    return (
+        '<tr><td style="padding:0 0 8px">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{service.BG}" '
+        f'style="width:100%;background:{service.BG};border:1px solid {service.LINE};border-radius:12px;'
+        'border-collapse:separate">'
+        '<tr>'
+        '<td width="44" valign="middle" style="padding:10px 0 10px 12px">'
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate">'
+        f'<tr><td width="28" height="28" align="center" bgcolor="{service.LIME}" style="width:28px;height:28px;'
+        f'background:{service.LIME};border-radius:7px;font:700 11px/28px {service.MONO};color:{service.INK};'
+        f'text-align:center">{number}</td></tr></table>'
+        '</td>'
+        f'<td valign="middle" style="padding:11px 14px 11px 0;font:700 15px/1.35 {service.FONT};'
+        f'color:{service.INK}">{esc(name)}</td>'
+        '</tr></table></td></tr>'
+    )
+
+
+def _stat(label: str, value: str, note: str = "") -> str:
+    tail = (f' <span style="font:600 13px/1.4 {service.FONT};color:{service.MUTED}">{esc(note)}</span>'
+            if note else "")
+    return (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{service.BG}" '
+        f'style="width:100%;background:{service.BG};border:1px solid {service.LINE};border-radius:14px;'
+        'border-collapse:separate">'
+        '<tr><td style="padding:14px 16px">'
+        f'<p style="margin:0 0 4px;font:700 10px/1.4 {service.MONO};letter-spacing:.16em;text-transform:uppercase;'
+        f'color:{service.MUTED}">{esc(label)}</p>'
+        f'<p style="margin:0;font:800 26px/1.1 {service.FONT};letter-spacing:-.03em;color:{service.INK}">'
+        f'{esc(value)}{tail}</p>'
+        '</td></tr></table>'
+    )
 
 
 def render_day(d: dict) -> Note:
@@ -54,12 +95,43 @@ def render_day(d: dict) -> Note:
     subject = (f"{winner} won yesterday's tournament. Today: {len(games)} games" if winner
                else f"Today's tournament: {len(games)} games, 24 hours")
     others = f', ahead of {d["players"] - 1} other {"player" if d["players"] == 2 else "players"}' if d["players"] > 1 else ""
-    won_html = f"<p><b>{esc(winner)}</b> won the last tournament{others}.</p>" if winner else ""
+    won_html = ""
+    if winner:
+        won_html = (
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'bgcolor="{service.LIME_TINT}" style="width:100%;margin:0 0 26px;background:{service.LIME_TINT};'
+            f'border:1px solid {service.LINE};border-radius:16px;border-collapse:separate">'
+            '<tr><td style="padding:15px 18px">'
+            f'<p style="margin:0 0 4px;font:700 10px/1.4 {service.MONO};letter-spacing:.16em;text-transform:uppercase;'
+            f'color:{service.MUTED}">Last tournament</p>'
+            f'<p style="margin:0;font:400 15px/1.55 {service.FONT};color:{service.INK}">'
+            f'<b>{esc(winner)}</b> won the last tournament{esc(others)}.</p>'
+            '</td></tr></table>'
+        )
     won_text = f"{winner} won the last tournament{others}.\n\n" if winner else ""
-    html = (f'{won_html}<p style="font-size:18px;font-weight:700;margin:0 0 8px">Today\'s tournament is on</p>'
-            f'<p>{len(games)} games, 24 hours, one winner. It ends at {esc(d["ends"])}.</p>'
-            f'<ul>{"".join(f"<li>{esc(g)}</li>" for g in games)}</ul>'
-            f'{_button(d["link"], "Play today")}<p style="color:#6b6b66">Share it on X to enter, then play.</p>')
+    html = (
+        f'{won_html}'
+        f'{_eyebrow("Daily tournament")}'
+        f'<h1 style="margin:0 0 12px;font:800 32px/1.1 {service.FONT};letter-spacing:-.045em;color:{service.INK}">'
+        'Today\'s tournament is on</h1>'
+        f'<p style="margin:0 0 16px;font:400 16px/1.6 {service.FONT};color:{service.MUTED}">'
+        f'{len(games)} games, 24 hours, one winner.</p>'
+        f'<p style="margin:0 0 26px;font:400 15px/1.6 {service.FONT};color:{service.INK}">It ends at '
+        f'<span style="display:inline-block;background:{service.LIME};border-radius:6px;padding:4px 8px;'
+        f'font:700 12px/1.4 {service.MONO};color:{service.INK}">{esc(d["ends"])}</span></p>'
+        f'<p style="margin:0 0 10px;font:700 10px/1.4 {service.MONO};letter-spacing:.16em;text-transform:uppercase;'
+        f'color:{service.MUTED}">Today\'s games</p>'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;border-collapse:collapse">'
+        f'{"".join(_game_row(i, g) for i, g in enumerate(games, 1))}'
+        '</table>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'bgcolor="{service.LIME_TINT}" style="width:100%;margin:22px 0 0;background:{service.LIME_TINT};'
+        'border-radius:12px;border-collapse:separate">'
+        f'<tr><td style="padding:14px 16px;font:400 14px/1.55 {service.FONT};color:{service.INK}">'
+        '<b>Share it on X to enter</b>, then play.</td></tr></table>'
+        f'{_button(d["link"], "Play today")}'
+    )
     text = (f"{won_text}Today's tournament is on: {len(games)} games, 24 hours, one winner. It ends at {d['ends']}.\n\n"
             + "\n".join(f"- {g}" for g in games) + f"\n\nPlay today: {d['link']}\nShare it on X to enter, then play.")
     return Note(subject, html, text)
@@ -74,7 +146,22 @@ def render_result(d: dict) -> Note:
     else:
         subject = f"You came {ordinal(place)} of {players} in the tournament"
         line = f"You came {ordinal(place)} of {players}, with {pts}. {d['winner']} won."
-    html = f'<p style="font-size:18px;font-weight:700;margin:0 0 8px">{esc(subject)}</p><p>{esc(line)}</p>{_button(d["link"], "Try again today")}'
+    html = (
+        f'{_eyebrow("Tournament result")}'
+        f'<h1 style="margin:0 0 12px;font:800 31px/1.15 {service.FONT};letter-spacing:-.045em;color:{service.INK}">'
+        f'{esc(subject)}</h1>'
+        f'<p style="margin:0;font:400 15px/1.6 {service.FONT};color:{service.MUTED}">{esc(line)}</p>'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;margin:24px 0 0;border-collapse:separate"><tr>'
+        '<td width="50%" valign="top" style="padding:0 6px 0 0">'
+        f'{_stat("Place", ordinal(place), f"of {players}")}'
+        '</td>'
+        '<td width="50%" valign="top" style="padding:0 0 0 6px">'
+        f'{_stat("Points", str(points))}'
+        '</td>'
+        '</tr></table>'
+        f'{_button(d["link"], "Try again today")}'
+    )
     return Note(subject, html, f"{subject}\n\n{line}\n\nTry again today: {d['link']}")
 
 
