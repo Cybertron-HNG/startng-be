@@ -438,7 +438,10 @@ the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes 
   required. Staff picks have no checklist. Owners see theirs with `GET /games/{name}/featuring`.
   Admins: `GET /admin/featured`, `PUT`/`DELETE /admin/featured/{featured|staff}/{game}`, `POST .../move?direction=up|down`.
 - **Play next** (C10): `GET /discover/next?after=<game>&limit=1-3`: best ranked first, games the player hasn't opened ahead
-  of those they have.
+  of those they have. **Inside a tournament** only that tournament's other games are offered (in its order, after this game, then
+  round to the start; the ones not opened first) and the reply names it (`tournament`): today's public tournament, or a private
+  one the player is a member of (and only while the `private_tournaments` feature is on). A game in no running tournament, or
+  one whose tournament has no other visible game, gets the usual suggestions.
 ## Categories, ratings and filters (PRD T1)
 `app/features/catalog`; flag `catalog` (ratings also need `progress`, for game opens); admin permission `ratings.moderate`.
 - **Categories:** Action, Racing, Puzzle, Card & board, Arcade, Adventure, Sports, Strategy, Educational. A game sets one in
