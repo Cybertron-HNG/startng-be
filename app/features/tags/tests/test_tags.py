@@ -265,3 +265,59 @@ def test_a_game_page_has_no_categories_block_while_the_flag_is_off(env, monkeypa
     approve_all(client, tokens, "nigerian-themed", NAMES[:3])
     monkeypatch.setattr(settings, "features", "")
     assert 'aria-label="Categories"' not in client.get(f"/pages/games/{NAMES[0]}").text
+
+
+# ---- tags work on their own
+
+def _rows(Session, game):
+    with Session() as db:
+        return {r.tag_id: r.status for r in db.scalars(select(GameTag).where(GameTag.game_name == game)).all()}
+
+
+def test_a_game_is_suggested_and_the_safe_tags_are_approved(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        approved = service.refresh_game(db, "jollof-rush-3d")
+        again = service.refresh_game(db, "jollof-rush-3d")
+        slugs = {t.id: t.slug for t in service.ensure_tags(db).values()}
+    assert "3d-games" in approved and again == []
+    assert {slugs[i]: s for i, s in _rows(Session, "jollof-rush-3d").items()}["3d-games"] == "approved"
+
+
+def test_tags_about_a_place_wait_for_a_person(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        approved = service.refresh_game(db, "lagos-apocalypto")
+        slugs = {t.id: t.slug for t in service.ensure_tags(db).values()}
+    assert not set(approved) & service.NEEDS_A_PERSON
+    rows = {slugs[i]: s for i, s in _rows(Session, "lagos-apocalypto").items()}
+    assert rows["nigerian-themed"] == "suggested"
+
+
+def test_a_rejected_tag_is_not_brought_back(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        tags = service.ensure_tags(db)
+        db.add(GameTag(game_name="jollof-rush-3d", tag_id=tags["3d-games"].id, status="rejected"))
+        db.commit()
+        service.refresh_game(db, "jollof-rush-3d")
+    assert _rows(Session, "jollof-rush-3d")[service.ensure_tags(Session()).get("3d-games").id] == "rejected"
+
+
+def test_switched_off_only_suggests(env):
+    _, _, Session = env  # tags_auto_approve is False in tests by default
+    with Session() as db:
+        assert service.refresh_game(db, "jollof-rush-3d") == []
+    assert set(_rows(Session, "jollof-rush-3d").values()) == {"suggested"}
+
+
+def test_the_job_covers_games_that_have_no_tags_and_respects_the_limit(env, monkeypatch):
+    _, _, Session = env
+    monkeypatch.setattr(settings, "tags_auto_approve", True)
+    with Session() as db:
+        assert service.refresh_missing(db, limit=2) == 2
+    with Session() as db:
+        assert service.refresh_missing(db, limit=50) >= 1

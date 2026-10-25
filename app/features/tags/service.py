@@ -1,16 +1,25 @@
 """The contract other features and pages use: which tags a game has, which games a tag has, and the review steps.
 Only "approved" tags are shown to players. The rules in rules.py only suggest."""
+import asyncio
+import logging
 import re
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from ... import flags
+from ...config import settings
+from ...db import SessionLocal
 from ...models import Game
 from .models import GameTag, Tag
 from .rules import GROUPS, GROUP_ORDER, MIN_GAMES
 
+log = logging.getLogger(__name__)
 PER_PAGE = 24
+# Tags that say something about a place or a people. The rules over-match them (a word like "market" is not Nigerian), and the brief wants
+# those pages only for games that truly fit, so they are never approved by themselves: a person confirms them in the admin.
+NEEDS_A_PERSON = {"nigerian-themed", "african-themed", "lagos"}
 _RULES = {slug: re.compile(rx) for tags in GROUPS.values() for slug, _label, _blurb, rx in tags if rx}
 
 
@@ -63,6 +72,90 @@ def suggest_all(db: Session) -> int:
                 added += 1
     db.commit()
     return added
+
+
+def suggest_game(db: Session, game_name: str) -> int:
+    """Add the rules' suggestions for one game. Never changes an existing row, so what a person approved or rejected stays.
+    Returns how many were added."""
+    game = db.get(Game, game_name)
+    if game is None or game.hidden is not None:
+        return 0
+    tags = ensure_tags(db)
+    have = set(db.scalars(select(GameTag.tag_id).where(GameTag.game_name == game_name)).all())
+    added = 0
+    for slug in suggest_for(game.name, game.description):
+        if tags[slug].id not in have:
+            db.add(GameTag(game_name=game_name, tag_id=tags[slug].id, status="suggested"))
+            added += 1
+    if added:
+        db.commit()
+    return added
+
+
+def auto_approve_game(db: Session, game_name: str) -> list[str]:
+    """Approve the suggestions on a game that need no person (everything except NEEDS_A_PERSON). A tag an admin rejected is
+    never brought back. Returns the slugs approved now."""
+    if not settings.tags_auto_approve:
+        return []
+    tags = {t.id: t for t in ensure_tags(db).values()}
+    now = datetime.now(timezone.utc)
+    done = []
+    for row in db.scalars(select(GameTag).where(GameTag.game_name == game_name, GameTag.status == "suggested")).all():
+        tag = tags.get(row.tag_id)
+        if tag is not None and not tag.everywhere and tag.slug not in NEEDS_A_PERSON:
+            row.status, row.approved_at = "approved", now
+            done.append(tag.slug)
+    if done:
+        db.commit()
+    return done
+
+
+def refresh_game(db: Session, game_name: str) -> list[str]:
+    """What happens to a game when it is new or has changed: suggest tags for it, and approve the ones that need no person."""
+    suggest_game(db, game_name)
+    return auto_approve_game(db, game_name)
+
+
+AUTO_PER_ROUND = 50
+ROUND_SECONDS = 120
+
+
+def refresh_missing(db: Session, limit: int = AUTO_PER_ROUND) -> int:
+    """Games that have never had any tag row (a new game, or every existing game the first time): suggest and approve. A
+    game the rules match nothing for gets no row, so it is looked at again each round: that is cheap (words only)."""
+    have = set(db.scalars(select(GameTag.game_name).distinct()).all())
+    todo = [g.name for g in db.scalars(_visible_games().order_by(Game.created_at.desc())).all() if g.name not in have][:limit]
+    for name in todo:
+        refresh_game(db, name)
+    return len(todo)
+
+
+def on_game_changed(payload: dict) -> None:
+    """A game was published or got a new version: its words may have changed, so look again. Subscribed in __init__.py."""
+    if not flags.is_on("tags"):
+        return
+    with SessionLocal() as db:
+        refresh_game(db, payload["game"])
+
+
+async def run_forever() -> None:
+    """The background job, started with the server; does nothing while the flag is off."""
+    from starlette.concurrency import run_in_threadpool
+
+    def tick() -> int:
+        if not flags.is_on("tags"):
+            return 0
+        with SessionLocal() as db:
+            return refresh_missing(db)
+
+    while True:
+        try:
+            await run_in_threadpool(tick)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Suggesting tags failed")
+        await asyncio.sleep(ROUND_SECONDS)
 
 
 def approve(db: Session, game_name: str, slugs: list[str]) -> list[str]:
