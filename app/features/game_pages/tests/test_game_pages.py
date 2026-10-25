@@ -530,3 +530,68 @@ def test_nothing_is_made_on_its_own_while_the_feature_is_off(env, monkeypatch):
     service.on_game_updated({"game": "lagos-apocalypto"})
     with Session() as db:
         assert db.query(GamePage).count() == 0
+
+
+# ---- pages approve themselves, with a safety check instead of a person
+
+def test_safety_check():
+    assert service.is_safe("About Zap", "A fast game.", "## Story\nRun and jump.")
+    assert not service.is_safe("About Zap", "Visit https://evil.example now", "Run.")
+    assert not service.is_safe("About Zap", "ok", "Email me @someone <b>hi</b>")
+    assert not service.is_safe("About Zap", "ok", "This is shit")
+    assert not service.is_safe("", "ok", "Run.")
+
+
+def _statuses(Session, game="lagos-apocalypto"):
+    with Session() as db:
+        return {p.kind: p.status for p in db.query(GamePage).filter_by(game_name=game).all()}
+
+
+def test_good_pages_are_approved_by_themselves(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    statuses = _statuses(Session)
+    assert statuses["about"] == "approved" and "draft" not in statuses.values()
+    with Session() as db:
+        assert db.query(GamePage).filter_by(game_name="lagos-apocalypto", status="approved").first().approved_by_id is None
+
+
+def test_off_leaves_drafts_for_a_person(env):
+    _, _, Session, store, _ = env  # off in tests by default
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    assert "approved" not in _statuses(Session).values() and "draft" in _statuses(Session).values()
+
+
+def test_unsafe_text_waits_for_a_person(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    bad = dict(RICH)
+    bad["startng.json"] = json.dumps({"description": "A game. Visit http://spam.example for more cheats and fun.", "controls": ["WASD to move"]})
+    store.games["lagos-apocalypto"] = bad
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    assert "approved" not in _statuses(Session).values()
+
+
+def test_a_page_an_admin_took_down_stays_down(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+        page = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="about").one()
+        service.unapprove(db, page.id)
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+        service.approve_waiting(db)
+    assert _statuses(Session)["about"] == "draft"
+
+
+def test_waiting_drafts_of_old_games_are_approved(env, monkeypatch):
+    _, _, Session, store, _ = env
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))  # drafts, as before the feature
+        monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+        assert service.approve_waiting(db) >= 1
+    assert "draft" not in _statuses(Session).values()
