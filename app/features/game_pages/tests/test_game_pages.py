@@ -174,7 +174,7 @@ def test_two_games_with_the_same_words_get_one_page_not_two(env):
     client, tokens, Session, store, _ = env
     with Session() as db:
         owner = db.query(User).first()
-        db.add(Game(name="lagos-apocalypto-copy", owner_id=owner.id, repo_url="z"))
+        db.add(Game(name="lagos-apocalypto-copy", owner_id=owner.id, repo_url="z", leaderboard=[{"key": "score", "label": "Score"}, {"key": "time", "label": "Time"}]))
         db.commit()
     store.games["lagos-apocalypto-copy"] = RICH
     with Session() as db:
@@ -333,3 +333,265 @@ def test_a_game_page_has_no_links_to_pages_while_the_flag_is_off(env, monkeypatc
     _approve(client, tokens, Session, store, kind="faq")
     monkeypatch.setattr(settings, "features", "")
     assert "More about this game" not in client.get("/pages/games/lagos-apocalypto").text
+
+
+# ---- the pages say more than the creator's own words: only facts we really have
+
+BOARD = [{"key": "stars", "label": "Stars", "order": "highest", "format": "number"}, {"key": "time", "label": "Time", "order": "lowest", "format": "time"}]
+
+
+def _facts(**over):
+    base = dict(title="Star Hop", creator="Ada", description="Hop between stars before the sky runs out of them.", controls=["Tap to hop", "Hold to glide"],
+                tags=["Endless runners"], published="March 2026", board=BOARD, leaderboard=["Stars", "Time"])
+    return F.Facts(**{**base, **over})
+
+
+def test_scoring_is_explained_from_the_games_own_columns():
+    text = gen.ranking(_facts())
+    assert text.startswith("Players are ranked by Stars (highest first).")
+    assert "If two players tie, Time (fastest first) decides it." in text
+    assert "Only your best run counts" in text
+    assert gen.ranking(_facts(board=[], leaderboard=[])) == ""  # no leaderboard, nothing to say
+
+
+def test_the_about_page_has_the_facts_at_a_glance():
+    body = gen.build("about", _facts(features=["Ten levels"]), "star-hop").body
+    for line in ("## Star Hop at a glance", "- Made by Ada", "- On start.ng since March 2026", "- Play it in your browser at star-hop.start.ng, with nothing to download",
+                 "- Categories: Endless runners", "- Leaderboard: yes, ranked by Stars and Time", "- Controls: Tap to hop", "## How scoring works"):
+        assert line in body, line
+
+
+def test_the_about_page_leaves_out_what_it_doesnt_know():
+    body = gen.build("about", _facts(board=[], leaderboard=[], tags=[], published=None, controls=[]), "star-hop").body
+    assert "at a glance" in body and "Made by Ada" in body
+    for missing in ("On start.ng since", "Categories:", "Leaderboard:", "Controls:", "How scoring works"):
+        assert missing not in body, missing
+
+
+def test_how_to_play_has_a_goal_scoring_and_what_to_do_first():
+    body = gen.build("how-to-play", _facts(steps=["Hop to the next star", "Do not fall"], walkthrough=["a", "b", "c"]), "star-hop").body
+    for part in ("## The goal", "Hop between stars before the sky runs out of them.", "## Controls", "## How to play", "## Scoring and the leaderboard",
+                 "## Before you start", "Sign in with start.ng first", "Stuck? Star Hop has a walkthrough"):
+        assert part in body, part
+    plain = gen.build("how-to-play", _facts(board=[], leaderboard=[], walkthrough=[]), "star-hop").body
+    assert "Sign in with start.ng first" not in plain and "Stuck?" not in plain and "Scoring and the leaderboard" not in plain
+
+
+def test_the_faq_says_since_when_and_how_the_board_ranks():
+    pairs = dict(gen.faq_pairs(gen.build("faq", _facts(), "star-hop").body))
+    assert pairs["Who made Star Hop?"] == "Star Hop was made by Ada. It has been on start.ng since March 2026."
+    assert "Players are ranked by Stars (highest first)." in pairs["Does Star Hop have a leaderboard?"]
+
+
+def test_nothing_is_said_that_the_facts_dont_support():
+    for kind in ("about", "how-to-play", "faq"):
+        body = gen.build(kind, _facts(), "star-hop").body.lower()
+        for claim in ("multiplayer", "phone", "mobile", "offline", "best game", "most popular", "fun"):
+            assert claim not in body, (kind, claim)
+
+
+# ---- live blocks on a game's pages: the top players, more by the same creator, similar games
+
+def _approved_about(client, tokens, Session, store, game="lagos-apocalypto"):
+    return _approve(client, tokens, Session, store, game=game, kind="about")
+
+
+def test_top_players_are_read_live_not_stored(env):
+    client, tokens, Session, store, _ = env
+    from app.models import Score
+    with Session() as db:
+        db.get(Game, "lagos-apocalypto").leaderboard = [{"key": "score", "label": "Score", "order": "highest", "format": "number"},
+                                                        {"key": "time", "label": "Time", "order": "lowest", "format": "time"}]
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        tunde = User(email="tunde@example.com", name="Tunde", google_sub="g-tunde")
+        db.add(tunde)
+        db.flush()
+        db.add_all([Score(user_id=ada.id, game_name="lagos-apocalypto", best=40, stats={"score": 40, "time": 125}),
+                    Score(user_id=tunde.id, game_name="lagos-apocalypto", best=55, stats={"score": 55, "time": 90})])
+        db.commit()
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert 'aria-label="Top players"' in page and "Top players right now" in page
+    block = page[page.index("Top players right now"):]
+    assert block.index("Tunde") < block.index("Ada")  # the better score first
+    assert "Score 55" in block and "Time 1:30" in block  # a time is shown as m:ss
+    assert 'href="/games/lagos-apocalypto"' in page
+    # it moves with the scores: nothing was stored in the page
+    with Session() as db:
+        db.query(Score).filter_by(game_name="lagos-apocalypto").delete()
+        db.commit()
+    assert "Top players right now" not in client.get("/pages/games/lagos-apocalypto/about").text
+
+
+def test_more_games_by_the_same_creator_are_linked_with_their_cards(env):
+    client, tokens, Session, store, _ = env
+    with Session() as db:
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        db.add(Game(name="moon-run", owner_id=ada.id, repo_url="m"))
+        db.add(Game(name="hidden-one", owner_id=ada.id, repo_url="h", hidden="blocked"))
+        other = User(email="x@example.com", name="Xavier", google_sub="g-x")
+        db.add(other)
+        db.flush()
+        db.add(Game(name="not-ada", owner_id=other.id, repo_url="n"))
+        db.commit()
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert "More games by Ada" in page
+    assert 'href="/games/moon-run"' in page and 'href="/games/bare"' in page
+    assert "not-ada" not in page and "hidden-one" not in page  # not someone else's, not a hidden one
+    assert page.count('href="/games/lagos-apocalypto"') >= 1 and 'class="game-link" href="/games/lagos-apocalypto"' not in page  # not itself
+
+
+def test_games_in_the_same_category_are_linked_when_tags_is_on(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from app.features.tags import service as tags
+    monkeypatch.setattr(settings, "features", "game_pages,tags")
+    with Session() as db:
+        owner = db.query(User).filter_by(email="owner@example.com").one()
+        for n in ("dash-one", "dash-two", "dash-three"):
+            db.add(Game(name=n, owner_id=owner.id, repo_url=n))
+        db.commit()
+        for n in ("lagos-apocalypto", "dash-one", "dash-two", "dash-three"):
+            tags.approve(db, n, ["endless-runners"])
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert "Games like Lagos Apocalypto" in page
+    for n in ("dash-one", "dash-two", "dash-three"):
+        assert f'class="game-link" href="/games/{n}"' in page
+    assert 'class="game-link" href="/games/lagos-apocalypto"' not in page  # not itself
+    monkeypatch.setattr(settings, "features", "game_pages")  # tags off: no "games like this", the page still works
+    assert "Games like" not in client.get("/pages/games/lagos-apocalypto/about").text
+
+
+# ---- more of the game's own words, and a warning when there is nothing to say
+
+def test_more_of_the_readme_and_the_games_own_page_is_used():
+    f = F.Facts(title="Moon Run")
+    readme = (b"# Moon Run\n\nA calm night runner through a sleeping city, where every rooftop is a new ledge to cross.\n\n"
+              b"## Why we made it\nWe wanted a game you can play slowly, at the end of a long day, with nothing chasing you.\n\n"
+              b"## How to play\n1. Tap to jump\n\n## Features\n- Ten levels\n")
+    F.from_readme(readme, f)
+    assert f.description == "A calm night runner through a sleeping city, where every rooftop is a new ledge to cross."
+    assert f.about_more == ["We wanted a game you can play slowly, at the end of a long day, with nothing chasing you."]
+    page = b"<html><body><p>The city sleeps, but the rooftops are awake. Follow the lantern light and do not wake anyone up.</p><p>Tap to jump</p></body></html>"
+    F.from_page(page, f)
+    assert "The city sleeps, but the rooftops are awake. Follow the lantern light and do not wake anyone up." in f.about_more
+    assert "Tap to jump" not in f.about_more  # a control, not a story
+
+
+def test_the_about_page_tells_what_the_game_is_about_in_the_games_own_words():
+    f = F.Facts(title="Moon Run", creator="Ada", description="A calm night runner.", about_more=["The city sleeps, but the rooftops are awake."], features=["Ten levels"])
+    body = gen.build("about", f, "moon-run").body
+    assert body.startswith("## What is Moon Run about?")
+    assert "A calm night runner." in body and "The city sleeps, but the rooftops are awake." in body
+
+
+# ---- drafts are made on their own (a person still approves)
+
+def test_games_without_pages_get_drafts_a_few_at_a_time(env):
+    client, tokens, Session, store, _ = env
+    with Session() as db:
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        db.add(Game(name="secret", owner_id=ada.id, repo_url="s", hidden="blocked"))
+        db.commit()
+    store.games["secret"] = RICH
+    with Session() as db:
+        assert service.make_missing_drafts(db, store, limit=1) == 1
+        assert db.query(GamePage.game_name).distinct().count() == 1
+        assert service.make_missing_drafts(db, store, limit=5) == 1  # the other visible game
+        assert service.make_missing_drafts(db, store, limit=5) == 0  # nothing left to do
+        assert db.query(GamePage).filter_by(game_name="secret").count() == 0  # a hidden game gets nothing
+        assert {p.status for p in db.query(GamePage).all()} <= {"draft", "skipped"}  # never approved by itself
+        assert service.make_missing_drafts(db, None) == 0  # the games' files aren't reachable: nothing happens
+
+
+def test_a_new_version_remakes_drafts_but_never_an_approved_or_edited_page(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from app import events
+    monkeypatch.setattr(service, "SessionLocal", Session)
+    monkeypatch.setattr(service, "get_game_store", lambda: store)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    pid = _approve(client, tokens, Session, store)  # approves the FAQ
+    store.games["lagos-apocalypto"] = {**RICH, "startng.json": json.dumps({"description": "A new description for a new version.", "controls": ["Press X to dash"]})}
+    events.publish("game_updated", {"game": "lagos-apocalypto", "owner_id": 1, "auto": True})  # the feature is subscribed to it
+    with Session() as db:
+        faq = db.get(GamePage, pid)
+        assert faq.status == "approved" and "A new description" not in faq.body  # the approved page stays as a person left it
+        how = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="how-to-play").one()
+        assert how.status == "draft" and "Press X to dash" in how.body  # a draft follows the new version
+
+
+def test_nothing_is_made_on_its_own_while_the_feature_is_off(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    monkeypatch.setattr(service, "SessionLocal", Session)
+    monkeypatch.setattr(service, "get_game_store", lambda: store)
+    monkeypatch.setattr(settings, "features", "")
+    service.on_game_updated({"game": "lagos-apocalypto"})
+    with Session() as db:
+        assert db.query(GamePage).count() == 0
+
+
+# ---- pages approve themselves, with a safety check instead of a person
+
+def test_safety_check():
+    assert service.is_safe("About Zap", "A fast game.", "## Story\nRun and jump.")
+    assert not service.is_safe("About Zap", "Visit https://evil.example now", "Run.")
+    assert not service.is_safe("About Zap", "ok", "Email me @someone <b>hi</b>")
+    assert not service.is_safe("About Zap", "ok", "This is shit")
+    assert not service.is_safe("", "ok", "Run.")
+
+
+def _statuses(Session, game="lagos-apocalypto"):
+    with Session() as db:
+        return {p.kind: p.status for p in db.query(GamePage).filter_by(game_name=game).all()}
+
+
+def test_good_pages_are_approved_by_themselves(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    statuses = _statuses(Session)
+    assert statuses["about"] == "approved" and "draft" not in statuses.values()
+    with Session() as db:
+        assert db.query(GamePage).filter_by(game_name="lagos-apocalypto", status="approved").first().approved_by_id is None
+
+
+def test_off_leaves_drafts_for_a_person(env):
+    _, _, Session, store, _ = env  # off in tests by default
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    assert "approved" not in _statuses(Session).values() and "draft" in _statuses(Session).values()
+
+
+def test_unsafe_text_waits_for_a_person(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    bad = dict(RICH)
+    bad["startng.json"] = json.dumps({"description": "A game. Visit http://spam.example for more cheats and fun.", "controls": ["WASD to move"]})
+    store.games["lagos-apocalypto"] = bad
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    assert "approved" not in _statuses(Session).values()
+
+
+def test_a_page_an_admin_took_down_stays_down(env, monkeypatch):
+    _, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+        page = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="about").one()
+        service.unapprove(db, page.id)
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+        service.approve_waiting(db)
+    assert _statuses(Session)["about"] == "draft"
+
+
+def test_waiting_drafts_of_old_games_are_approved(env, monkeypatch):
+    _, _, Session, store, _ = env
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))  # drafts, as before the feature
+        monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+        assert service.approve_waiting(db) >= 1
+    assert "draft" not in _statuses(Session).values()

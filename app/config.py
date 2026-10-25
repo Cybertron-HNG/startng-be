@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
+    # Game pages (app/features/game_pages) approve themselves when the facts they are written from are enough and the text passes
+    # the safety check (service.is_safe). GAME_PAGES_AUTO_APPROVE=false puts every approval back with a person. A page an admin
+    # takes down or edits stays as the admin left it.
+    game_pages_auto_approve: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before

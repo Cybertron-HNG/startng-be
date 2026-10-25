@@ -37,6 +37,24 @@ def _and(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def _how(stat: dict) -> str:
+    """"highest first", "fastest first" (a time) or "lowest first": how one leaderboard column ranks."""
+    if stat["order"] == "lowest":
+        return "fastest first" if stat["format"] == "time" else "lowest first"
+    return "highest first"
+
+
+def ranking(f: Facts) -> str:
+    """How the leaderboard ranks players, in words, from the game's own columns. "" when it has no leaderboard."""
+    if not f.board:
+        return ""
+    items = [f"{c['label']} ({_how(c)})" for c in f.board]
+    out = f"Players are ranked by {items[0]}."
+    if len(items) > 1:
+        out += f" If two players tie, {_and(items[1:])} decides it."
+    return out + " Only your best run counts. Sign in with start.ng to save yours."
+
+
 def build(kind: str, f: Facts, name: str) -> Draft | str:
     t = f.title
     title = LABELS[kind].format(t=t)
@@ -44,15 +62,27 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
     if kind == "about":
         if not text and len(f.features) < 2:
             return "No description or README text to write from. The creator can add a description in startng.json."
-        parts = ["## What is %s?" % t]
+        parts = ["## What is %s about?" % t]
         if f.description:
             parts.append(_sentence(f.description))
         if f.story and f.story != f.description:
             parts.append(_sentence(f.story))
+        parts += [_sentence(x) for x in f.about_more[:3]]
+        glance = [f"Made by {f.creator}"]
+        if f.published:
+            glance.append(f"On start.ng since {f.published}")
+        glance.append(f"Play it in your browser at {name}.start.ng, with nothing to download")
+        if f.tags:
+            glance.append(f"Categories: {_and(f.tags[:5])}")
+        if f.board:
+            glance.append(f"Leaderboard: yes, ranked by {_and(f.leaderboard)}")
+        if f.controls:
+            glance.append(f"Controls: {_sentence(f.controls[0]).rstrip('.')}")
+        parts += [f"## {t} at a glance"] + [f"- {x}" for x in glance]
         if len(f.features) >= 1:
             parts += ["## Features"] + [f"- {x}" for x in f.features]
-        if f.leaderboard:
-            parts += ["## Leaderboard", f"{t} has a leaderboard. Scores are ranked by {_and(f.leaderboard)}."]
+        if f.board:
+            parts += ["## How scoring works", ranking(f)]
         parts += [f"## Play {t}", f"{t} is free to play in your browser on start.ng, with nothing to download. It was made by {f.creator}."]
         if f.tags:
             parts.append(f"It is a game for people who like {_and([x.lower() for x in f.tags[:4]])}.")
@@ -61,11 +91,20 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
         if not f.controls and not f.steps:
             return "No controls or steps found in the game's files. The creator can add a \"controls\" or \"howToPlay\" list in startng.json."
         parts = []
+        if text:
+            parts += ["## The goal", _sentence(_first_sentence(text, 220))]
         if f.controls:
             parts += ["## Controls"] + [f"- {x}" for x in f.controls]
         if f.steps:
             parts += ["## How to play"] + [f"{i}. {x}" for i, x in enumerate(f.steps, 1)]
-        parts += [f"## Start playing", f"{t} is free in your browser at {name}.start.ng. Nothing to download."]
+        if f.board:
+            parts += ["## Scoring and the leaderboard", ranking(f)]
+        start = [f"Open {t} at {name}.start.ng. It runs in your browser, so there is nothing to download."]
+        if f.board:
+            start.append("Sign in with start.ng first if you want your best run saved to the leaderboard.")
+        if f.walkthrough:
+            start.append(f"Stuck? {t} has a walkthrough with tips from its creator.")
+        parts += ["## Before you start", "\n\n".join(start)]
         lead = f.steps[0] if f.steps else f.controls[0]
         return Draft(title, _meta(f"How to play {t}", lead, "Free in your browser on start.ng"), "\n\n".join(parts))
     if kind == "faq":
@@ -76,9 +115,9 @@ def build(kind: str, f: Facts, name: str) -> Draft | str:
             qa.append((f"What is {t}?", _sentence(text if len(text) <= 300 else _first_sentence(text, 300)))); unique += 1
         qa.append((f"Is {t} free to play?", f"Yes. You can play {t} for free in your browser on start.ng."))
         qa.append((f"Do I need to download or install {t}?", f"No. {t} runs in your browser at {name}.start.ng. There is nothing to install."))
-        qa.append((f"Who made {t}?", f"{t} was made by {f.creator}."))
-        if f.leaderboard:
-            qa.append((f"Does {t} have a leaderboard?", f"Yes. Scores are ranked by {_and(f.leaderboard)}.")); unique += 1
+        qa.append((f"Who made {t}?", f"{t} was made by {f.creator}." + (f" It has been on start.ng since {f.published}." if f.published else "")))
+        if f.board:
+            qa.append((f"Does {t} have a leaderboard?", f"Yes. {ranking(f)}")); unique += 1
         if f.controls or f.steps:
             how = f.steps or f.controls
             qa.append((f"How do I play {t}?", " ".join(_sentence(x) for x in how[:4]))); unique += 1

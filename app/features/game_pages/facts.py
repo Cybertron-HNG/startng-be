@@ -23,11 +23,14 @@ class Facts:
     creator: str = "a builder"
     description: str | None = None
     story: str | None = None
+    about_more: list[str] = field(default_factory=list)  # more of what the game says about itself: README paragraphs, then its own page's text
     controls: list[str] = field(default_factory=list)  # things like "WASD or the arrow keys to move"
     steps: list[str] = field(default_factory=list)  # ordered how-to-play steps
     features: list[str] = field(default_factory=list)
     walkthrough: list[str] = field(default_factory=list)
     leaderboard: list[str] = field(default_factory=list)  # the labels the leaderboard ranks by
+    board: list[dict] = field(default_factory=list)  # the leaderboard's stats as {label, order, format}: how it ranks
+    published: str | None = None  # "March 2026": when the game first went live on start.ng
     tags: list[str] = field(default_factory=list)  # approved tags that say what kind of game it is
     sources: dict[str, str] = field(default_factory=dict)  # fact name -> the file it came from
 
@@ -119,6 +122,14 @@ def from_readme(raw: bytes | None, facts: Facts) -> None:
         first = next((p for h, ls in _sections(text) if not (HOW.search(h) or FEATURES.search(h) or WALK.search(h)) for p in prose(ls) if len(p) >= 40), None)
         if first:
             facts.description, facts.sources["description"] = first[:400], "README"
+    # whatever else the README says about the game (not the description or story already used, nor how to play, features or tips)
+    used = {facts.description, facts.story}
+    for heading, lines in _sections(text):
+        if HOW.search(heading) or FEATURES.search(heading) or WALK.search(heading):
+            continue
+        for p in prose(lines):
+            if len(p) >= 60 and p not in used and p not in facts.about_more and len(facts.about_more) < 3:
+                facts.about_more.append(p)
 
 
 class _Page(HTMLParser):
@@ -172,6 +183,12 @@ def from_page(raw: bytes | None, facts: Facts) -> None:
     meta = clean(p.meta, 400)
     if meta and not facts.description and len(meta) >= 20:
         facts.description, facts.sources["description"] = meta, "the game's page"
+    used = {facts.description, facts.story, *facts.about_more}
+    for tag, text in p.blocks:
+        if (tag in ("p", "blockquote", "div", "span") and 60 <= len(text) <= 300 and len(text.split()) >= 9 and text not in used
+                and not CONTROL_WORDS.search(text) and len(facts.about_more) < 4):
+            facts.about_more.append(text)
+            used.add(text)
     if facts.controls or facts.steps:
         return
     # words under a heading like "How to play", then any short line that names a key or a gesture
@@ -209,4 +226,10 @@ def read_facts(store, game, tags: list[str]) -> Facts:
     if game.leaderboard:
         f.leaderboard = [clean(c.get("label") or c.get("key") or "", 40) for c in game.leaderboard if isinstance(c, dict)]
         f.leaderboard = [c for c in f.leaderboard if c]
+        f.board = [
+            {"label": clean(c.get("label") or c.get("key") or "", 40), "order": "lowest" if c.get("order") == "lowest" else "highest", "format": "time" if c.get("format") == "time" else "number"}
+            for c in game.leaderboard if isinstance(c, dict) and (c.get("label") or c.get("key"))
+        ]
+    if getattr(game, "created_at", None):
+        f.published = game.created_at.strftime("%B %Y")
     return f

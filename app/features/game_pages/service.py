@@ -1,15 +1,42 @@
 """Making, reviewing and reading the pages about games. The server pages and the admin both go through here."""
+import asyncio
+import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ... import flags
+from ...config import settings
+from ...db import SessionLocal
+from ...game_store import get_game_store
 from ...models import Game
 from . import generate as gen
 from .facts import read_facts
 from .models import GamePage
 
+log = logging.getLogger(__name__)
 SIMILAR = 0.85  # two pages this alike are the same page: only the first is made
+
+
+# What must never go public without a person: links, markup, addresses, and words that do not belong on a family-friendly page.
+_UNSAFE = re.compile(r"https?:|www\.|<[a-z/!]|@\w|\bfuck|\bshit\b|\bbitch|\bcunt|\bnigg|\bporn|\bsex(?:y|ual)?\b|\bnude|\bdick\b|\bpussy|\bwhore|\bslut|\brape\b", re.I)
+
+
+def is_safe(title: str, description: str, body: str) -> bool:
+    """The check that stands in for a person reading the page: no links, markup or addresses, no bad words, and a sensible size.
+    Pages are written only from the game's own words, so this is a net, not the main defence."""
+    text = f"{title}\n{description}\n{body}"
+    return bool(title.strip() and body.strip()) and len(title) <= 160 and len(description) <= 300 and len(body) <= 20000 and not _UNSAFE.search(text)
+
+
+def _auto_approve(row: "GamePage") -> bool:
+    """Approve a freshly made draft by itself, if switched on, no person has handled the page, and it passes is_safe."""
+    if not settings.game_pages_auto_approve or row.status != "draft" or row.held or row.edited or not is_safe(row.title, row.description, row.body):
+        return False
+    row.status, row.approved_at, row.approved_by_id = "approved", datetime.now(timezone.utc), None
+    return True
 
 
 class PageError(Exception):
@@ -47,7 +74,8 @@ def generate_for(db: Session, store, game: Game, kinds: list[str] | None = None,
     done: dict[str, str] = {}
     for kind in kinds or gen.KINDS:
         row = db.scalar(select(GamePage).where(GamePage.game_name == game.name, GamePage.kind == kind))
-        if row is not None and (row.status == "approved" or row.edited) and not force:
+        # A page a person approved, edited or took down is theirs. A page that approved itself is remade with the game's new facts.
+        if row is not None and (row.edited or row.held or (row.status == "approved" and row.approved_by_id is not None)) and not force:
             done[kind] = row.status
             continue
         if row is None:
@@ -64,6 +92,8 @@ def generate_for(db: Session, store, game: Game, kinds: list[str] | None = None,
             twin = _similar_to(db, row, facts.title)
             if twin:
                 row.status, row.reason = "skipped", f"Too much like the {gen.SHORT[kind]} page of {twin}. Pages that say the same thing do not help anyone."
+            else:
+                _auto_approve(row)
         done[kind] = row.status
     db.commit()
     return done
@@ -94,6 +124,7 @@ def set_text(db: Session, page_id: int, title: str, description: str, body: str)
     page.title, page.description, page.body, page.edited = title, description, body, True
     if page.status == "approved":
         page.status, page.approved_at, page.approved_by_id = "draft", None, None  # changed text needs a fresh look
+        page.held = True
     db.commit()
     return page
 
@@ -102,7 +133,7 @@ def approve(db: Session, page_id: int, admin_user_id: int) -> GamePage:
     page = get_page(db, page_id)
     if page.status == "skipped":
         raise PageError("This page was not made, so it can't be approved.", 409)
-    page.status, page.approved_at, page.approved_by_id = "approved", datetime.now(timezone.utc), admin_user_id
+    page.status, page.approved_at, page.approved_by_id, page.held = "approved", datetime.now(timezone.utc), admin_user_id, False
     db.commit()
     return page
 
@@ -111,6 +142,7 @@ def unapprove(db: Session, page_id: int) -> GamePage:
     page = get_page(db, page_id)
     if page.status == "approved":
         page.status, page.approved_at, page.approved_by_id = "draft", None, None
+        page.held = True  # a person took it down: it does not go public again unless a person approves it
         db.commit()
     return page
 
@@ -160,3 +192,68 @@ def sitemap_urls(db: Session) -> list[tuple[str, str | None]]:
         .where(GamePage.status == "approved", Game.hidden.is_(None)).order_by(GamePage.game_name, GamePage.kind)
     ).all()
     return [(f"/games/{name}/{kind}", at.date().isoformat() if at else None) for name, kind, at in rows]
+
+
+# ---- pages are made and approved automatically; an admin can edit or take any page down
+
+AUTO_PER_ROUND = 10  # games per round: a new site with 180 games is done in a few minutes, without a spike
+ROUND_SECONDS = 120
+
+
+def make_missing_drafts(db: Session, store, limit: int = AUTO_PER_ROUND) -> int:
+    """Write draft pages for games that have never had any (a new game, or the first run after switching the feature on).
+    Games that already have rows are left alone here: their drafts refresh when they get a new version (on_game_updated).
+    Returns how many games were done."""
+    if store is None:
+        return 0
+    have = set(db.scalars(select(GamePage.game_name).distinct()).all())
+    todo = [g for g in db.scalars(_visible().order_by(Game.created_at.desc())).all() if g.name not in have][:limit]
+    for game in todo:
+        generate_for(db, store, game)
+    return len(todo)
+
+
+def approve_waiting(db: Session, limit: int = 200) -> int:
+    """Drafts already waiting (written before pages approved themselves): approve the ones that pass the safety check."""
+    if not settings.game_pages_auto_approve:
+        return 0
+    n = 0
+    for row in db.scalars(select(GamePage).where(GamePage.status == "draft", GamePage.held.is_(False), GamePage.edited.is_(False)).limit(limit)).all():
+        n += _auto_approve(row)
+    db.commit()
+    return n
+
+
+def on_game_updated(payload: dict) -> None:
+    """A game got a new version: remake its draft pages (approved and edited pages are never touched), so a game that was
+    too thin before gets pages once its creator adds words. Subscribed in __init__.py; never raises."""
+    if not flags.is_on("game_pages"):
+        return
+    store = get_game_store()
+    if store is None:
+        return
+    with SessionLocal() as db:
+        game = db.get(Game, payload["game"])
+        if game is not None and game.hidden is None:
+            generate_for(db, store, game)
+
+
+async def run_forever() -> None:
+    """The background job, started with the server; does nothing while the flag is off."""
+    from starlette.concurrency import run_in_threadpool
+
+    def tick() -> int:
+        if not flags.is_on("game_pages"):
+            return 0
+        with SessionLocal() as db:
+            done = make_missing_drafts(db, get_game_store())
+            return done + approve_waiting(db)
+
+    while True:
+        try:
+            await run_in_threadpool(tick)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Making draft game pages failed")
+        await asyncio.sleep(ROUND_SECONDS)
