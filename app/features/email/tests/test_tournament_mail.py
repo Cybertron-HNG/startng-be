@@ -108,6 +108,33 @@ def test_the_day_email_and_results(env):
     assert "6:00 PM (UTC+1)" in by["fan@example.com"].text and "https://start.ng/tournament" in by["fan@example.com"].text
 
 
+def test_the_day_email_shows_game_covers(env):
+    clock, Session, ids = env
+    clock.at = JUST_STARTED
+    opt_in(Session, ids, "ada", ["tournament"])
+    with Session() as db:
+        game = db.scalar(select(Game).where(Game.name == "lane-dash-0"))
+        game.cover, game.cover_at = "cover.png", datetime(2026, 10, 19, 12, tzinfo=timezone.utc)
+        db.commit()
+        assert tournament_mail.tick(db) is True
+    with Session() as db:
+        sent = LogProvider()
+        service.send_due(db, sent, at=clock.at + timedelta(minutes=11))
+    message = sent.sent[0]
+    assert "https://lane-dash-0.start.ng/cover.png?v=" in message.html
+    assert ">L</span>" in message.html  # a game without a cover keeps the website's letter tile
+    assert "- Lane Dash 0" in message.text  # the plain-text alternative names every game
+
+
+def test_a_day_note_queued_before_covers_still_renders():
+    note = tournament_mail.render_day({
+        "games": ["Lane Dash 0", "Pong"], "ends": "6:00 PM (UTC+1)", "link": "https://start.ng/tournament",
+        "winner": None, "players": 0,
+    })
+    assert "Lane Dash 0" in note.html and "- Pong" in note.text
+    assert note.subject == "Today's tournament: 2 games, 24 hours"
+
+
 def test_not_announced_late_or_while_off(env, monkeypatch):
     clock, Session, ids = env
     opt_in(Session, ids, "ada", ["tournament"])

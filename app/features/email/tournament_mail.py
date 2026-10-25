@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ... import events, flags, tournaments
 from ...config import settings
 from ...models import Tournament, TournamentPoints
-from ...routers.games import _player_name
+from ...routers.games import _cover_url, _player_name
 from . import service
 from .models import Announcement
 from .service import Note, esc
@@ -52,8 +52,52 @@ def _eyebrow(text: str) -> str:
             f'text-transform:uppercase;color:{service.MUTED}">{esc(text)}</p>')
 
 
-def _game_row(index: int, name: str) -> str:
-    """One game as a numbered row, like the numbered steps on the website."""
+# The colours a game's card falls back to when it has no cover, in the same order and with the same hash as the
+# website (src/games.ts): the same game always gets the same pair.
+CARD_COLORS = [
+    ("#ffd400", "#e10600"),
+    ("#1dd1a1", "#0c6e5a"),
+    ("#a55eea", "#4b7bec"),
+    ("#ff6b6b", "#f7b731"),
+    ("#45aaf2", "#2b2f4a"),
+    ("#fd9644", "#eb3b5a"),
+]
+
+
+def _card_colors(slug: str) -> tuple[str, str]:
+    hashed = 0
+    for ch in slug:
+        hashed = (hashed * 31 + ord(ch)) & 0xFFFFFFFF
+    return CARD_COLORS[hashed % len(CARD_COLORS)]
+
+
+def _game(g) -> dict:
+    """A game in the day's email. Notes queued before covers were added hold plain titles, so accept those too."""
+    if isinstance(g, str):
+        return {"name": g, "slug": g.lower().replace(" ", "-"), "cover_url": None}
+    return {"name": g.get("name") or _title(g.get("slug", "")), "slug": g.get("slug") or "", "cover_url": g.get("cover_url")}
+
+
+def _thumb(game: dict) -> str:
+    """The game's picture, or the website's coloured letter tile when it has none."""
+    first, second = _card_colors(game["slug"] or game["name"])
+    if game.get("cover_url"):
+        inside = (f'<img src="{esc(game["cover_url"])}" alt="" width="56" height="56" '
+                  'style="display:block;width:56px;height:56px;object-fit:cover;border:0">')
+    else:
+        letter = (game["name"] or "?")[:1].upper()
+        inside = (f'<span style="font:900 24px/56px {service.FONT};color:rgba(255,255,255,.92);'
+                  f'text-shadow:0 2px 8px rgba(0,0,0,.25)">{esc(letter)}</span>')
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate">'
+        f'<tr><td width="56" height="56" align="center" valign="middle" bgcolor="{first}" '
+        f'style="width:56px;height:56px;background:{first};background-image:linear-gradient(135deg,{first},{second});'
+        f'border-radius:10px;overflow:hidden;text-align:center">{inside}</td></tr></table>'
+    )
+
+
+def _game_row(index: int, game: dict) -> str:
+    """One game as a numbered row, with its cover, like the cards on the website."""
     number = f"{index:02d}"
     return (
         '<tr><td style="padding:0 0 8px">'
@@ -61,14 +105,15 @@ def _game_row(index: int, name: str) -> str:
         f'style="width:100%;background:{service.BG};border:1px solid {service.LINE};border-radius:12px;'
         'border-collapse:separate">'
         '<tr>'
-        '<td width="44" valign="middle" style="padding:10px 0 10px 12px">'
+        f'<td width="78" valign="middle" style="padding:9px 0 9px 9px">{_thumb(game)}</td>'
+        '<td width="44" valign="middle" style="padding:10px 0">'
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate">'
         f'<tr><td width="28" height="28" align="center" bgcolor="{service.LIME}" style="width:28px;height:28px;'
         f'background:{service.LIME};border-radius:7px;font:700 11px/28px {service.MONO};color:{service.INK};'
         f'text-align:center">{number}</td></tr></table>'
         '</td>'
         f'<td valign="middle" style="padding:11px 14px 11px 0;font:700 15px/1.35 {service.FONT};'
-        f'color:{service.INK}">{esc(name)}</td>'
+        f'color:{service.INK}">{esc(game["name"])}</td>'
         '</tr></table></td></tr>'
     )
 
@@ -90,7 +135,7 @@ def _stat(label: str, value: str, note: str = "") -> str:
 
 
 def render_day(d: dict) -> Note:
-    games = d["games"]
+    games = [_game(g) for g in d["games"]]
     winner = d.get("winner")
     subject = (f"{winner} won yesterday's tournament. Today: {len(games)} games" if winner
                else f"Today's tournament: {len(games)} games, 24 hours")
@@ -133,7 +178,7 @@ def render_day(d: dict) -> Note:
         f'{_button(d["link"], "Play today")}'
     )
     text = (f"{won_text}Today's tournament is on: {len(games)} games, 24 hours, one winner. It ends at {d['ends']}.\n\n"
-            + "\n".join(f"- {g}" for g in games) + f"\n\nPlay today: {d['link']}\nShare it on X to enter, then play.")
+            + "\n".join(f"- {g['name']}" for g in games) + f"\n\nPlay today: {d['link']}\nShare it on X to enter, then play.")
     return Note(subject, html, text)
 
 
@@ -219,8 +264,8 @@ def tick(db: Session, at: datetime | None = None) -> bool:
         players = len(db.scalars(select(TournamentPoints.id).where(TournamentPoints.tournament_id == before.id)).all())
         winner = _player_name(before.winner, "Someone")
     service.broadcast("tournament", "tournament_day", {
-        "games": [_title(g.game_name) for g in t.games], "ends": _local_time(t.ends_at), "link": _link(),
-        "winner": winner, "players": players,
+        "games": [{"name": _title(g.game_name), "slug": g.game_name, "cover_url": _cover_url(g.game)} for g in t.games],
+        "ends": _local_time(t.ends_at), "link": _link(), "winner": winner, "players": players,
     }, db=db)
     db.commit()
     return True
