@@ -382,6 +382,22 @@ server's own check.)
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
+## Game review (F2)
+`app/features/game_review`; flag `game_review`; admin permission `games.review`.
+- A **new** game waits for an admin before it's listed: it's off start.ng's lists, search, tournaments and the
+  sitemap (hidden reason `in_review`), but its own address keeps working so the admin and its owner can open it. The
+  publish reply says so: `hidden: "in_review"` (only on a new game; `null` when it's listed).
+- Admins approve it (listed; the owner is emailed) or reject it with a reason (`REJECT_REASONS`) and a note (the
+  game stays unlisted; the owner is emailed why). When the owner pushes a fix (auto-update or a new publish), a
+  rejected game is back in the queue and the super admins are emailed.
+- Only the first publish is reviewed: updates to an approved game go live straight away. A game with no review row is
+  approved (games live before reviews existed, or published while the flag was off). An admin who can review is
+  approved straight away. Both paths that create a game are covered (a signed-in publish, and claiming a game by its
+  `/approve/<code>` link: that word means claiming, not reviewing).
+- Emails: owners (`DEV_EMAILS`) get "we got it", "it's live" or "not approved yet, why"; super admins get "new game
+  to review".
+- Admins: `GET /admin/game-review`, `POST /admin/game-review/{name}/approve`,
+  `POST /admin/game-review/{name}/reject` `{reason, note}`. Owners: `GET /game-review/mine`.
 ## GitHub App: pushes go live straight away (F1)
 `app/features/github_app`; flag `github_app`.
 - Owners install the start.ng GitHub App on their game's repo (Your games links to it: `GET /github/app`). GitHub then

@@ -61,13 +61,13 @@ def add(db, store, name, owner, files):
     db.add(Game(name=name, owner_id=owner.id, repo_url=f"https://github.com/x/{name}"))
 
 
-def rounds(Session, store, n=service.FAILS_IN_A_ROW):
+def rounds(Session, store, n=service.FAILS_IN_A_ROW, fetch=service.fetch_status):
     """n rounds of the background checks, each one checking every listed game."""
     for _ in range(n):
         with Session() as db:
             db.execute(update(GameHealth).values(checked_at=None))
             db.commit()
-            service.check_due(db, store)
+            service.check_due(db, store, fetch)
 
 
 def mail(Session):
@@ -177,3 +177,17 @@ def test_an_outage_seen_over_the_last_20_minutes_holds_even_when_a_round_checks_
             db.get(GameHealth, f"fine-{i}").status = "ok"
         db.commit()
         assert auto_hide.act(db, store, ["broken"], checked=1, failed=1) == ["broken"]
+def test_a_game_waiting_for_review_is_checked_but_never_auto_hidden(env, monkeypatch):
+    client, tokens, Session, store = env
+    with Session() as db:
+        db.get(Game, "broken").hidden = "in_review"  # F2: unlisted, but its address works
+        db.commit()
+    opened = []
+    monkeypatch.setattr(settings, "game_health_http", True)
+    rounds(Session, store, fetch=lambda url: opened.append(url) or 200)
+    with Session() as db:
+        assert db.get(GameHealth, "broken").status == "unhealthy"  # the review card shows it
+        assert db.get(Game, "broken").hidden == "in_review"  # left to the reviewer
+    assert any("broken" in u for u in opened)
+    with Session() as db:
+        assert db.get(Game, "pats-game").hidden == "needs_fixing"  # a live broken game is, though

@@ -35,6 +35,13 @@ FAILS_IN_A_ROW = 3
 CHECK_EVERY = timedelta(minutes=20)  # a healthy game
 RECHECK_EVERY = timedelta(minutes=10)  # a failing one, so a broken game is unhealthy within about half an hour
 PER_TICK = 20  # games checked per run of the background loop (every minute)
+# Hidden games whose address stays online, so they're still checked (and their address opened): a new game waiting
+# for review (F2) is unlisted, not taken offline. They're never hidden by a health check.
+ONLINE_WHILE_HIDDEN = ("in_review",)
+
+
+def _online(game: Game | None) -> bool:
+    return game is None or game.hidden is None or game.hidden in ONLINE_WHILE_HIDDEN
 
 
 def now() -> datetime:
@@ -159,7 +166,7 @@ def check_and_record(db: Session, store: GameStore, name: str, fetch=fetch_statu
     """Check one game now, save it, and tell the others if it just became unhealthy. hide: also hide it if it's
     unhealthy (F8, auto_hide.py); the background round does that itself, for all its games at once."""
     game = db.get(Game, name)
-    row, became = record(db, name, check(store, name, fetch, http=game is None or game.hidden is None))
+    row, became = record(db, name, check(store, name, fetch, http=_online(game)))
     db.commit()
     if became:
         events.publish("game_unhealthy", {"game": name, "reason": row.problems[0]["code"]})
@@ -171,11 +178,11 @@ def check_and_record(db: Session, store: GameStore, name: str, fetch=fetch_statu
 
 
 def due(db: Session, at: datetime | None = None, limit: int = PER_TICK) -> list[str]:
-    """Live games whose next check is due: never checked first, then the longest ago."""
+    """Live games (and games waiting for review) whose next check is due: never checked first, then the longest ago."""
     at = at or now()
     q = (select(Game.name, GameHealth.status, GameHealth.checked_at)
          .outerjoin(GameHealth, GameHealth.game_name == Game.name)
-         .where(Game.hidden.is_(None), Game.name.not_in(NEVER),
+         .where(or_(Game.hidden.is_(None), Game.hidden.in_(ONLINE_WHILE_HIDDEN)), Game.name.not_in(NEVER),
                 or_(GameHealth.checked_at.is_(None), GameHealth.checked_at <= at - RECHECK_EVERY))
          .order_by(GameHealth.checked_at.is_not(None), GameHealth.checked_at))
     out = []
