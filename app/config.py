@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # the safety check (service.is_safe). GAME_PAGES_AUTO_APPROVE=false puts every approval back with a person. A page an admin
     # takes down or edits stays as the admin left it.
     game_pages_auto_approve: bool = True
+    # Tags (app/features/tags) work on their own: every new, updated and existing game gets the rules' suggestions, and they are
+    # approved without a person, except the tags that make a claim about a place or a people (NEEDS_A_PERSON in the tags service),
+    # which wait for one. TAGS_AUTO_APPROVE=false puts every approval back with a person.
+    tags_auto_approve: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before

@@ -34,3 +34,19 @@ class GameTag(Base):
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), index=True)
     status: Mapped[str] = mapped_column(String(10), default="suggested", index=True)  # suggested | approved | rejected (a suggestion an admin turned down: it is not suggested again)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # who decided: "rules" (suggested or approved by the rules), "creator" (the game's own startng.json), "review" (start.ng's own
+    # review of the games that were live first), "admin" (an admin in the tags tab). Rules never touch a game someone else decided for.
+    source: Mapped[str] = mapped_column(String(10), default="rules")
+
+
+class TagRequest(Base):
+    """A category a creator wrote under "other" in startng.json because none of ours fit. Not shown to players: an admin reads them
+    and adds a tag to the list when many games ask for the same thing."""
+
+    __tablename__ = "tag_requests"
+    __table_args__ = (UniqueConstraint("game_name", "text", name="uq_tag_requests"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_name: Mapped[str] = mapped_column(String(40), ForeignKey("games.name", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
