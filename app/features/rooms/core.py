@@ -469,7 +469,7 @@ async def pump(conn: Conn) -> None:
                 seat_human(room, conn)
                 await welcome(room, conn)
                 await add_bot(room)
-            elif room is not None and room.status == "waiting" and len(room.seats) == 1:
+            elif room is not None and room.status == "waiting" and len(room.seats) == 1 and not hosted(room.rules):
                 await add_bot(room)
 
 
