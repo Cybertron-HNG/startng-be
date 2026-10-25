@@ -302,6 +302,58 @@ def send_test(db: Session, to: str, by: str) -> Email:
     return row
 
 
+# ---- account emails: about the person's own games (a game hidden, a review's result), not a topic they chose
+
+def _account_kind(kind: str) -> None:
+    if kind not in KINDS:
+        raise KeyError(f'Unknown email kind "{kind}". Declare it with register_kind first.')
+    if KINDS[kind].topic is not None:
+        raise KeyError(f'Kind "{kind}" has a topic; send it with notify() or broadcast()')
+
+
+def _confirmed_sub(db: Session, address: str, user: User | None = None) -> Subscriber:
+    sub = (subscriber_for(db, user) if user is not None else None) or _subscriber(db, address)
+    if sub is None:
+        sub = Subscriber(email=address.strip().lower(), unsubscribe_token=_new_token(), confirmed_at=now())
+        db.add(sub)
+    if user is not None and sub.user_id is None:
+        sub.user_id = user.id
+    if sub.confirmed_at is None:
+        sub.confirmed_at = now()
+    db.flush()
+    return sub
+
+
+def send_to_user(db: Session, user: User, kind: str, data: dict) -> bool:
+    """Email a player about their own game, whatever topics they chose (a topic-less kind, outside the daily cap).
+    Only to an address Google has checked, never to a bounced one. The caller commits. Does nothing while the email
+    feature is off. Returns whether it was queued."""
+    _account_kind(kind)
+    if not flags.is_on(NAME) or not user.google_sub or user.blocked_at is not None:
+        return False
+    sub = _confirmed_sub(db, user.email, user)
+    if sub.bad_at is not None:
+        return False
+    _queue(db, sub, kind, data)
+    return True
+
+
+def send_to_admins(db: Session, kind: str, data: dict) -> int:
+    """Email every super admin (SUPER_ADMIN_EMAILS). The caller commits. Returns how many were queued."""
+    from ...admin import super_admins
+
+    _account_kind(kind)
+    if not flags.is_on(NAME):
+        return 0
+    sent = 0
+    for address in sorted(super_admins()):
+        sub = _confirmed_sub(db, address)
+        if sub.bad_at is None:
+            _queue(db, sub, kind, data)
+            sent += 1
+    return sent
+
+
 # ---- the sender
 
 def _page(body_html: str, body_text: str, sub: Subscriber, topics: list[str]) -> tuple[str, str]:

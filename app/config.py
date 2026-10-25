@@ -6,7 +6,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/startng"
     jwt_secret: str = "change-me"
-    jwt_expire_minutes: int = 1440
+    # How long a sign-in lasts without a visit, and that it renews with every visit (app/security.py): a week by default, and
+    # a year for someone who chose to stay signed in.
+    session_days: int = 7
+    remember_days: int = 365
     google_client_id: str = ""
     cors_origins: str = "http://localhost:5173"
     # Games call the API from their own address (<name>.start.ng; <name>.start.localhost while testing)
@@ -74,6 +77,19 @@ class Settings(BaseSettings):
     support_bug_reward: int = 50
     support_rewards_per_day: int = 3
     support_reports_per_day: int = 5
+    # Game pages (app/features/game_pages) approve themselves when the facts they are written from are enough and the text passes
+    # the safety check (service.is_safe). GAME_PAGES_AUTO_APPROVE=false puts every approval back with a person. A page an admin
+    # takes down or edits stays as the admin left it.
+    game_pages_auto_approve: bool = True
+    # Tags (app/features/tags) work on their own: every new, updated and existing game gets the rules' suggestions, and they are
+    # approved without a person, except the tags that make a claim about a place or a people (NEEDS_A_PERSON in the tags service),
+    # which wait for one. TAGS_AUTO_APPROVE=false puts every approval back with a person.
+    tags_auto_approve: bool = True
+    # The key the daily agent sends (Authorization: Bearer <key>) to read the games that need pages and save the pages it wrote.
+    # Empty (the default) shuts that door: the agent routes answer 404.
+    agent_api_key: str = ""
+    # Switches an admin sets in the admin page (table feature_switches) win over FEATURES. Off in tests.
+    feature_switches: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before
@@ -94,6 +110,11 @@ class Settings(BaseSettings):
     # Game health (app/features/game_health, H2): besides checking each game's files, open its address and expect an
     # answer. Off when the games' addresses aren't reachable from the API (a laptop without the Worker running).
     game_health_http: bool = True
+    # A game that fails its health checks 3 times in a row is hidden through "needs fixing" (needs that feature on).
+    game_health_auto_hide: bool = True
+    # Emails to developers about their own games (hidden by a health check, a review's result). Super admins are
+    # always emailed. Off: developers still see everything in Your games.
+    dev_emails: bool = True
     email_merge_minutes: int = 10  # an email waits this long, so notes for the same player that day share one email
 
 
