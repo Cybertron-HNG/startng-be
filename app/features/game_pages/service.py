@@ -75,7 +75,7 @@ def generate_for(db: Session, store, game: Game, kinds: list[str] | None = None,
     for kind in kinds or gen.KINDS:
         row = db.scalar(select(GamePage).where(GamePage.game_name == game.name, GamePage.kind == kind))
         # A page a person approved, edited or took down is theirs. A page that approved itself is remade with the game's new facts.
-        if row is not None and (row.edited or row.held or (row.status == "approved" and row.approved_by_id is not None)) and not force:
+        if row is not None and (row.edited or row.held or row.writer == "agent" or (row.status == "approved" and row.approved_by_id is not None)) and not force:
             done[kind] = row.status
             continue
         if row is None:

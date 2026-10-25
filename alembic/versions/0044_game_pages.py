@@ -26,6 +26,7 @@ def upgrade() -> None:
         sa.Column("facts", sa.JSON()),
         sa.Column("edited", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("held", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("writer", sa.String(10), nullable=False, server_default="rules"),
         sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("approved_at", sa.DateTime(timezone=True)),
         sa.Column("approved_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL")),

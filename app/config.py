@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # approved without a person, except the tags that make a claim about a place or a people (NEEDS_A_PERSON in the tags service),
     # which wait for one. TAGS_AUTO_APPROVE=false puts every approval back with a person.
     tags_auto_approve: bool = True
+    # The key the daily agent sends (Authorization: Bearer <key>) to read the games that need pages and save the pages it wrote.
+    # Empty (the default) shuts that door: the agent routes answer 404.
+    agent_api_key: str = ""
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before
