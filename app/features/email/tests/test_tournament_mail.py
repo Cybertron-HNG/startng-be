@@ -135,6 +135,55 @@ def test_a_day_note_queued_before_covers_still_renders():
     assert note.subject == "Today's tournament: 2 games, 24 hours"
 
 
+def test_card_colors_match_the_website():
+    # Values from the website's hash (src/games.ts: hash * 31 + charCodeAt, >>> 0, mod 6). The same
+    # game always gets the same tile in both places.
+    assert tournament_mail._card_colors("lane-dash-0") == ("#a55eea", "#4b7bec")
+    assert tournament_mail._card_colors("neon-drift-arcade") == ("#1dd1a1", "#0c6e5a")
+    assert tournament_mail._card_colors("mami") == ("#ffd400", "#e10600")
+    assert tournament_mail._card_colors("") == tournament_mail.CARD_COLORS[0]
+
+
+def test_a_cover_is_shown_as_the_game_thumbnail():
+    thumb = tournament_mail._thumb({
+        "name": "Lane Dash 0", "slug": "lane-dash-0",
+        "cover_url": "https://lane-dash-0.start.ng/cover.png?v=1",
+    })
+    assert '<img src="https://lane-dash-0.start.ng/cover.png?v=1"' in thumb
+    assert "border-radius:10px" in thumb
+    assert ">L</span>" not in thumb  # no letter tile when there is a cover
+
+
+def test_a_game_without_a_cover_gets_the_websites_letter_tile():
+    thumb = tournament_mail._thumb({"name": "neon drift arcade", "slug": "neon-drift-arcade", "cover_url": None})
+    assert "<img" not in thumb
+    assert ">N</span>" in thumb
+    # the same gradient pair the website's card uses for this slug
+    assert "linear-gradient(135deg,#1dd1a1,#0c6e5a)" in thumb
+
+
+def test_cover_urls_are_escaped():
+    note = tournament_mail.render_day({
+        "games": [{
+            "name": "Lane Dash 0", "slug": "lane-dash-0",
+            "cover_url": 'https://lane-dash-0.start.ng/cover.png?v=1&next="x"',
+        }],
+        "ends": "6:00 PM (UTC+1)", "link": "https://start.ng/tournament", "winner": None, "players": 0,
+    })
+    assert '?v=1&amp;next=&quot;x&quot;' in note.html
+    assert 'next="x"' not in note.html
+
+
+def test_a_day_note_takes_old_and_new_games_together():
+    note = tournament_mail.render_day({
+        "games": ["Coin Dash Game", {"slug": "lane-dash-0", "cover_url": None}],
+        "ends": "6:00 PM (UTC+1)", "link": "https://start.ng/tournament", "winner": None, "players": 0,
+    })
+    assert "Coin Dash Game" in note.html  # an old plain-title entry
+    assert "Lane Dash 0" in note.html  # a new entry with no name falls back to its slug
+    assert "- Coin Dash Game" in note.text and "- Lane Dash 0" in note.text
+
+
 def test_not_announced_late_or_while_off(env, monkeypatch):
     clock, Session, ids = env
     opt_in(Session, ids, "ada", ["tournament"])

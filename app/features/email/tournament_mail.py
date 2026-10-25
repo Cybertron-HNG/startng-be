@@ -83,7 +83,7 @@ def _thumb(game: dict) -> str:
     first, second = _card_colors(game["slug"] or game["name"])
     if game.get("cover_url"):
         inside = (f'<img src="{esc(game["cover_url"])}" alt="" width="56" height="56" '
-                  'style="display:block;width:56px;height:56px;object-fit:cover;border:0">')
+                  'style="display:block;width:56px;height:56px;object-fit:cover;border:0;border-radius:10px">')
     else:
         letter = (game["name"] or "?")[:1].upper()
         inside = (f'<span style="font:900 24px/56px {service.FONT};color:rgba(255,255,255,.92);'
