@@ -155,3 +155,25 @@ def test_check_now_hides_too_and_a_hidden_game_is_checked_without_its_address(en
     with Session() as db:
         row = service.check_and_record(db, store, "broken", fetch=lambda url: 404)
         assert row.status == "ok"
+
+
+def test_an_outage_seen_over_the_last_20_minutes_holds_even_when_a_round_checks_one_game(env):
+    """In production a round only checks the games that are due, often just a few. If most games failed their last
+    check within CHECK_EVERY, it's start.ng that's down: nothing is hidden."""
+    client, tokens, Session, store = env
+    now = service.now()
+    with Session() as db:
+        for i in range(8):  # every healthy game failed its check a few minutes ago
+            db.add(GameHealth(game_name=f"fine-{i}", status="failing", failures=1, checked_at=now, problems=[]))
+        db.add(GameHealth(game_name="broken", status="unhealthy", failures=3, checked_at=now,
+                          problems=[{"code": "missing_file", "message": "game.js is missing"}]))
+        db.commit()
+        assert auto_hide.act(db, store, ["broken"], checked=1, failed=1) == []
+        assert db.get(Game, "broken").hidden is None
+    assert mail(Session) == [("boss@example.com", "admin_health_outage"), ("sam@example.com", "admin_health_outage")]
+    # once the others pass again, the broken one is hidden on its next check
+    with Session() as db:
+        for i in range(8):
+            db.get(GameHealth, f"fine-{i}").status = "ok"
+        db.commit()
+        assert auto_hide.act(db, store, ["broken"], checked=1, failed=1) == ["broken"]

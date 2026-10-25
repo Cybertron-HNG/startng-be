@@ -4,7 +4,9 @@ An unhealthy game (FAILS_IN_A_ROW failed checks) is marked "needs fixing" by sta
 owner sees why in Your games and says when it's fixed, and an admin checks it and puts it back (the Needs fixing tab).
 
 When many games fail together it's more likely start.ng (the Worker, R2, the API) than the games, so nothing is
-hidden: the super admins get one alert an hour instead. Needs GAME_HEALTH_AUTO_HIDE and the needs_fixing flag.
+hidden: the super admins get one alert an hour instead. "Together" is judged on the round and on every check of the
+last CHECK_EVERY, because a round only checks the games that are due. A game that's unhealthy is hidden whenever it's
+next checked and nothing holds it back, including games that were unhealthy before this shipped. Needs GAME_HEALTH_AUTO_HIDE and the needs_fixing flag.
 """
 import logging
 from datetime import timedelta
@@ -21,11 +23,12 @@ from ..email.service import Note, esc
 from ..needs_fixing import service as needs_fixing
 from ..needs_fixing.models import FixRequest
 from .models import GameHealth
+from .service import CHECK_EVERY
 
 log = logging.getLogger(__name__)
 
 HIDDEN_BY = needs_fixing.HEALTH_CHECK  # FixRequest.created_by for games hidden here
-OUTAGE_SHARE = 0.3  # a run where this share of the games checked failed...
+OUTAGE_SHARE = 0.3  # this share of the games checked failing (in a round, or in the last CHECK_EVERY)...
 OUTAGE_MIN_CHECKED = 5  # ...out of at least this many looks like start.ng is down
 MAX_HIDDEN_PER_HOUR = 5  # more than this in an hour looks like start.ng too
 ALERT_EVERY = timedelta(hours=1)
@@ -108,8 +111,16 @@ def enabled() -> bool:
     return settings.game_health_auto_hide and flags.is_on("needs_fixing")
 
 
-def looks_like_outage(checked: int, failed: int) -> bool:
-    return checked >= OUTAGE_MIN_CHECKED and failed >= checked * OUTAGE_SHARE
+def looks_like_outage(db: Session, checked: int, failed: int) -> bool:
+    """Many games failing at once: in this round, or in every check of the last CHECK_EVERY (a round only checks the
+    games that are due, so in production it's often just a few)."""
+    if checked >= OUTAGE_MIN_CHECKED and failed >= checked * OUTAGE_SHARE:
+        return True
+    since = email.now() - CHECK_EVERY
+    rows = db.execute(select(GameHealth.status).join(Game, Game.name == GameHealth.game_name).where(
+        GameHealth.checked_at >= since, Game.hidden.is_(None))).scalars().all()
+    bad = sum(status in ("failing", "unhealthy") for status in rows)
+    return len(rows) >= OUTAGE_MIN_CHECKED and bad >= len(rows) * OUTAGE_SHARE
 
 
 def hidden_last_hour(db: Session) -> int:
@@ -156,7 +167,7 @@ def act(db: Session, store, names: list[str], checked: int, failed: int) -> list
     todo = [(g, r) for g, r in rows if g is not None and r is not None and r.status == "unhealthy" and g.hidden is None]
     if not todo:
         return []
-    if looks_like_outage(checked, failed) or hidden_last_hour(db) + len(todo) > MAX_HIDDEN_PER_HOUR:
+    if looks_like_outage(db, checked, failed) or hidden_last_hour(db) + len(todo) > MAX_HIDDEN_PER_HOUR:
         _alert_outage(db, [g.name for g, _ in todo], checked, failed)
         return []
     return [g.name for g, r in todo if hide(db, store, g, r)]

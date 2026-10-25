@@ -374,8 +374,10 @@ server's own check.)
   "start.ng health check"): hidden everywhere, its owner sees why in Your games and says when it's fixed, and an admin
   puts it back from Needs fixing. Its owner is emailed (`DEV_EMAILS`; only to Google-checked addresses) and so are the
   super admins. A hidden game is checked without opening its address (that shows an error page on purpose).
-  **Guard:** when 30% or more of a round's games fail (5 or more checked), or more than 5 would be hidden in an hour,
-  it looks like start.ng is down: nothing is hidden and the super admins get one alert an hour. Needs the
+  **Guard:** when 30% or more of the games checked fail (5 or more checked, in the round or in all checks of the last
+  20 minutes, since a round only checks the games that are due), or more than 5 would be hidden in an hour, it looks
+  like start.ng is down: nothing is hidden and the super admins get one alert an hour. A game already unhealthy when
+  this ships is hidden on its next failed check, like any other. Needs the
   `needs_fixing` flag and `GAME_HEALTH_AUTO_HIDE` (on by default).
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
