@@ -21,9 +21,37 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
-def create_token(user_id: int) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    return jwt.encode({"sub": str(user_id), "exp": exp}, settings.jwt_secret, algorithm="HS256")
+def session_lifetime(remember: bool) -> timedelta:
+    """How long a sign-in lasts without a visit: a week, or a year for someone who chose to stay signed in."""
+    return timedelta(days=settings.remember_days if remember else settings.session_days)
+
+
+def create_token(user_id: int, remember: bool = False) -> str:
+    exp = datetime.now(timezone.utc) + session_lifetime(remember)
+    claims = {"sub": str(user_id), "exp": exp}
+    if remember:
+        claims["rem"] = 1  # stay signed in: the longer lifetime, kept every time the token is renewed
+    return jwt.encode(claims, settings.jwt_secret, algorithm="HS256")
+
+
+def renewed_token(token: str, db: Session) -> str | None:
+    """A fresh token for a sign-in that is past half of its life, so it lasts as long as the person keeps coming back: every visit
+    in the week (or the year) pushes the end further out. None when the token is not a usable sign-in or has plenty of time left.
+    A token from before this (24 hours, no "rem") is renewed at once into a week."""
+    try:
+        claims = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        if claims.get("typ"):  # a live-room ticket or a game session, not a sign-in
+            return None
+        remember = bool(claims.get("rem"))
+        left = datetime.fromtimestamp(claims["exp"], timezone.utc) - datetime.now(timezone.utc)
+        if left > session_lifetime(remember) / 2:
+            return None
+        user = db.get(User, int(claims["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
+        return None
+    if user is None or user.blocked_at is not None:
+        return None
+    return create_token(user.id, remember)
 
 
 def current_user(

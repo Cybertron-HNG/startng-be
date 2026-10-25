@@ -409,6 +409,18 @@ Part of `app/features/private_tournaments` (Tr1); admin permission `tournaments.
   to review".
 - Admins: `GET /admin/game-review`, `POST /admin/game-review/{name}/approve`,
   `POST /admin/game-review/{name}/reject` `{reason, note}`. Owners: `GET /game-review/mine`.
+## GitHub App: pushes go live straight away (F1)
+`app/features/github_app`; flag `github_app`.
+- Owners install the start.ng GitHub App on their game's repo (Your games links to it: `GET /github/app`). GitHub then
+  calls `POST /github/webhook` on every push, signed with `GITHUB_WEBHOOK_SECRET` (`X-Hub-Signature-256`, checked on
+  the raw body). A push to the branch the game is published from (or the repo's default branch) republishes it in the
+  background, the same way `app/auto_update.py` does (`auto_update.update_to`): an update that can't go live is shown
+  to the owner, and a GitHub or storage hiccup is tried again by the regular check. GitHub sending the same push again
+  does nothing (that commit is live already). Checking every few minutes stays for repos without the app.
+- **Setting it up (an owner of the GitHub org):** create a GitHub App with permissions Contents: read and Metadata:
+  read, subscribed to the Push event, webhook URL `<API_URL>/github/webhook` and a long random webhook secret. Put the
+  secret in `GITHUB_WEBHOOK_SECRET` and the app's short name (from github.com/apps/<slug>) in `GITHUB_APP_SLUG`.
+  Public repos need no private key.
 
 ## Tournament emails (PRD H1)
 `app/features/email/tournament_mail.py`, part of the `email` feature.
@@ -461,7 +473,10 @@ the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes 
   required. Staff picks have no checklist. Owners see theirs with `GET /games/{name}/featuring`.
   Admins: `GET /admin/featured`, `PUT`/`DELETE /admin/featured/{featured|staff}/{game}`, `POST .../move?direction=up|down`.
 - **Play next** (C10): `GET /discover/next?after=<game>&limit=1-3`: best ranked first, games the player hasn't opened ahead
-  of those they have.
+  of those they have. **Inside a tournament** only that tournament's other games are offered (in its order, after this game, then
+  round to the start; the ones not opened first) and the reply names it (`tournament`): today's public tournament, or a private
+  one the player is a member of (and only while the `private_tournaments` feature is on). A game in no running tournament, or
+  one whose tournament has no other visible game, gets the usual suggestions.
 ## Categories, ratings and filters (PRD T1)
 `app/features/catalog`; flag `catalog` (ratings also need `progress`, for game opens); admin permission `ratings.moderate`.
 - **Categories:** Action, Racing, Puzzle, Card & board, Arcade, Adventure, Sports, Strategy, Educational. A game sets one in
@@ -504,3 +519,36 @@ players are never identified to creators.
   (one row per game per day, Nigeria time), so history survives the 30-day deletion of raw plays. Days after the last
   rollup (today) are counted live. A missed night is filled in by the next run.
 - **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
+
+## Rooms: refereed multiplayer games (Hamzat)
+`app/features/rooms`; flag `rooms` (off by default). Rooms with a code to share, matchmaking, a bot, and coming back after a
+dropped connection, for games start.ng referees itself (tic-tac-toe first, then chess). The Hangout is not touched.
+- **Connect:** `POST /games/{game}/ticket` (like the Hangout), then the WebSocket
+  `/rooms/live?game=<game>&ticket=...&room=new|match|<CODE>`. `new` makes a room and gives its code, `match` joins the matchmaking
+  line, a code joins a friend's room. Asking for `new` or `match` while you are already in a room puts you back in it.
+- **Messages:** see the top of `core.py`. You send `move`, `resign`, `bot`, `ping`; you get `welcome`, `state` (your own view of the
+  game), `join`, `away`, `back`, `waiting`, `no_match`, `error`, `closed`.
+- **Times:** a room waits 15 minutes for a friend (matchmaking: 60 seconds, with a bot offered after 15); a dropped player keeps
+  their seat for 10 minutes, after which the other player wins; a room closes after 30 minutes without a move, 10 minutes with
+  nobody in it, 5 minutes after the game ends, or 4 hours at most.
+- **Limits:** 2 KB a message, 30 messages a second, 10 wrong room codes a minute.
+- **Other routes:** `GET /rooms/online?game=` (people in the game's rooms or in the line), `GET /rooms/games`.
+- **A new game** is a rules module in `app/features/rooms/games/` (the interface is in `base.py`) and one line in
+  `games/__init__.py`. The game also needs a published game with the same name (the ticket is for it).
+- **Relay rooms:** a published game that start.ng does not referee gets a room that only carries messages (`&seats=2..8` when it makes one, 4 by default; a code is needed, no matchmaking or bots). A player sends `{type: "send", data, to?}` and the others get `{type: "message", from: seat, data}`; `{type: "set_state", version, data}` writes the room's shared state (8 KB at most) and is refused with `state_conflict` (and the newer state) if the version is old; a joiner's `welcome` carries `shared: {version, data}`. The creator is seat 0 (`host`). Same limits as the other rooms (2 KB a message, 30 a second).
+- Rooms live in this process's memory: a restart empties them, and more than one API instance would split players.
+## Staying signed in
+A sign-in (the token the website keeps) lasts `SESSION_DAYS` (7) without a visit, or `REMEMBER_DAYS` (365) when the person ticked "Keep
+me signed in" (`remember: true` on `/auth/google`, `/auth/login` and `/auth/register`; the token carries `rem`). Every visit pushes it
+out again: when a request with a valid token works and the token is past half of its life, the answer carries a fresh one in the
+`X-Refreshed-Token` header (a middleware in `app/main.py`; CORS exposes the header) and the website swaps it in. Someone who stays
+away longer than the lifetime is signed out. An old 24 hour token becomes a week on its next visit. Live-room tickets and game
+sessions are never renewed, and neither are tokens of blocked players.
+## Feature switches (admin page)
+A feature is on when the `FEATURES` setting lists it, **unless** a super admin has switched it in the admin page (the Features tab,
+`app/routers/feature_switches.py`, table `feature_switches`): a switch wins over the setting, both ways, and "use the server setting"
+removes it. No redeploy: the process that took the change sees it at once, others within 10 seconds (`flags.CACHE_SECONDS`).
+- `GET /admin/features` (every feature, whether it is on, where that comes from, a caution for ones that change real behaviour) and
+  `PUT /admin/features/{name}` `{enabled: true | false | null}`, super admins only; each change is in the activity log.
+- `GET /features` (public) lists what is on after the switches are applied. Without the table (before the migration) the setting alone decides.
+- Tests don't read switches from a database (`FEATURE_SWITCHES` is off in `tests/conftest.py`); the switch tests turn it on.

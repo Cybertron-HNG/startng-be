@@ -1,13 +1,13 @@
 """game review (F2): game_reviews, an admin's look at a new game before it's listed
 
-Revision ID: 0045
-Revises: 0042
+Revision ID: 0047
+Revises: 0046
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0045"
-down_revision = "0042"  # renumber right before merging (0043 and 0044 are taken by open PRs)
+revision = "0047"
+down_revision = "0046"
 branch_labels = None
 depends_on = None
 
