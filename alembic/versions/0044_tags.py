@@ -1,13 +1,13 @@
 """tags: tags and game_tags (many tags per game, a person approves each one)
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0044
+Revises: 0043
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0043"
-down_revision = "0042"
+revision = "0044"
+down_revision = "0043"
 branch_labels = None
 depends_on = None
 
