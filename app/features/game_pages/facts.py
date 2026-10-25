@@ -28,6 +28,8 @@ class Facts:
     features: list[str] = field(default_factory=list)
     walkthrough: list[str] = field(default_factory=list)
     leaderboard: list[str] = field(default_factory=list)  # the labels the leaderboard ranks by
+    board: list[dict] = field(default_factory=list)  # the leaderboard's stats as {label, order, format}: how it ranks
+    published: str | None = None  # "March 2026": when the game first went live on start.ng
     tags: list[str] = field(default_factory=list)  # approved tags that say what kind of game it is
     sources: dict[str, str] = field(default_factory=dict)  # fact name -> the file it came from
 
@@ -209,4 +211,10 @@ def read_facts(store, game, tags: list[str]) -> Facts:
     if game.leaderboard:
         f.leaderboard = [clean(c.get("label") or c.get("key") or "", 40) for c in game.leaderboard if isinstance(c, dict)]
         f.leaderboard = [c for c in f.leaderboard if c]
+        f.board = [
+            {"label": clean(c.get("label") or c.get("key") or "", 40), "order": "lowest" if c.get("order") == "lowest" else "highest", "format": "time" if c.get("format") == "time" else "number"}
+            for c in game.leaderboard if isinstance(c, dict) and (c.get("label") or c.get("key"))
+        ]
+    if getattr(game, "created_at", None):
+        f.published = game.created_at.strftime("%B %Y")
     return f

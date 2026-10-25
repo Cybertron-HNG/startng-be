@@ -3,7 +3,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from ...activity import record
 from ...admin import AdminUser, require
@@ -11,8 +12,9 @@ from ...db import get_db
 from ...game_store import get_game_store
 from ...models import Game
 from ...routers.games import _cover_url, _player_name
+from ...routers.games import leaderboard as game_leaderboard
 from ...routers.pages import SHARE_IMAGE, _esc, _get_shell, _page, _site, _title
-from ...server_html import chrome
+from ...server_html import chrome, esc, game_card
 from ...storage import game_url
 from . import generate as gen
 from . import service
@@ -42,6 +44,73 @@ def _category_links(db: Session, name: str) -> list[tuple[str, str]]:
         return []
     from ..tags import service as tags
     return tags.links_for(db, name)
+
+
+def _stat(stat: dict, value) -> str:
+    if value is None:
+        return "–"
+    return f"{value // 60}:{value % 60:02d}" if stat.get("format") == "time" else f"{value:,}"
+
+
+def _top_players(db: Session, game: Game, kind: str) -> str:
+    """The best players right now, read live (so it is never out of date). Only for a game that has a leaderboard."""
+    if kind not in ("about", "how-to-play") or not game.leaderboard:
+        return ""
+    try:
+        entries = game_leaderboard(game.name, 5, db)
+    except Exception:  # a leaderboard that can't be read is left out, never an error page
+        return ""
+    if not entries:
+        return ""
+    stats = [c for c in game.leaderboard if isinstance(c, dict) and c.get("key")]
+    def score_line(e) -> str:
+        return " · ".join("{} {}".format(c.get("label") or c["key"], _stat(c, e.stats.get(c["key"]))) for c in stats)
+
+    rows = "".join(f"<li>{e.rank}. <b>{_esc(e.name)}</b> <span>{_esc(score_line(e))}</span></li>" for e in entries)
+    return (
+        f'<section class="game-sub-links game-sub-top" aria-label="Top players"><h2>Top players right now</h2><ul>{rows}</ul>'
+        f'<p><a href="/games/{esc(game.name)}">See the full leaderboard</a></p></section>'
+    )
+
+
+def _cards(games: list[Game]) -> str:
+    return "".join(game_card(g.name, _title(g.name), _player_name(g.owner, "a builder"), game_url(g.name).split("://", 1)[-1], _cover_url(g)) for g in games)
+
+
+def _more_games(db: Session, game: Game, by: str) -> str:
+    """More games by the same creator, then games in the same category: real links to other pages on start.ng, read live."""
+    sections = []
+    seen = {game.name}
+    mine = db.scalars(
+        select(Game).options(selectinload(Game.owner)).where(Game.owner_id == game.owner_id, Game.name != game.name, Game.hidden.is_(None))
+        .order_by(Game.updated_at.desc()).limit(4)
+    ).all()
+    if mine:
+        seen |= {g.name for g in mine}
+        sections.append(f'<section class="game-sub-more" aria-label="More games by {esc(by)}"><div class="section-head"><h2>More games by {esc(by)}</h2></div><div class="grid">{_cards(list(mine))}</div></section>')
+    similar = _similar_games(db, game, seen)
+    if similar:
+        sections.append(f'<section class="game-sub-more" aria-label="Similar games"><div class="section-head"><h2>Games like {esc(_title(game.name))}</h2></div><div class="grid">{_cards(similar)}</div></section>')
+    return "".join(sections)
+
+
+def _similar_games(db: Session, game: Game, seen: set[str]) -> list[Game]:
+    """Games in the first category this game shares with others (not the four "words people search" ones that every game has)."""
+    from ... import flags
+    if not flags.is_on("tags"):
+        return []
+    from ..tags import service as tags
+    for tag in tags.tags_of(db, game.name):
+        if tag.everywhere:
+            continue
+        try:
+            _, _, games = tags.games_of(db, tag.slug)
+        except tags.TagError:
+            continue  # a category with too few games has no public page
+        found = [g for g in games if g.name not in seen][:4]
+        if found:
+            return found
+    return []
 
 
 @router.get("/pages/games/{name}/{kind}", response_class=Response, include_in_schema=False)
@@ -92,8 +161,9 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
         f'<p class="eyebrow">{_esc(title)}</p><h1>{_esc(page.title)}</h1>'
         f'<div class="game-sub-body">{gen.to_html(page.body)}</div>'
         f'<p class="game-sub-play"><a class="btn" href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> <a class="btn ghost" href="/games/{game.name}">{_esc(title)} on start.ng</a></p>'
+        f"{_top_players(db, game, kind)}"
         f'<nav class="game-sub-links" aria-label="More about {_esc(title)}"><h2>More about {_esc(title)}</h2><ul>{others}<li><a href="/games/{game.name}">{_esc(title)} leaderboard and details</a></li><li><a href="/categories">Browse games by category</a></li></ul></nav>'
-        f"{categories}</main>"
+        f"{categories}{_more_games(db, game, by)}</main>"
     )
     html = _page(shell, title=f"{page.title} · start.ng", description=page.description or f"{page.title} on start.ng", path=path, image=image, body=chrome(inner), extra_head="\n    ".join(extra))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

@@ -174,7 +174,7 @@ def test_two_games_with_the_same_words_get_one_page_not_two(env):
     client, tokens, Session, store, _ = env
     with Session() as db:
         owner = db.query(User).first()
-        db.add(Game(name="lagos-apocalypto-copy", owner_id=owner.id, repo_url="z"))
+        db.add(Game(name="lagos-apocalypto-copy", owner_id=owner.id, repo_url="z", leaderboard=[{"key": "score", "label": "Score"}, {"key": "time", "label": "Time"}]))
         db.commit()
     store.games["lagos-apocalypto-copy"] = RICH
     with Session() as db:
@@ -333,3 +333,131 @@ def test_a_game_page_has_no_links_to_pages_while_the_flag_is_off(env, monkeypatc
     _approve(client, tokens, Session, store, kind="faq")
     monkeypatch.setattr(settings, "features", "")
     assert "More about this game" not in client.get("/pages/games/lagos-apocalypto").text
+
+
+# ---- the pages say more than the creator's own words: only facts we really have
+
+BOARD = [{"key": "stars", "label": "Stars", "order": "highest", "format": "number"}, {"key": "time", "label": "Time", "order": "lowest", "format": "time"}]
+
+
+def _facts(**over):
+    base = dict(title="Star Hop", creator="Ada", description="Hop between stars before the sky runs out of them.", controls=["Tap to hop", "Hold to glide"],
+                tags=["Endless runners"], published="March 2026", board=BOARD, leaderboard=["Stars", "Time"])
+    return F.Facts(**{**base, **over})
+
+
+def test_scoring_is_explained_from_the_games_own_columns():
+    text = gen.ranking(_facts())
+    assert text.startswith("Players are ranked by Stars (highest first).")
+    assert "If two players tie, Time (fastest first) decides it." in text
+    assert "Only your best run counts" in text
+    assert gen.ranking(_facts(board=[], leaderboard=[])) == ""  # no leaderboard, nothing to say
+
+
+def test_the_about_page_has_the_facts_at_a_glance():
+    body = gen.build("about", _facts(features=["Ten levels"]), "star-hop").body
+    for line in ("## Star Hop at a glance", "- Made by Ada", "- On start.ng since March 2026", "- Play it in your browser at star-hop.start.ng, with nothing to download",
+                 "- Categories: Endless runners", "- Leaderboard: yes, ranked by Stars and Time", "- Controls: Tap to hop", "## How scoring works"):
+        assert line in body, line
+
+
+def test_the_about_page_leaves_out_what_it_doesnt_know():
+    body = gen.build("about", _facts(board=[], leaderboard=[], tags=[], published=None, controls=[]), "star-hop").body
+    assert "at a glance" in body and "Made by Ada" in body
+    for missing in ("On start.ng since", "Categories:", "Leaderboard:", "Controls:", "How scoring works"):
+        assert missing not in body, missing
+
+
+def test_how_to_play_has_a_goal_scoring_and_what_to_do_first():
+    body = gen.build("how-to-play", _facts(steps=["Hop to the next star", "Do not fall"], walkthrough=["a", "b", "c"]), "star-hop").body
+    for part in ("## The goal", "Hop between stars before the sky runs out of them.", "## Controls", "## How to play", "## Scoring and the leaderboard",
+                 "## Before you start", "Sign in with start.ng first", "Stuck? Star Hop has a walkthrough"):
+        assert part in body, part
+    plain = gen.build("how-to-play", _facts(board=[], leaderboard=[], walkthrough=[]), "star-hop").body
+    assert "Sign in with start.ng first" not in plain and "Stuck?" not in plain and "Scoring and the leaderboard" not in plain
+
+
+def test_the_faq_says_since_when_and_how_the_board_ranks():
+    pairs = dict(gen.faq_pairs(gen.build("faq", _facts(), "star-hop").body))
+    assert pairs["Who made Star Hop?"] == "Star Hop was made by Ada. It has been on start.ng since March 2026."
+    assert "Players are ranked by Stars (highest first)." in pairs["Does Star Hop have a leaderboard?"]
+
+
+def test_nothing_is_said_that_the_facts_dont_support():
+    for kind in ("about", "how-to-play", "faq"):
+        body = gen.build(kind, _facts(), "star-hop").body.lower()
+        for claim in ("multiplayer", "phone", "mobile", "offline", "best game", "most popular", "fun"):
+            assert claim not in body, (kind, claim)
+
+
+# ---- live blocks on a game's pages: the top players, more by the same creator, similar games
+
+def _approved_about(client, tokens, Session, store, game="lagos-apocalypto"):
+    return _approve(client, tokens, Session, store, game=game, kind="about")
+
+
+def test_top_players_are_read_live_not_stored(env):
+    client, tokens, Session, store, _ = env
+    from app.models import Score
+    with Session() as db:
+        db.get(Game, "lagos-apocalypto").leaderboard = [{"key": "score", "label": "Score", "order": "highest", "format": "number"},
+                                                        {"key": "time", "label": "Time", "order": "lowest", "format": "time"}]
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        tunde = User(email="tunde@example.com", name="Tunde", google_sub="g-tunde")
+        db.add(tunde)
+        db.flush()
+        db.add_all([Score(user_id=ada.id, game_name="lagos-apocalypto", best=40, stats={"score": 40, "time": 125}),
+                    Score(user_id=tunde.id, game_name="lagos-apocalypto", best=55, stats={"score": 55, "time": 90})])
+        db.commit()
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert 'aria-label="Top players"' in page and "Top players right now" in page
+    block = page[page.index("Top players right now"):]
+    assert block.index("Tunde") < block.index("Ada")  # the better score first
+    assert "Score 55" in block and "Time 1:30" in block  # a time is shown as m:ss
+    assert 'href="/games/lagos-apocalypto"' in page
+    # it moves with the scores: nothing was stored in the page
+    with Session() as db:
+        db.query(Score).filter_by(game_name="lagos-apocalypto").delete()
+        db.commit()
+    assert "Top players right now" not in client.get("/pages/games/lagos-apocalypto/about").text
+
+
+def test_more_games_by_the_same_creator_are_linked_with_their_cards(env):
+    client, tokens, Session, store, _ = env
+    with Session() as db:
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        db.add(Game(name="moon-run", owner_id=ada.id, repo_url="m"))
+        db.add(Game(name="hidden-one", owner_id=ada.id, repo_url="h", hidden="blocked"))
+        other = User(email="x@example.com", name="Xavier", google_sub="g-x")
+        db.add(other)
+        db.flush()
+        db.add(Game(name="not-ada", owner_id=other.id, repo_url="n"))
+        db.commit()
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert "More games by Ada" in page
+    assert 'href="/games/moon-run"' in page and 'href="/games/bare"' in page
+    assert "not-ada" not in page and "hidden-one" not in page  # not someone else's, not a hidden one
+    assert page.count('href="/games/lagos-apocalypto"') >= 1 and 'class="game-link" href="/games/lagos-apocalypto"' not in page  # not itself
+
+
+def test_games_in_the_same_category_are_linked_when_tags_is_on(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from app.features.tags import service as tags
+    monkeypatch.setattr(settings, "features", "game_pages,tags")
+    with Session() as db:
+        owner = db.query(User).filter_by(email="owner@example.com").one()
+        for n in ("dash-one", "dash-two", "dash-three"):
+            db.add(Game(name=n, owner_id=owner.id, repo_url=n))
+        db.commit()
+        for n in ("lagos-apocalypto", "dash-one", "dash-two", "dash-three"):
+            tags.approve(db, n, ["endless-runners"])
+    _approved_about(client, tokens, Session, store)
+    page = client.get("/pages/games/lagos-apocalypto/about").text
+    assert "Games like Lagos Apocalypto" in page
+    for n in ("dash-one", "dash-two", "dash-three"):
+        assert f'class="game-link" href="/games/{n}"' in page
+    assert 'class="game-link" href="/games/lagos-apocalypto"' not in page  # not itself
+    monkeypatch.setattr(settings, "features", "game_pages")  # tags off: no "games like this", the page still works
+    assert "Games like" not in client.get("/pages/games/lagos-apocalypto/about").text
