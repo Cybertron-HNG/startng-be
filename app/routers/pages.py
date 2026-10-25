@@ -16,13 +16,18 @@ import json
 import logging
 import re
 import time
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
+from typing import Literal
+from urllib.parse import urlparse
 
 import requests
 from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, defer, selectinload
 
+from .. import flags
+from .. import leaderboard as boards
+from .. import tournaments
 from ..config import settings
 from ..db import get_db
 from ..models import Game, IndieGame
@@ -37,6 +42,8 @@ ROOT = '<div id="root"></div>'
 SHARE_IMAGE = "/hangout-cover.jpg"  # used when a game has no cover
 SHELL_SECONDS = 300
 FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs"]
+# Pages of features (app/features) that anyone can read, listed while the feature is on: {feature: path}.
+FEATURE_PAGES = {"spotlight": "/spotlight", "wardrobe": "/shop", "creator_hub": "/by", "private_tournaments": "/friends"}
 
 _shell: tuple[float, str] | None = None
 
@@ -289,12 +296,12 @@ PER_PAGE = 20
 HANGOUT_CARD = ("The Hangout", "/hangout", "start.ng/hangout", "start.ng")  # HANGOUT in src/games.ts
 
 
-def _pagination(page: int, pages: int) -> str:
-    """The same page links as the app's (src/Pagination.tsx): first, last, and two either side of this page."""
+def _pagination(page: int, pages: int, base: str = "/games") -> str:
+    """The same page links as the app's (src/Pagination.tsx): first, last, and two either side of this page (base: /games or /creators)."""
     if pages <= 1:
         return ""
     def href(n: int) -> str:
-        return "/games" if n == 1 else f"/games?page={n}"
+        return base if n == 1 else f"{base}?page={n}"
 
     shown = sorted(n for n in {1, pages, page - 2, page - 1, page, page + 1, page + 2} if 1 <= n <= pages)
     current = ' aria-current="page"'
@@ -349,10 +356,197 @@ def games_page(page: int = Query(1, ge=1, le=100_000), db: Session = Depends(get
     return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
+# /creators: the newest games by independent creators, PER_PAGE to a page, like /games (CreatorsPage in src/Creators.tsx,
+# which lists the newest INDIE_LISTED). Searches (?q=) aren't rendered here: nginx keeps them out of search results.
+INDIE_LISTED = 200
+
+
+def _host(url: str) -> str:
+    """The game's site as cards show it: "itch.io", without "www." (hostOf in src/indie.ts)."""
+    return (urlparse(url).netloc or url).removeprefix("www.")
+
+
+def _creators_body(games: list[IndieGame], page: int) -> str | None:
+    """None for a page past the last one."""
+    pages = max(1, -(-len(games) // PER_PAGE))
+    if page > pages:
+        return None
+    shown = games[(page - 1) * PER_PAGE:page * PER_PAGE]
+    start = (page - 1) * PER_PAGE + 1
+    count = f"{start}–{start + len(shown) - 1} of {len(games)}" if pages > 1 else _plural(len(games), "game", "games")
+    empty = '<p class="empty">No games from independent creators yet.</p>' if not games else ""
+    api = settings.api_url.rstrip("/")
+    items = "".join(
+        f'<article class="game"><a class="game-link indie-open" href="{_esc(indie_path(g))}">'
+        f'<div class="art"><img src="{api}/indie/{g.id}/cover.webp" alt="" loading="lazy" decoding="async"></div>'
+        f'<div class="info"><h3>{_esc(g.name)}</h3><p>{_esc(_host(g.url))}</p><span class="by">by {_esc(_player_name(g.owner, "A creator"))}</span></div>'
+        "</a></article>"
+        for g in shown
+    )
+    return (
+        f"{NAV}<main>"
+        '<section class="container all-games creators-page"><div class="section-head"><h1>Games by independent creators</h1></div>'
+        "<div class=\"creators-intro\"><p>Made and hosted by creators outside start.ng. Tap a card to read about a game, or play it on the creator's own site.</p></div>"
+        f'<div class="list-tools"><span class="count">{count}</span></div>{empty}<div class="grid">{items}</div>'
+        f'{_pagination(page, pages, "/creators")}</section>'
+        f"</main>{FOOTER}"
+    )
+
+
+@router.get("/creators", response_class=Response)
+def creators_page(page: int = Query(1, ge=1, le=100_000), db: Session = Depends(get_db)):
+    """/creators' text as HTML for inside #root, one page at a time (?page=2), like games_page. A page past the last one is a 404."""
+    games = list(db.scalars(
+        select(IndieGame).options(defer(IndieGame.cover), selectinload(IndieGame.owner))
+        .order_by(IndieGame.created_at.desc(), IndieGame.id.desc()).limit(INDIE_LISTED)
+    ))
+    body = _creators_body(games, page)
+    if body is None:
+        return Response("No such page", status_code=404, media_type="text/plain", headers={"Cache-Control": "public, max-age=60"})
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+
+# /tournament and /leaderboard (src/Tournament.tsx). The server doesn't know the reader's time zone, so times are
+# Nigeria time here; the app shows the reader's own once it loads.
+POINTS_NOTE = "1st on a game gets 10 points, 2nd 7, 3rd 5, 4th 3, and everyone else who plays it 1."
+PAST_WINNERS = 7  # as many as the app asks for (recentTournaments(7))
+TOP_STANDINGS = 20  # as many as GET /tournaments/current sends
+LEADERBOARD_ROWS = 50  # as many as the app asks for (overallLeaderboard(period, 50))
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _nigeria(when: datetime) -> datetime:
+    return tournaments.utc(when).astimezone(timezone(timedelta(hours=settings.tournament_utc_offset)))
+
+
+def _clock(when: datetime) -> str:
+    """"6:00 PM", Nigeria time."""
+    local = _nigeria(when)
+    return f"{local.hour % 12 or 12}:{local.minute:02d} {'AM' if local.hour < 12 else 'PM'}"
+
+
+def _day(when: datetime) -> str:
+    """"Mon 19 Oct", Nigeria time."""
+    local = _nigeria(when)
+    return f"{local:%a} {local.day} {local:%b}"
+
+
+def _stat(stat: dict, value: int | None) -> str:
+    """A stat as players read it: times as m:ss, numbers with separators, "–" when missing (formatStat in src/BoardTable.tsx)."""
+    if value is None:
+        return "–"
+    if stat.get("format") == "time":
+        return f"{value // 60}:{value % 60:02d}"
+    return f"{value:,}"
+
+
+def _table(label: str, heads: list[str], rows: list[list[str]]) -> str:
+    """The app's board tables (.board-table): the place, the player, then numbers."""
+    cols = "36px minmax(0, 1fr) " + " ".join("auto" for _ in heads[2:])
+    head = "".join(f'<span role="columnheader" class="num">{h}</span>' if i > 1 else f'<span role="columnheader">{h}</span>'
+                   for i, h in enumerate(heads))
+    kinds = ["rk", "nm"] + ["num"] * (len(heads) - 2)
+    body = "".join(
+        '<div role="row" class="board-row">' + "".join(f'<span class="{k}">{cell}</span>' for k, cell in zip(kinds, row)) + "</div>"
+        for row in rows
+    )
+    return (f'<div class="board-table" role="table" aria-label="{label}" style="grid-template-columns: {cols}">'
+            f'<div class="board-row board-head" role="row">{head}</div>{body}</div>')
+
+
+def _tournament_body(db: Session) -> str:
+    t = tournaments.current(db)
+    head = (
+        "<div class=\"section-head\"><div><h1>Today's tournament</h1>"
+        '<p class="tournament-sub">A few games, 24 hours, one winner. <a href="/leaderboard">Overall leaderboard →</a></p></div></div>'
+    )
+    if t is None:
+        empty = "<p class=\"empty\">No tournament today: there aren't enough games with leaderboards yet. Check back tomorrow.</p>"
+        return f'{NAV}<main><section class="container tournament-page">{head}{empty}</section></main>{FOOTER}'
+
+    res = tournaments.results(db, t)
+    status = (
+        '<div class="tournament-status"><div>'
+        f"<p>Ends at <b>{_clock(t.ends_at)}</b> Nigeria time. {_plural(tournaments.entrants(db, t), 'player has', 'players have')} entered.</p>"
+        f'<p class="note">{POINTS_NOTE} Most points wins the day.</p></div>'
+        "<div class=\"tournament-enter\"><p class=\"note\">Share the tournament on X to enter. Runs before you enter don't count.</p></div></div>"
+    )
+    cards = []
+    for tg in t.games:
+        schema = tg.game.leaderboard or boards.DEFAULT
+        runs = res.boards.get(tg.game_name, [])
+        top = "".join(
+            f'<li><span class="nm">{_esc(_player_name(s.user))}</span>'
+            f'<span class="sc">{_stat(schema[0], boards.stats_of(schema, s.stats, s.best).get(schema[0]["key"]))}</span></li>'
+            for s in runs[:3]
+        ) or '<li class="none">No runs yet. Be the first.</li>'
+        cards.append(
+            f'<article class="game"><a class="game-link" href="/games/{_esc(tg.game_name)}"><div class="info">'
+            f"<h3>{_esc(_title(tg.game_name))}</h3><p>{_plural(len(runs), 'player', 'players')}</p></div></a>"
+            f'<ol class="tournament-top">{top}</ol>'
+            f'<div class="meta"><a class="play" href="{_esc(game_url(tg.game_name))}">Play ↗</a></div></article>'
+        )
+    standings = (
+        _table("Today's standings", ["#", "Player", "Firsts", "Points"],
+               [[str(st.place), _esc(_player_name(st.user)), str(st.firsts), str(st.points)] for st in res.standings[:TOP_STANDINGS]])
+        if res.standings else "<p class=\"board-empty\">No points yet. Enter, play, and you'll show up here.</p>"
+    )
+    winners = []
+    for past in tournaments.recent(db, PAST_WINNERS):
+        first = tournaments.results(db, past).standings[:1]
+        who = (f'<span class="nm"><b>{_esc(_player_name(first[0].user))}</b> · {first[0].points} pts</span>' if first
+               else '<span class="nm none">No one played</span>')
+        winners.append(f'<li><span class="when">{_day(past.ends_at)}</span>{who}</li>')
+    past_html = (f'<ul class="winners">{"".join(winners)}</ul>' if winners
+                 else "<p class=\"board-empty\">The first winner is named when today's tournament ends.</p>")
+    return (
+        f'{NAV}<main><section class="container tournament-page">{head}{status}'
+        f'<div class="grid tournament-games">{"".join(cards)}</div><div class="tournament-columns">'
+        f'<section aria-labelledby="standings-heading"><h2 id="standings-heading">Standings</h2>{standings}</section>'
+        f'<section aria-labelledby="winners-heading"><h2 id="winners-heading">Past winners</h2>{past_html}</section>'
+        f"</div></section></main>{FOOTER}"
+    )
+
+
+@router.get("/tournament", response_class=Response)
+def tournament_page(db: Session = Depends(get_db)):
+    """/tournament's text as HTML for inside #root, like home_page: today's games, standings and past winners.
+    It asks for today's tournament the way the app does (GET /tournaments/current), so it makes the day's one if no one has yet."""
+    return Response(_tournament_body(db), media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/leaderboard", response_class=Response)
+def leaderboard_page(period: Literal["all", "week"] = "all", db: Session = Depends(get_db)):
+    """/leaderboard's text as HTML for inside #root: tournament points, all time or this week (?period=week, its own address)."""
+    rows = tournaments.overall(db, period, LEADERBOARD_ROWS)
+    on = ' aria-current="page"'
+    tabs = (
+        '<div class="segmented" role="group" aria-label="Period">'
+        f'<a href="/leaderboard"{on if period == "all" else ""}>All time</a>'
+        f'<a href="/leaderboard?period=week"{on if period == "week" else ""}>This week</a></div>'
+    )
+    board = (
+        _table("Overall leaderboard", ["#", "Player", "Days won", "Firsts", "Points"],
+               [[str(i), _esc(_player_name(r.user)), str(r.wins), str(r.firsts), str(r.points)] for i, r in enumerate(rows, start=1)])
+        if rows else
+        f'<p class="board-empty">No points {"this week" if period == "week" else "yet"}. '
+        "They come from the daily tournament: <a href=\"/tournament\">enter today's</a>.</p>"
+    )
+    body = (
+        f'{NAV}<main><section class="container tournament-page"><div class="section-head"><div><h1>Leaderboard</h1>'
+        "<p class=\"tournament-sub\">Points from the daily tournaments. <a href=\"/tournament\">Today's tournament →</a></p></div></div>"
+        f"{tabs}{board}</section></main>{FOOTER}"
+    )
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+
 @router.get("/sitemap.xml", response_class=Response)
 def sitemap(db: Session = Depends(get_db)):
     site = _site()
-    urls = [f"  <url><loc>{_esc(site + p)}</loc></url>" for p in FIXED_PAGES]
+    urls = [f"  <url><loc>{_esc(site + p)}</loc></url>" for p in FIXED_PAGES + [p for f, p in FEATURE_PAGES.items() if flags.is_on(f)]]
     for name, updated in db.execute(select(Game.name, Game.updated_at).where(Game.hidden.is_(None)).order_by(Game.name)):
         when = (updated.replace(tzinfo=updated.tzinfo or timezone.utc)).date().isoformat() if updated else None
         lastmod = f"<lastmod>{when}</lastmod>" if when else ""

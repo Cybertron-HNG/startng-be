@@ -2,11 +2,12 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import flags
 from ...db import get_db
-from ...models import User
+from ...models import Game, User
 from ...routers import pages
 from ...routers.games import _cover_url, _player_name
 from ...routers.pages import _title
@@ -140,9 +141,9 @@ def creator_page(user_id: int = CREATOR, db: Session = Depends(get_db)):
         return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
     name, bio = _player_name(user), service.bio_of(db, user_id)
     description = bio or f"{name} makes games on start.ng: " + ", ".join(_title(g.name) for g in games[:5]) + ". Play them free in your browser."
-    listing = "".join(f"<li>{pages._esc(_title(g.name))}</li>" for g in games[:20])
+    listing = "".join(f'<li><a href="/games/{pages._esc(g.name)}">{pages._esc(_title(g.name))}</a></li>' for g in games[:20])
     page = pages._page(shell, title=f"{name}'s games · start.ng", description=description, path=f"/by/{service.slug_for(user)}",
-                       image=share.links("creator", str(user.id), creator_card.describe(db, str(user.id))).image_url, body=f"<main><h1>{pages._esc(name)}</h1><p>{pages._esc(description)}</p><ul>{listing}</ul></main>")
+                       image=share.links("creator", str(user.id), creator_card.describe(db, str(user.id))).image_url, body=f"<main><h1>{pages._esc(name)}</h1><p>{pages._esc(description)}</p><ul>{listing}</ul><p><a href=\"/by\">See top creators</a></p></main>")
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
@@ -157,3 +158,14 @@ def my_dashboard(user: User = Depends(current_user), db: Session = Depends(get_d
     d = service.dashboard(db, user.id)
     return DashboardOut(games=[GameStatsOut(**g.__dict__) for g in d.games], best_game=d.best_game, plays_7=d.plays_7,
                         plays_30=d.plays_30, visitors_30=d.visitors_30)
+
+
+def sitemap_urls(db: Session) -> list[tuple[str, str | None]]:
+    """Every creator's page (anyone with a game that isn't hidden), while the feature is on."""
+    if not flags.is_on("creator_hub"):
+        return []  # the routes answer 404 while the flag is off, so the sitemap must not list them
+    owners = db.scalars(select(User).where(User.id.in_(select(Game.owner_id).where(Game.hidden.is_(None)))).order_by(User.id))
+    return [(f"/by/{service.slug_for(u)}", None) for u in owners]
+
+
+pages.SITEMAP_PROVIDERS.append(sitemap_urls)

@@ -290,3 +290,47 @@ def test_games_page_text_with_no_games_says_so(env):
     text = client.get("/pages/games").text
     assert "No community games yet" in text and '<a href="/hangout">The Hangout</a>' in text
     assert '<span class="count">1 game</span>' in text
+
+
+def test_creators_page_text_lists_the_newest_first(env):
+    client, *_ = env
+    older = add_indie("Moon Garden", "Grow plants.")
+    newer = add_indie("Sky <Hop>", "Jump.")
+    res = client.get("/pages/creators")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/html")
+    text = res.text
+    assert "<html" not in text  # only what goes inside #root
+    assert "<h1>Games by independent creators</h1>" in text
+    assert '<span class="count">2 games</span>' in text
+    assert text.index(f'href="/creators/{newer}-sky-hop"') < text.index(f'href="/creators/{older}-moon-garden"')
+    assert "<h3>Sky &lt;Hop&gt;</h3>" in text and "<Hop>" not in text
+    assert "<p>ada.itch.io</p>" in text and '<span class="by">by Ada</span>' in text
+    assert f'src="https://api.start.ng/indie/{older}/cover.webp"' in text
+    assert "pagination" not in text
+
+
+def test_creators_page_text_pages_like_games(env):
+    client, *_ = env
+    assert "No games from independent creators yet" in client.get("/pages/creators").text
+    for i in range(21):
+        add_indie(f"Game {i}")
+    first = client.get("/pages/creators").text
+    assert '<span class="count">1–20 of 21</span>' in first
+    assert '<a href="/creators?page=2" rel="next" aria-label="Next page">Next →</a>' in first
+    last = client.get("/pages/creators?page=2").text
+    assert '<span class="count">21–21 of 21</span>' in last and '<a href="/creators" rel="prev"' in last
+    assert client.get("/pages/creators?page=3").status_code == 404  # past the end: nginx serves the 404 page
+    assert client.get("/pages/creators?page=0").status_code == 422
+
+
+def test_sitemap_lists_feature_pages_only_while_they_are_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    monkeypatch.setattr(settings, "features", "")
+    text = client.get("/pages/sitemap.xml").text
+    assert all(p not in text for p in ("/spotlight", "/shop", "/friends", "<loc>https://start.ng/by</loc>"))
+    monkeypatch.setattr(settings, "features", "spotlight,wardrobe,creator_hub,private_tournaments")
+    text = client.get("/pages/sitemap.xml").text
+    for p in ("/spotlight", "/shop", "/by", "/friends"):
+        assert f"<loc>https://start.ng{p}</loc>" in text
