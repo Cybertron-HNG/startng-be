@@ -92,16 +92,43 @@ def esc(value) -> str:
     return html.escape(str(value))
 
 
+# The start.ng look, taken from the website's palette (src/styles.css). Emails carry their styles inline, so the
+# values live here: cream page, cream-white card, dark ink, lime highlights and an 8px lime offset shadow.
+BG = "#f6f5ee"
+CARD = "#fffefa"
+INK = "#292a23"
+MUTED = "#6b6c63"
+LINE = "#e4e2d6"
+LIME = "#d8fd71"
+LIME_TINT = "#f1fbd2"
+FONT = "'Helvetica Neue',Helvetica,Arial,sans-serif"
+MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
+
+
+def button(link: str, label: str, arrow: bool = False) -> str:
+    """A start.ng button: dark ink, white label, rounded ends (a lime offset in clients that support it)."""
+    tail = ' <span style="font-weight:400">&rarr;</span>' if arrow else ""
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 4px">'
+        f'<tr><td align="center" bgcolor="{INK}" style="background:{INK};border-radius:10px;'
+        f'box-shadow:4px 4px 0 {LIME}">'
+        f'<a href="{esc(link)}" style="display:inline-block;padding:14px 22px;font:700 16px/1 {FONT};'
+        f'color:#ffffff;text-decoration:none;border-radius:10px">{esc(label)}{tail}</a>'
+        '</td></tr></table>'
+    )
+
+
 def _link(path: str) -> str:
     return settings.site_url.rstrip("/") + path
 
 
 register_kind("confirm", None, lambda d: Note(
     subject="Confirm your start.ng emails",
-    html=f'<p>Someone (we hope you) asked for emails from start.ng about: {esc(d["topics"])}.</p>'
-         f'<p><a href="{esc(d["link"])}" style="display:inline-block;background:#d9f99d;color:#1d1d1b;padding:10px 16px;'
-         f'border-radius:10px;font-weight:700;text-decoration:none">Yes, send them</a></p>'
-         f'<p style="color:#6b6b66">If it wasn\'t you, ignore this email and we won\'t write again.</p>',
+    html=f'<p style="margin:0 0 10px;font-size:16px;line-height:1.6">Someone (we hope you) asked for emails from '
+         f'start.ng about: {esc(d["topics"])}.</p>'
+         f'{button(d["link"], "Yes, send them")}'
+         f'<p style="margin:18px 0 0;color:{MUTED};font-size:13px;line-height:1.55">'
+         f'If it wasn\'t you, ignore this email and we won\'t write again.</p>',
     text=f'Someone (we hope you) asked for emails from start.ng about: {d["topics"]}.\n\n'
          f'Yes, send them: {d["link"]}\n\nIf it wasn\'t you, ignore this email and we won\'t write again.',
 ))
@@ -360,16 +387,37 @@ def _page(body_html: str, body_text: str, sub: Subscriber, topics: list[str]) ->
     """Wrap the notes in start.ng's email layout, with the unsubscribe links."""
     manage = _link("/emails")
     stop = _link(f"/emails?unsubscribe={sub.unsubscribe_token}")
-    stop_one = (f' · <a href="{esc(stop)}&amp;topic={esc(topics[0])}" style="color:#6b6b66">Stop these emails</a>'
+    footer_link = f"color:{MUTED};text-decoration:underline;text-underline-offset:2px"
+    stop_one = (f' &middot; <a href="{esc(stop)}&amp;topic={esc(topics[0])}" style="{footer_link}">Stop these emails</a>'
                 if len(topics) == 1 else "")
     html_out = (
-        '<div style="background:#f4f4ef;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;color:#1d1d1b">'
-        '<div style="max-width:560px;margin:0 auto;background:#fffffb;border-radius:16px;padding:24px">'
-        '<p style="margin:0 0 16px;font-weight:800;font-size:18px">start<span style="color:#65a30d">.ng</span></p>'
-        f'{body_html}</div>'
-        '<p style="max-width:560px;margin:16px auto 0;font-size:12px;color:#6b6b66;text-align:center">'
-        f'<a href="{esc(manage)}" style="color:#6b6b66">Choose your emails</a>{stop_one}'
-        f' · <a href="{esc(stop)}" style="color:#6b6b66">Unsubscribe from everything</a></p></div>'
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="x-apple-disable-message-reformatting">'
+        '<meta name="color-scheme" content="light">'
+        '<meta name="supported-color-schemes" content="light">'
+        '</head><body style="margin:0;padding:0;width:100%;background:' + BG + ';">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{BG}" '
+        f'style="width:100%;background:{BG};border-collapse:collapse">'
+        '<tr><td align="center" style="padding:36px 12px 30px">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;max-width:560px;border-collapse:separate">'
+        '<tr><td style="padding:0 4px 15px">'
+        f'<span style="font:800 21px/1.2 {FONT};letter-spacing:-.04em;color:{INK}">start'
+        f'<span style="color:{MUTED}">.ng</span></span>'
+        '</td></tr>'
+        f'<tr><td bgcolor="{CARD}" style="background:{CARD};border:1px solid {LINE};border-radius:24px;'
+        f'padding:34px 32px;box-shadow:8px 8px 0 {LIME}">'
+        f'{body_html}'
+        '</td></tr>'
+        '<tr><td style="padding:26px 12px 0;text-align:center">'
+        f'<p style="margin:0;font:400 12px/1.7 {FONT};color:{MUTED}">'
+        f'<a href="{esc(manage)}" style="{footer_link}">Choose your emails</a>{stop_one}'
+        f' &middot; <a href="{esc(stop)}" style="{footer_link}">Unsubscribe from everything</a>'
+        '</p>'
+        f'<p style="margin:10px 0 0;font:700 10px/1.4 {MONO};letter-spacing:.16em;text-transform:uppercase;'
+        f'color:{MUTED}">start.ng</p>'
+        '</td></tr></table></td></tr></table></body></html>'
     )
     text_out = f"{body_text}\n\n--\nChoose your emails: {manage}\nUnsubscribe from everything: {stop}\n"
     return html_out, text_out
@@ -388,7 +436,7 @@ def render(row: Email, sub: Subscriber) -> tuple[Message, list[str]]:
     if not notes:
         return None, []  # type: ignore[return-value]
     subject = notes[0].subject if len(notes) == 1 else f"{notes[0].subject} (+{len(notes) - 1} more)"
-    sep_html = '<hr style="border:0;border-top:1px solid #e5e5df;margin:20px 0">'
+    sep_html = f'<hr style="border:0;border-top:1px solid {LINE};margin:20px 0">'
     html_out, text_out = _page(sep_html.join(n.html for n in notes), "\n\n---\n\n".join(n.text for n in notes), sub, topics)
     one_click = f"{settings.api_url.rstrip('/')}/email/unsubscribe?token={sub.unsubscribe_token}"
     headers = {"List-Unsubscribe": f"<{one_click}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
