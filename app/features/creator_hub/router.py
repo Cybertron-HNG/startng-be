@@ -169,3 +169,24 @@ def sitemap_urls(db: Session) -> list[tuple[str, str | None]]:
 
 
 pages.SITEMAP_PROVIDERS.append(sitemap_urls)
+
+
+@router.get("/pages/by", response_class=Response, include_in_schema=False)
+def leaderboard_page(db: Session = Depends(get_db)):
+    """/by's text for search engines, for inside #root (nginx includes it): the same words and classes as
+    src/features/creator_hub/CreatorsBoard.tsx."""
+    leaders = service.leaderboard(db)
+    rows = "".join(
+        f'<li><a href="/by/{pages._esc(service.slug_for(l.user))}"><span class="rk">{i}</span>'
+        f'<span class="nm"><b>{pages._esc(_player_name(l.user))}</b><em>{pages._plural(l.games, "game", "games")}</em></span>'
+        f'<span class="num">{l.players:,} <em>{"player" if l.players == 1 else "players"}</em></span></a></li>'
+        for i, l in enumerate(leaders, start=1)
+    )
+    board = (f'<ol class="creator-board">{rows}</ol>' if leaders
+             else '<p class="empty">No plays yet this month. <a href="/games">Play something</a> and the board fills up.</p>')
+    body = (
+        f'{pages.NAV}<main><section class="container creator-page"><h1>Top creators</h1>'
+        '<p class="lead-sm">The people whose games the most different players opened in the last 30 days.</p>'
+        f"{board}</section></main>{pages.FOOTER}"
+    )
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

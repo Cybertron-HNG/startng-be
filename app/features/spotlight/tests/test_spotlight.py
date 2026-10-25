@@ -176,3 +176,17 @@ def test_game_of_the_week(env):
         assert service.game_of_the_week(db) is None  # a hidden game is not the pick
     assert client.delete(f"/admin/spotlight/game-of-the-week?week={nxt}", headers=boss).status_code == 204
     assert [p["game"] for p in client.get("/admin/spotlight", headers=boss).json()["picks"]] == ["speed"]
+
+
+def test_the_page_text_for_search_engines(env, monkeypatch):
+    client, tokens, ids, Session = env
+    text = client.get("/pages/spotlight").text
+    assert "<h1>Spotlight</h1>" in text and "No daily challenge yet" in text and "No Game of the Week picked yet." in text
+    history(Session, ids)
+    client.put("/admin/spotlight/game-of-the-week", json={"game": "relic", "note": "Dig <deep>"}, headers=tokens["boss"])
+    text = client.get("/pages/spotlight").text
+    assert "<h2>Reach 800 in Relic</h2>" in text and "Score counts, and only today's runs." in text
+    assert 'href="/games/relic">Play now</a>' in text and "Nigeria time" in text
+    assert '<p class="lead-sm">Dig &lt;deep&gt;</p><a class="btn" href="/games/relic">Play Relic</a>' in text
+    monkeypatch.setattr(settings, "features", "progress")
+    assert client.get("/pages/spotlight").status_code == 404  # off: nginx leaves the page as it is

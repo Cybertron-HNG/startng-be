@@ -334,3 +334,15 @@ def test_sitemap_lists_feature_pages_only_while_they_are_on(env, monkeypatch):
     text = client.get("/pages/sitemap.xml").text
     for p in ("/spotlight", "/shop", "/by", "/friends"):
         assert f"<loc>https://start.ng{p}</loc>" in text
+
+
+def test_friends_page_text_only_while_the_feature_is_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    monkeypatch.setattr(settings, "features", "")
+    assert client.get("/pages/friends").status_code == 404
+    monkeypatch.setattr(settings, "features", "private_tournaments")
+    text = client.get("/pages/friends").text
+    assert "<h1>Tournament with friends</h1>" in text and "Pick up to 5 games" in text
+    assert "1 day, 3 days, 1 week, 2 weeks or 1 month" in text and "<html" not in text

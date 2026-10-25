@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from ... import admin as admins
 from ...activity import record
 from ...db import get_db
 from ...models import Game, User
+from ...routers import pages
 from ...security import current_user
 from ..progress import service as progress
 from . import goals as game_goals
@@ -137,3 +138,34 @@ def admin_grant(body: GrantIn, admin: admins.AdminUser = Depends(manage), db: Se
     admins.log(db, admin, "wardrobe.item_given", str(body.user_id), item=body.item)
     db.commit()
     return _wardrobe(db, body.user_id)
+
+
+def _owned_by(share: float) -> str:
+    """How many players own an item, in the words of share() in src/features/wardrobe/words.ts."""
+    return "Nobody has it yet" if share == 0 else "Owned by under 1% of players" if share < 0.01 else f"Owned by {round(share * 100)}% of players"
+
+
+@router.get("/pages/shop", response_class=Response, include_in_schema=False)
+def shop_page(db: Session = Depends(get_db)):
+    """/shop's text for search engines, for inside #root (nginx includes it): today's stock in the same words and classes
+    as src/features/wardrobe/ShopPage.tsx, signed out."""
+    today = shop(db)
+
+    def tiles(items: list[ItemOut], featured: bool) -> str:
+        off = '<span class="tag">20% off</span>' if featured else ""
+        return "".join(
+            f'<li class="wd-item r-{i.rarity}"><strong>{pages._esc(i.name)}</strong><span class="wd-rarity r-{i.rarity}">{i.rarity}</span>'
+            f'<span class="wd-how">{_owned_by(i.owned_share)}</span><span class="wd-price">🪙 {i.price or 0:,}{off}</span></li>'
+            for i in items
+        )
+
+    body = (
+        f'{pages.NAV}<main><section class="container wd-page"><header class="shop-hero"><div><h1>Shop</h1>'
+        '<p class="tournament-sub">Spend the coins you earn playing, then wear what you own in every game. '
+        "Epic and Legendary items can't be bought: earn them.</p></div>"
+        '<span class="shop-restock">New stock every day at midnight, Nigeria time</span></header>'
+        f'<h3 class="wd-heading">Featured today</h3><ul class="wd-grid featured">{tiles(today.featured, True)}</ul>'
+        f'<h3 class="wd-heading">Everything else</h3><ul class="wd-grid">{tiles(today.items, False)}</ul>'
+        f"</section></main>{pages.FOOTER}"
+    )
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

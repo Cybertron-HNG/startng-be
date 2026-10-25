@@ -543,6 +543,28 @@ def leaderboard_page(period: Literal["all", "week"] = "all", db: Session = Depen
     return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
+# /friends (a feature, private_tournaments): the page that starts a tournament with friends. Its words are the app's
+# (src/features/private_tournaments/MyTournaments.tsx); the rest of that page is a form.
+FRIENDS_GAMES = 5  # MAX_GAMES there
+FRIENDS_LENGTHS = "1 day, 3 days, 1 week, 2 weeks or 1 month"  # DURATIONS there
+
+
+@router.get("/friends", response_class=Response)
+def friends_page():
+    """/friends' text as HTML for inside #root. A 404 while the feature is off, like its other routes."""
+    if not flags.is_on("private_tournaments"):
+        return Response("Not found", status_code=404, media_type="text/plain")
+    body = (
+        f'{NAV}<main><section class="container tournament-page"><div class="section-head"><div><h1>Tournament with friends</h1>'
+        f'<p class="tournament-sub">Pick up to {FRIENDS_GAMES} games and how long it runs, send the link, and see how everyone scores. '
+        "<a href=\"/tournament\">Today's tournament →</a></p></div></div>"
+        f"<p>Name it, pick the games, and choose how long it runs: {FRIENDS_LENGTHS}. Only the friends you invite are in it.</p>"
+        '<p class="note">It starts as soon as you tap the button. Scores count from the moment each player joins.</p>'
+        f"</section></main>{FOOTER}"
+    )
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
+
+
 @router.get("/sitemap.xml", response_class=Response)
 def sitemap(db: Session = Depends(get_db)):
     site = _site()
