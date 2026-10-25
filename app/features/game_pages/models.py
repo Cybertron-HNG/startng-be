@@ -26,6 +26,7 @@ class GamePage(Base):
     reason: Mapped[str | None] = mapped_column(String(200))  # why it was skipped
     facts: Mapped[dict | None] = mapped_column(JSON)  # what it was written from, so a person can check
     edited: Mapped[bool] = mapped_column(default=False)  # a person changed the text: do not write over it
+    held: Mapped[bool] = mapped_column(default=False)  # a person took the page down: it is never approved by itself again
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
