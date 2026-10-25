@@ -530,3 +530,156 @@ def test_nothing_is_made_on_its_own_while_the_feature_is_off(env, monkeypatch):
     service.on_game_updated({"game": "lagos-apocalypto"})
     with Session() as db:
         assert db.query(GamePage).count() == 0
+
+
+# ---- what the game's own source says (app/brief.py), used on its pages
+
+BRIEF = {
+    "v": 1,
+    "readme": "# Relic Hunter\n\nA temple escape: grab the idol, then outrun a rolling boulder.\n\n## Features\n- Ten rooms\n",
+    "messages": [
+        "RUN! Escape the boulder - get back through the vault door",
+        "The vault is open. Take the golden idol",
+        "Climb the ledge and pull the lever to open the gate",
+        "You escaped with the idol!",
+        "You fell into the darkness",
+    ],
+    "notes": ["Relic Hunter: a temple escape with a rolling boulder behind you."],
+    "names": ["tomb", "boulder"],
+    "files": 9,
+}
+
+
+def test_the_brief_splits_instructions_from_other_lines_and_fills_in_a_missing_readme():
+    f = F.Facts(title="Relic Hunter")
+    F.from_brief(BRIEF, f, readme_found=False)
+    assert f.hints == ["RUN! Escape the boulder - get back through the vault door", "Climb the ledge and pull the lever to open the gate"]
+    assert f.messages == ["The vault is open. Take the golden idol", "You escaped with the idol!", "You fell into the darkness"]
+    assert f.description == "A temple escape: grab the idol, then outrun a rolling boulder."  # from the repo's README: the game's files had none
+    assert f.features == ["Ten rooms"] and f.notes == ["Relic Hunter: a temple escape with a rolling boulder behind you."]
+    assert f.sources["messages"] == "the game's source"
+    kept = F.Facts(title="Relic Hunter")
+    F.from_brief(BRIEF, kept, readme_found=True)  # the game's own README wins: the repo's is not read again
+    assert kept.description is None and kept.hints
+
+
+def test_a_missing_or_odd_brief_changes_nothing():
+    for odd in (None, {}, "x", {"messages": [1, None, ""], "notes": "no"}):
+        f = F.Facts(title="X")
+        F.from_brief(odd, f, readme_found=False)
+        assert f.messages == f.hints == f.notes == [] and f.description is None
+
+
+def test_the_about_page_quotes_what_the_game_says():
+    f = F.Facts(title="Relic Hunter", creator="Ada")
+    F.from_brief(BRIEF, f, readme_found=False)
+    body = gen.build("about", f, "relic-hunter").body
+    assert "## What Relic Hunter says" in body and "Some of what Relic Hunter tells you as you play:" in body
+    for line in ("- “The vault is open. Take the golden idol”", "- “You escaped with the idol!”", "- “RUN! Escape the boulder - get back through the vault door”"):
+        assert line in body, line
+    assert "A temple escape: grab the idol" in body  # the repo's README says what it is
+
+
+def test_how_to_play_can_stand_on_what_the_game_tells_you_but_not_on_one_line():
+    f = F.Facts(title="Relic Hunter")
+    F.from_brief(BRIEF, f, readme_found=False)
+    made = gen.build("how-to-play", f, "relic-hunter")
+    assert not isinstance(made, str)
+    assert "## What Relic Hunter tells you to do" in made.body and "- “Climb the ledge and pull the lever to open the gate”" in made.body
+    assert "RUN! Escape the boulder" in made.description or "A temple escape" in made.description or made.description  # a meta description exists
+    one = F.Facts(title="Relic Hunter", hints=["Climb the ledge and pull the lever to open the gate"])
+    assert isinstance(gen.build("how-to-play", one, "relic-hunter"), str)  # skipped: one line is not a page
+
+
+def test_a_game_with_only_a_brief_still_gets_an_about_page_but_a_page_with_nothing_does_not():
+    only = F.Facts(title="X", messages=["One line of the game.", "Another line of the game.", "A third line of the game."])
+    assert not isinstance(gen.build("about", only, "x"), str)
+    assert isinstance(gen.build("about", F.Facts(title="X", messages=["Just one line."]), "x"), str)
+
+
+# ---- backfill: games published before the brief existed are read from their repos, a few at a time
+
+def _zip_for_backfill():
+    from tests.test_publish import GAME, make_zip
+    return make_zip({**GAME, "README.md": "# Moon Run\n\nA calm night runner through a sleeping city.", "src/game.js": 'const a = "RUN! Escape the boulder - get back through the vault door";'})
+
+
+def test_games_without_a_brief_get_one_from_their_repo(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    asked = []
+    monkeypatch.setattr(service, "download_repo", lambda repo: asked.append(repo.name) or _zip_for_backfill())
+    monkeypatch.setattr(service.auto_update, "paused_until", lambda: None)
+    for name in ("lagos-apocalypto", "bare"):
+        with Session() as db:
+            db.get(Game, name).repo_url = f"https://github.com/ada/{name}"
+            db.commit()
+    with Session() as db:
+        assert set(service.backfill_briefs(db, limit=5)) == {"lagos-apocalypto", "bare"}
+        assert "RUN! Escape the boulder - get back through the vault door" in db.get(Game, "lagos-apocalypto").brief["messages"]
+        assert sorted(asked) == ["bare", "lagos-apocalypto"]
+        assert service.backfill_briefs(db, limit=5) == []  # every game has one now: nothing is asked again
+
+
+def test_a_link_that_cannot_be_read_does_not_block_the_games_behind_it(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    monkeypatch.setattr(service.auto_update, "paused_until", lambda: None)
+    monkeypatch.setattr(service, "download_repo", lambda repo: _zip_for_backfill())
+    with Session() as db:
+        db.get(Game, "bare").repo_url = "not a github link"
+        db.get(Game, "lagos-apocalypto").repo_url = "https://github.com/ada/Lagos-Apocalypto"
+        db.commit()
+        assert service.backfill_briefs(db, limit=5) == ["lagos-apocalypto"]
+        assert db.get(Game, "bare").brief["unavailable"] == "bad_link"  # remembered, not retried every round
+
+
+def test_a_gone_repo_is_marked_and_a_hiccup_is_tried_again_later(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from app.publish import PublishError
+    monkeypatch.setattr(service.auto_update, "paused_until", lambda: None)
+    for game in ("lagos-apocalypto", "bare"):
+        with Session() as db:
+            db.get(Game, game).repo_url = f"https://github.com/ada/{game}"
+            db.commit()
+
+    def gone(repo):
+        raise PublishError("Repo or branch not found", "repo_not_found")
+
+    monkeypatch.setattr(service, "download_repo", gone)
+    with Session() as db:
+        assert service.backfill_briefs(db, limit=5) == []
+        assert db.get(Game, "bare").brief["unavailable"] == "repo_not_found"  # remembered
+        assert service.backfill_briefs(db, limit=5) == []  # and not asked for again
+
+    with Session() as db:
+        for game in ("lagos-apocalypto", "bare"):
+            db.get(Game, game).brief = None
+        db.commit()
+
+    def hiccup(repo):
+        raise PublishError("Couldn't download", "download_failed")
+
+    monkeypatch.setattr(service, "download_repo", hiccup)
+    with Session() as db:
+        assert service.backfill_briefs(db, limit=5) == []
+        assert db.get(Game, "bare").brief is None  # left for a later round
+
+
+def test_backfill_waits_while_githubs_limit_is_used_up(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(service.auto_update, "paused_until", lambda: datetime.now(timezone.utc) + timedelta(minutes=10))
+    monkeypatch.setattr(service, "download_repo", lambda repo: (_ for _ in ()).throw(AssertionError("must not ask GitHub")))
+    with Session() as db:
+        assert service.backfill_briefs(db, limit=5) == []
+
+
+def test_a_game_whose_brief_arrives_gets_its_pages_from_it_end_to_end(env):
+    client, tokens, Session, store, _ = env
+    with Session() as db:
+        game = db.get(Game, "bare")
+        game.brief = BRIEF
+        db.commit()
+        service.generate_for(db, store, game)
+        about = db.query(GamePage).filter_by(game_name="bare", kind="about").one()
+        assert about.status == "draft" and "“You escaped with the idol!”" in about.body
+        assert about.facts["messages"] and about.facts["hints"]  # the reviewer can see what it was written from

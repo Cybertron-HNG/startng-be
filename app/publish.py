@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import requests
 
 from . import storage
+from . import brief as brief_mod
 from .checks import Problem, inspect, standards
 from .config import settings
 from .leaderboard import SchemaError, clean_description
@@ -99,6 +100,7 @@ class GameBundle:
     leaderboard: list[dict] | None = None  # its leaderboard stats (app/leaderboard.py); None = plain score
     description: str | None = None  # its one-line description, for the game's page on start.ng
     sections: dict = field(default_factory=dict)  # every startng.json section, parsed (app/manifest.py)
+    brief: dict | None = None  # what the repo says about the game (app/brief.py), kept on the game
 
     @property
     def total_bytes(self) -> int:
@@ -216,6 +218,33 @@ def _guess_description(files: list["GameFile"], readme: bytes | None) -> str | N
     return None
 
 
+def _zip_entries(zf: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+    """Every file in a repo zip by its path inside the repo (links and unsafe paths left out)."""
+    entries: dict[str, zipfile.ZipInfo] = {}
+    for info in zf.infolist():
+        if info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
+            continue  # links could point outside the game
+        path = _safe_path(info.filename)
+        if path:
+            entries[path] = info
+    return entries
+
+
+def read_brief(archive: bytes) -> dict | None:
+    """The brief (app/brief.py) of a repo that is already live, without checking or publishing anything. None if the zip is broken."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(archive))
+    except zipfile.BadZipFile:
+        return None
+    with zf:
+        entries = _zip_entries(zf)
+        try:
+            folder = _find_game_folder(zf, entries)
+        except PublishError:
+            folder = ""
+        return brief_mod.extract(entries, zf, brief_mod.find_readme(entries, zf, f"{folder}/" if folder else ""))
+
+
 def read_game(archive: bytes) -> GameBundle:
     """Find the ready-to-play game in a repo zip and check it."""
     try:
@@ -226,13 +255,7 @@ def read_game(archive: bytes) -> GameBundle:
         infos = zf.infolist()
         if len(infos) > MAX_ARCHIVE_ENTRIES:
             raise PublishError(f"The repo has more than {MAX_ARCHIVE_ENTRIES} files", "too_many_files")
-        entries: dict[str, zipfile.ZipInfo] = {}
-        for info in infos:
-            if info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
-                continue  # links could point outside the game
-            path = _safe_path(info.filename)
-            if path:
-                entries[path] = info
+        entries = _zip_entries(zf)
 
         folder = _find_game_folder(zf, entries)
         prefix = f"{folder}/" if folder else ""
@@ -265,6 +288,8 @@ def read_game(archive: bytes) -> GameBundle:
             if info and info.file_size <= MAX_README_BYTES:
                 readme = zf.read(info)
                 break
+
+        bundle.brief = brief_mod.extract(entries, zf, readme)
 
         for candidate in ([f"{prefix}{MANIFEST}"] if prefix else []) + [MANIFEST]:
             info = entries.get(candidate)

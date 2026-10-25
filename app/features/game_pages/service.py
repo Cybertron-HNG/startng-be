@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ... import flags
+from ... import auto_update, flags
+from ...publish import PublishError, download_repo, parse_repo_url, read_brief
 from ...db import SessionLocal
 from ...game_store import get_game_store
 from ...models import Game
@@ -187,6 +188,35 @@ def make_missing_drafts(db: Session, store, limit: int = AUTO_PER_ROUND) -> int:
     return len(todo)
 
 
+BACKFILL_PER_ROUND = 5  # repos downloaded per round: GitHub is asked gently
+HICCUPS = ("download_failed",)  # GitHub slow or down: try again later. Any other reason (repo gone, private, too big, a link that can't be read) is remembered
+
+
+def backfill_briefs(db: Session, limit: int = BACKFILL_PER_ROUND) -> list[str]:
+    """Read the brief (app/brief.py) of games that were published before it existed, from their GitHub repos, a few at a time.
+    Returns the games that got one. A repo that can't be read (gone, private, too big, a link that doesn't parse) is marked so it isn't asked for again;
+    a hiccup (GitHub slow, or its limit used up) leaves the game for a later round."""
+    if auto_update.paused_until():
+        return []  # GitHub's limit is used up: wait, like the update checker does
+    done: list[str] = []
+    for game in db.scalars(_visible().where(Game.brief.is_(None)).order_by(Game.created_at.desc()).limit(limit)).all():
+        try:
+            archive = download_repo(parse_repo_url(game.repo_url, game.branch))
+        except PublishError as err:
+            if err.code not in HICCUPS:
+                game.brief = {"v": 1, "unavailable": err.code, "messages": [], "notes": [], "names": [], "readme": None, "files": 0}
+                db.commit()
+                continue
+            log.warning("Couldn't read the repo of %s (%s); will try again later", game.name, err.code)
+            break  # GitHub is not answering: stop for this round
+        brief = read_brief(archive)
+        if brief is not None:
+            game.brief = brief
+            db.commit()
+            done.append(game.name)
+    return done
+
+
 def on_game_updated(payload: dict) -> None:
     """A game got a new version: remake its draft pages (approved and edited pages are never touched), so a game that was
     too thin before gets pages once its creator adds words. Subscribed in __init__.py; never raises."""
@@ -209,7 +239,12 @@ async def run_forever() -> None:
         if not flags.is_on("game_pages"):
             return 0
         with SessionLocal() as db:
-            return make_missing_drafts(db, get_game_store())
+            store = get_game_store()
+            for name in backfill_briefs(db):  # a game whose repo was just read gets its pages remade from it
+                game = db.get(Game, name)
+                if store is not None and game is not None:
+                    generate_for(db, store, game)
+            return make_missing_drafts(db, store)
 
     while True:
         try:
