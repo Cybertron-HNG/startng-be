@@ -10,7 +10,7 @@ from . import auto_update, features, flags, security
 from .config import settings
 from .db import get_db
 from .errors import ApiError, api_error_handler
-from .routers import admin, auth, favorites, games, indie, live, pages, tournaments
+from .routers import admin, auth, favorites, feature_switches, games, indie, live, pages, tournaments
 
 # Show the app's own messages (e.g. "Updated lane-dash to ...") next to uvicorn's.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
@@ -69,6 +69,7 @@ app.include_router(favorites.router)
 app.include_router(pages.router)
 app.include_router(tournaments.router)
 app.include_router(admin.router)
+app.include_router(feature_switches.router)
 
 # Features (app/features): each one's routes answer 404 until its flag is on (FEATURES, app/flags.py).
 for feature in features.load():

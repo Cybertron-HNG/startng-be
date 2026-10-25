@@ -374,6 +374,19 @@ server's own check.)
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
+## GitHub App: pushes go live straight away (F1)
+`app/features/github_app`; flag `github_app`.
+- Owners install the start.ng GitHub App on their game's repo (Your games links to it: `GET /github/app`). GitHub then
+  calls `POST /github/webhook` on every push, signed with `GITHUB_WEBHOOK_SECRET` (`X-Hub-Signature-256`, checked on
+  the raw body). A push to the branch the game is published from (or the repo's default branch) republishes it in the
+  background, the same way `app/auto_update.py` does (`auto_update.update_to`): an update that can't go live is shown
+  to the owner, and a GitHub or storage hiccup is tried again by the regular check. GitHub sending the same push again
+  does nothing (that commit is live already). Checking every few minutes stays for repos without the app.
+- **Setting it up (an owner of the GitHub org):** create a GitHub App with permissions Contents: read and Metadata:
+  read, subscribed to the Push event, webhook URL `<API_URL>/github/webhook` and a long random webhook secret. Put the
+  secret in `GITHUB_WEBHOOK_SECRET` and the app's short name (from github.com/apps/<slug>) in `GITHUB_APP_SLUG`.
+  Public repos need no private key.
+
 ## Tournament emails (PRD H1)
 `app/features/email/tournament_mail.py`, part of the `email` feature.
 - At 6 PM one tournament ends and the next starts. Everyone on the `tournament` topic (visitors too) gets who won and
@@ -425,7 +438,10 @@ the `Deploy (Coolify)` workflow runs only after `Malware Scan (CI Gate)` passes 
   required. Staff picks have no checklist. Owners see theirs with `GET /games/{name}/featuring`.
   Admins: `GET /admin/featured`, `PUT`/`DELETE /admin/featured/{featured|staff}/{game}`, `POST .../move?direction=up|down`.
 - **Play next** (C10): `GET /discover/next?after=<game>&limit=1-3`: best ranked first, games the player hasn't opened ahead
-  of those they have.
+  of those they have. **Inside a tournament** only that tournament's other games are offered (in its order, after this game, then
+  round to the start; the ones not opened first) and the reply names it (`tournament`): today's public tournament, or a private
+  one the player is a member of (and only while the `private_tournaments` feature is on). A game in no running tournament, or
+  one whose tournament has no other visible game, gets the usual suggestions.
 ## Categories, ratings and filters (PRD T1)
 `app/features/catalog`; flag `catalog` (ratings also need `progress`, for game opens); admin permission `ratings.moderate`.
 - **Categories:** Action, Racing, Puzzle, Card & board, Arcade, Adventure, Sports, Strategy, Educational. A game sets one in
@@ -476,3 +492,11 @@ out again: when a request with a valid token works and the token is past half of
 `X-Refreshed-Token` header (a middleware in `app/main.py`; CORS exposes the header) and the website swaps it in. Someone who stays
 away longer than the lifetime is signed out. An old 24 hour token becomes a week on its next visit. Live-room tickets and game
 sessions are never renewed, and neither are tokens of blocked players.
+## Feature switches (admin page)
+A feature is on when the `FEATURES` setting lists it, **unless** a super admin has switched it in the admin page (the Features tab,
+`app/routers/feature_switches.py`, table `feature_switches`): a switch wins over the setting, both ways, and "use the server setting"
+removes it. No redeploy: the process that took the change sees it at once, others within 10 seconds (`flags.CACHE_SECONDS`).
+- `GET /admin/features` (every feature, whether it is on, where that comes from, a caution for ones that change real behaviour) and
+  `PUT /admin/features/{name}` `{enabled: true | false | null}`, super admins only; each change is in the activity log.
+- `GET /features` (public) lists what is on after the switches are applied. Without the table (before the migration) the setting alone decides.
+- Tests don't read switches from a database (`FEATURE_SWITCHES` is off in `tests/conftest.py`); the switch tests turn it on.

@@ -1,8 +1,8 @@
 """The admin page's API (start.ng/admin), and players reporting games. Who can do what: app/admin.py."""
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import admin as adm
@@ -15,7 +15,7 @@ from ..game_store import GameStore, get_game_store
 from ..models import Activity, Admin, DeveloperContact, Game, GamePlay, GameReport, Role, Tournament, User
 from ..schemas import (
     AdminIn, AdminMe, AdminOut, AnalyticsOut, DayCount, TopGame, AdminRoleIn, AdminTournamentOut, AdminTournamentsOut, CloseIn, ContactIn, ContactOut,
-    DeveloperOut, FlagIn, GameCard, LogOut, OverviewOut, Permission, ReportIn, ReportOut, RestoreIn, ReviewGameOut, RoleIn,
+    DeveloperOut, FlagIn, GameCard, LogOut, LogPage, OverviewOut, Permission, ReportIn, ReportOut, RestoreIn, ReviewGameOut, RoleIn,
     RoleOut, TournamentGamesIn,
 )
 from ..security import current_user
@@ -561,3 +561,62 @@ def activity_log(
         q = q.where(Activity.kind == kind)
     return [LogOut(id=r.id, actor=r.actor, kind=r.kind, action=r.action, target=r.target, detail=r.detail, at=r.at)
             for r in db.scalars(q).all()]
+
+
+BACKSLASH = chr(92)  # the character LIKE escapes with (see the escape= arguments below)
+
+
+def _escape(text: str) -> str:
+    """The text with LIKE's special characters escaped (a % or _ typed in the search is not a wildcard)."""
+    return text.replace(BACKSLASH, BACKSLASH * 2).replace("%", BACKSLASH + "%").replace("_", BACKSLASH + "_")
+
+
+def _like(text: str) -> str:
+    return "%" + _escape(text) + "%"
+
+
+@router.get("/log/search", response_model=LogPage)
+def search_log(
+    q: str | None = Query(None, max_length=100, description="text in who, what, the target or the details"),
+    kind: str | None = Query(None, pattern="^(player|developer|admin|system)$"),
+    action: str | None = Query(None, max_length=40, description="an exact action, or a prefix ending in a dot, like report."),
+    actor: str | None = Query(None, max_length=255, description="part of the actor's email"),
+    since: date | None = None,
+    until: date | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=10, le=100),
+    admin: AdminUser = Depends(require("log.view")),
+    db: Session = Depends(get_db),
+):
+    """The activity log with search and page numbers, newest first. q looks in the actor, the action, the target and the
+    details; kind, action, actor and the dates (inclusive, in UTC) narrow it further."""
+    where = []
+    if q and q.strip():
+        pattern = _like(q.strip())
+        where.append(or_(
+            Activity.actor.ilike(pattern, escape=BACKSLASH), Activity.action.ilike(pattern, escape=BACKSLASH),
+            Activity.target.ilike(pattern, escape=BACKSLASH), cast(Activity.detail, Text).ilike(pattern, escape=BACKSLASH),
+        ))
+    if kind:
+        where.append(Activity.kind == kind)
+    if action:
+        where.append(Activity.action.like(_escape(action) + "%", escape=BACKSLASH) if action.endswith(".") else Activity.action == action)
+    if actor and actor.strip():
+        where.append(Activity.actor.ilike(_like(actor.strip()), escape=BACKSLASH))
+    if since:
+        where.append(Activity.at >= datetime.combine(since, time.min, tzinfo=timezone.utc))
+    if until:
+        where.append(Activity.at < datetime.combine(until + timedelta(days=1), time.min, tzinfo=timezone.utc))
+    total = db.scalar(select(func.count()).select_from(Activity).where(*where)) or 0
+    pages = max(1, -(-total // page_size))
+    page = min(page, pages)
+    rows = db.scalars(select(Activity).where(*where).order_by(Activity.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    return LogPage(
+        items=[LogOut(id=r.id, actor=r.actor, kind=r.kind, action=r.action, target=r.target, detail=r.detail, at=r.at) for r in rows],
+        total=total, page=page, pages=pages, page_size=page_size)
+
+
+@router.get("/log/actions", response_model=list[str])
+def log_actions(admin: AdminUser = Depends(require("log.view")), db: Session = Depends(get_db)):
+    """Every kind of action that has happened, for the log's filter."""
+    return list(db.scalars(select(Activity.action).distinct().order_by(Activity.action).limit(300)).all())
