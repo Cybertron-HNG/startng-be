@@ -149,3 +149,20 @@ def test_email_wording(env):
     note = service._rejected({"game": "lane-dash", "reason": "copy", "note": "<b>same as dave</b>"})
     assert note.subject == "Lane Dash wasn't approved yet"
     assert "It's a copy of another game" in note.text and "&lt;b&gt;same as dave&lt;/b&gt;" in note.html
+
+
+def test_approving_doesnt_undo_another_reason(env):
+    """A game in review that's also reported stays hidden when its review is approved."""
+    from app import admin as adm
+
+    client, tokens, Session, store, archives = env
+    publish(client, "ada", tokens)
+    with Session() as db:
+        game = db.get(Game, "lane-dash")
+        adm.hide(game, adm.REPORTED)  # "in review" is the weakest reason: a report replaces it
+        db.commit()
+        assert game.hidden == adm.REPORTED
+    assert client.post("/admin/game-review/lane-dash/approve", headers=tokens["boss"]).json()["status"] == "approved"
+    with Session() as db:
+        assert db.get(Game, "lane-dash").hidden == adm.REPORTED
+    assert listed(client) == []

@@ -29,7 +29,9 @@ log = logging.getLogger(__name__)
 
 NAME = "game_review"
 HIDDEN = "in_review"  # games.hidden while it waits, or after it was rejected
-adm.register_hide_reason(HIDDEN)
+# The weakest reason: a report, a flag or "needs fixing" on a game in review replaces it, so approving the review
+# never puts back a game that's hidden for something else.
+adm.register_hide_reason(HIDDEN, below=adm.REPORTED)
 
 REJECT_REASONS: dict[str, str] = {
     "doesnt_load": "It doesn't load, or it crashes",
