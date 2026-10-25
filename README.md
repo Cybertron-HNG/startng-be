@@ -382,6 +382,17 @@ server's own check.)
 - Admins: `GET /admin/game-health`, `POST /admin/game-health/games/{name}/check`, `POST /admin/game-health/scan`.
   Owners: `GET /game-health/mine` (their unhealthy games), `POST /game-health/games/{name}/check` (once a minute).
 
+## Private tournaments made by admins (F9)
+Part of `app/features/private_tournaments` (Tr1); admin permission `tournaments.private`.
+- An admin makes a tournament to share in a group: a name, 1 to 5 games, a start and end time (1 hour to 30 days; it
+  can start later) and an optional player limit (2 to 5,000; the usual limit otherwise). Its maker isn't a member.
+- It uses the same invite link and page as a tournament with friends (`/friends/<code>`), but joining is "registering",
+  and people who haven't registered don't see its games: not on the page, not in the link preview or its picture.
+  Like every private tournament it's never listed and its page is `noindex`. Runs count only between start and end.
+- `GET`/`POST /admin/private-tournaments` `{title, games, starts_at, ends_at, max_members?}`,
+  `POST /admin/private-tournaments/{code}/new-link`, `DELETE /admin/private-tournaments/{code}`. Player routes are
+  unchanged; their reply adds `by_admin` and `max_members`.
+
 ## Game review (F2)
 `app/features/game_review`; flag `game_review`; admin permission `games.review`.
 - A **new** game waits for an admin before it's listed: it's off start.ng's lists, search, tournaments and the
