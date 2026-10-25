@@ -75,6 +75,7 @@ def category_page(slug: str = SLUG, page: int = Query(1, ge=1, le=1000), db: Ses
     pages = max(1, -(-total // service.PER_PAGE))
     if page > pages:
         return _not_found(shell, path)
+    page = next(n for n in range(1, pages + 1) if n == page)  # our own number, not the request's (it is one of these)
 
     site = _site()
     path = f"/categories/{tag.slug}"  # the stored slug, not the request's text
