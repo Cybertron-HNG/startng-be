@@ -484,3 +484,49 @@ def test_the_about_page_tells_what_the_game_is_about_in_the_games_own_words():
     body = gen.build("about", f, "moon-run").body
     assert body.startswith("## What is Moon Run about?")
     assert "A calm night runner." in body and "The city sleeps, but the rooftops are awake." in body
+
+
+# ---- drafts are made on their own (a person still approves)
+
+def test_games_without_pages_get_drafts_a_few_at_a_time(env):
+    client, tokens, Session, store, _ = env
+    with Session() as db:
+        ada = db.query(User).filter_by(email="ada@example.com").one()
+        db.add(Game(name="secret", owner_id=ada.id, repo_url="s", hidden="blocked"))
+        db.commit()
+    store.games["secret"] = RICH
+    with Session() as db:
+        assert service.make_missing_drafts(db, store, limit=1) == 1
+        assert db.query(GamePage.game_name).distinct().count() == 1
+        assert service.make_missing_drafts(db, store, limit=5) == 1  # the other visible game
+        assert service.make_missing_drafts(db, store, limit=5) == 0  # nothing left to do
+        assert db.query(GamePage).filter_by(game_name="secret").count() == 0  # a hidden game gets nothing
+        assert {p.status for p in db.query(GamePage).all()} <= {"draft", "skipped"}  # never approved by itself
+        assert service.make_missing_drafts(db, None) == 0  # the games' files aren't reachable: nothing happens
+
+
+def test_a_new_version_remakes_drafts_but_never_an_approved_or_edited_page(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    from app import events
+    monkeypatch.setattr(service, "SessionLocal", Session)
+    monkeypatch.setattr(service, "get_game_store", lambda: store)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    pid = _approve(client, tokens, Session, store)  # approves the FAQ
+    store.games["lagos-apocalypto"] = {**RICH, "startng.json": json.dumps({"description": "A new description for a new version.", "controls": ["Press X to dash"]})}
+    events.publish("game_updated", {"game": "lagos-apocalypto", "owner_id": 1, "auto": True})  # the feature is subscribed to it
+    with Session() as db:
+        faq = db.get(GamePage, pid)
+        assert faq.status == "approved" and "A new description" not in faq.body  # the approved page stays as a person left it
+        how = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="how-to-play").one()
+        assert how.status == "draft" and "Press X to dash" in how.body  # a draft follows the new version
+
+
+def test_nothing_is_made_on_its_own_while_the_feature_is_off(env, monkeypatch):
+    client, tokens, Session, store, _ = env
+    monkeypatch.setattr(service, "SessionLocal", Session)
+    monkeypatch.setattr(service, "get_game_store", lambda: store)
+    monkeypatch.setattr(settings, "features", "")
+    service.on_game_updated({"game": "lagos-apocalypto"})
+    with Session() as db:
+        assert db.query(GamePage).count() == 0

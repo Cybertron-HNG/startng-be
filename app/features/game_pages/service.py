@@ -1,14 +1,20 @@
 """Making, reviewing and reading the pages about games. The server pages and the admin both go through here."""
+import asyncio
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ... import flags
+from ...db import SessionLocal
+from ...game_store import get_game_store
 from ...models import Game
 from . import generate as gen
 from .facts import read_facts
 from .models import GamePage
 
+log = logging.getLogger(__name__)
 SIMILAR = 0.85  # two pages this alike are the same page: only the first is made
 
 
@@ -160,3 +166,56 @@ def sitemap_urls(db: Session) -> list[tuple[str, str | None]]:
         .where(GamePage.status == "approved", Game.hidden.is_(None)).order_by(GamePage.game_name, GamePage.kind)
     ).all()
     return [(f"/games/{name}/{kind}", at.date().isoformat() if at else None) for name, kind, at in rows]
+
+
+# ---- drafts are made automatically; a person still approves every page
+
+AUTO_PER_ROUND = 10  # games per round: a new site with 180 games is done in a few minutes, without a spike
+ROUND_SECONDS = 120
+
+
+def make_missing_drafts(db: Session, store, limit: int = AUTO_PER_ROUND) -> int:
+    """Write draft pages for games that have never had any (a new game, or the first run after switching the feature on).
+    Games that already have rows are left alone here: their drafts refresh when they get a new version (on_game_updated).
+    Returns how many games were done."""
+    if store is None:
+        return 0
+    have = set(db.scalars(select(GamePage.game_name).distinct()).all())
+    todo = [g for g in db.scalars(_visible().order_by(Game.created_at.desc())).all() if g.name not in have][:limit]
+    for game in todo:
+        generate_for(db, store, game)
+    return len(todo)
+
+
+def on_game_updated(payload: dict) -> None:
+    """A game got a new version: remake its draft pages (approved and edited pages are never touched), so a game that was
+    too thin before gets pages once its creator adds words. Subscribed in __init__.py; never raises."""
+    if not flags.is_on("game_pages"):
+        return
+    store = get_game_store()
+    if store is None:
+        return
+    with SessionLocal() as db:
+        game = db.get(Game, payload["game"])
+        if game is not None and game.hidden is None:
+            generate_for(db, store, game)
+
+
+async def run_forever() -> None:
+    """The background job, started with the server; does nothing while the flag is off."""
+    from starlette.concurrency import run_in_threadpool
+
+    def tick() -> int:
+        if not flags.is_on("game_pages"):
+            return 0
+        with SessionLocal() as db:
+            return make_missing_drafts(db, get_game_store())
+
+    while True:
+        try:
+            await run_in_threadpool(tick)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Making draft game pages failed")
+        await asyncio.sleep(ROUND_SECONDS)

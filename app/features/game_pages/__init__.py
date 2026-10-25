@@ -2,6 +2,7 @@
 engines and people see the same page. Each is made from facts in the game's own files (startng.json, README, its page),
 never invented, and a person approves it before it is public. A game that doesn't say enough gets no page and goes on a
 "needs a description" list instead."""
+from ... import events
 from . import service  # noqa: F401
 from .router import router  # noqa: F401
 
@@ -9,3 +10,8 @@ NAME = "game_pages"  # the feature flag: its routes answer 404 until FEATURES in
 PERMISSIONS: dict[str, str] = {
     "gamepages.manage": "Make, read, edit and approve the about, how to play, FAQ and walkthrough pages of games",
 }
+
+# Drafts are made on their own: for every game that has none (a background job) and again when a game gets a new version.
+# A person still reads and approves each page in the admin before it is public.
+TASKS = [service.run_forever]
+events.subscribe("game_updated")(service.on_game_updated)
