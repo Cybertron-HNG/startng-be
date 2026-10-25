@@ -10,15 +10,18 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     name: str | None = None
+    remember: bool = False  # stay signed in
 
 
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    remember: bool = False  # stay signed in
 
 
 class GoogleIn(BaseModel):
     id_token: str
+    remember: bool = False  # stay signed in
 
 
 class CharacterStyle(BaseModel):

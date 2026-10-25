@@ -16,10 +16,10 @@ from ..security import create_token, current_user, hash_password, verify_passwor
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _token_response(user: User) -> TokenOut:
+def _token_response(user: User, remember: bool = False) -> TokenOut:
     if user.blocked_at is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been blocked")
-    return TokenOut(access_token=create_token(user.id), user=UserOut.model_validate(user))
+    return TokenOut(access_token=create_token(user.id, remember), user=UserOut.model_validate(user))
 
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
@@ -33,7 +33,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     record(db, email, "player", "account.created", email, via="email")
     db.commit()
     db.refresh(user)
-    return _token_response(user)
+    return _token_response(user, body.remember)
 
 
 @router.post("/login", response_model=TokenOut)
@@ -41,7 +41,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email.lower()))
     if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
-    return _token_response(user)
+    return _token_response(user, body.remember)
 
 
 @router.post("/google", response_model=TokenOut)
@@ -68,7 +68,7 @@ def google_login(body: GoogleIn, db: Session = Depends(get_db)):
         user.google_sub = info["sub"]
     db.commit()
     db.refresh(user)
-    return _token_response(user)
+    return _token_response(user, body.remember)
 
 
 @router.get("/me", response_model=UserOut)

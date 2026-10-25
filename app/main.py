@@ -2,11 +2,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import auto_update, features, flags
+from . import auto_update, features, flags, security
 from .config import settings
+from .db import get_db
 from .errors import ApiError, api_error_handler
 from .routers import admin, auth, favorites, feature_switches, games, indie, live, pages, tournaments
 
@@ -35,7 +37,28 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Refreshed-Token"],  # the website reads this to keep a sign-in going (see below)
 )
+
+
+@app.middleware("http")
+async def renew_sign_in(request: Request, call_next):
+    """Every visit keeps a sign-in going: when the token sent is past half of its life and the request worked, the answer carries a
+    fresh one in X-Refreshed-Token, and the website swaps it in. Someone who stays away longer than the lifetime (a week, or a year
+    if they chose to stay signed in) is signed out."""
+    response = await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if response.status_code < 400 and auth[:7].lower() == "bearer ":
+        make_db = request.app.dependency_overrides.get(get_db, get_db)  # the same database the request used (tests replace it)
+        gen = make_db()
+        try:
+            db = next(gen)
+            fresh = await run_in_threadpool(security.renewed_token, auth[7:], db)
+        finally:
+            gen.close()
+        if fresh:
+            response.headers["X-Refreshed-Token"] = fresh
+    return response
 
 app.include_router(auth.router)
 app.include_router(admin.reports_router)  # before games.router: POST /games/{name}/report

@@ -485,6 +485,13 @@ players are never identified to creators.
   rollup (today) are counted live. A missed night is filled in by the next run.
 - **Share card:** kind `creator` (id = the creator's user id), described in `card.py` for B2's `share_cards`.
 
+## Staying signed in
+A sign-in (the token the website keeps) lasts `SESSION_DAYS` (7) without a visit, or `REMEMBER_DAYS` (365) when the person ticked "Keep
+me signed in" (`remember: true` on `/auth/google`, `/auth/login` and `/auth/register`; the token carries `rem`). Every visit pushes it
+out again: when a request with a valid token works and the token is past half of its life, the answer carries a fresh one in the
+`X-Refreshed-Token` header (a middleware in `app/main.py`; CORS exposes the header) and the website swaps it in. Someone who stays
+away longer than the lifetime is signed out. An old 24 hour token becomes a week on its next visit. Live-room tickets and game
+sessions are never renewed, and neither are tokens of blocked players.
 ## Feature switches (admin page)
 A feature is on when the `FEATURES` setting lists it, **unless** a super admin has switched it in the admin page (the Features tab,
 `app/routers/feature_switches.py`, table `feature_switches`): a switch wins over the setting, both ways, and "use the server setting"
