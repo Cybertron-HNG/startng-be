@@ -281,7 +281,11 @@ def test_tictactoe_rules():
 
 def test_the_game_list(env):
     client, _, _ = env
-    assert client.get("/rooms/games").json() == [{"game": GAME, "min": 2, "max": 2}]
+    from app.features.rooms.games import GAMES
+
+    listed = client.get("/rooms/games").json()
+    assert listed == [{"game": g.name, "min": g.min_players, "max": g.max_players} for g in GAMES.values()]
+    assert {"game": GAME, "min": 2, "max": 2} in listed
 
 
 def test_after_a_game_ends_new_and_match_start_fresh(env):
