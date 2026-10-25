@@ -42,6 +42,8 @@ SITEMAP_PROVIDERS: list = []
 # Features add links to a game's server-written page: GAME_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "". Use the same
 # words and class names as the website's own part for that feature (src/features/<feature>), so both versions of the page agree.
 GAME_PAGE_PARTS: list = []
+# The same for a game by an independent creator (/creators/<id>-<name>): INDIE_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "".
+INDIE_PAGE_PARTS: list = []
 
 
 def _site() -> str:
@@ -181,9 +183,10 @@ def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depend
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     }
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+    parts = "".join(part(db, game) for part in INDIE_PAGE_PARTS)
     body = (
         f"<main><h1>{_esc(game.name)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}, an independent creator</p>"
-        f'<p><a href="/creators">All games by independent creators</a></p></main>'
+        f'<p><a href="/creators">All games by independent creators</a></p>{parts}</main>'
     )
     page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
