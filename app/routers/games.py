@@ -418,8 +418,11 @@ def _recent_plays(db: Session) -> dict[str, int]:
 
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)):
+    """Every visible game, newest first by when it was first published, so new games are the first thing people see. (An update
+    does not move a game up.)"""
     plays = _recent_plays(db)
-    return [_game_out(g, plays=plays.get(g.name, 0)) for g in db.scalars(select(Game).where(Game.hidden.is_(None)).order_by(Game.updated_at.desc())).all()]
+    games = db.scalars(select(Game).where(Game.hidden.is_(None)).order_by(Game.created_at.desc(), Game.name)).all()
+    return [_game_out(g, plays=plays.get(g.name, 0)) for g in games]
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)

@@ -249,3 +249,24 @@ def test_my_games_lists_only_your_own(env):
     client.post("/games/publish", json={"repo_url": "https://github.com/ada/z", "name": "ada-two"}, headers=tokens["ada"])
     assert [g["name"] for g in client.get("/games/mine", headers=tokens["ada"]).json()] == ["ada-two", "ada-one"]
     assert [g["name"] for g in client.get("/games/mine", headers=tokens["tunde"]).json()] == ["tunde-one"]
+
+
+def test_the_games_list_is_newest_published_first_and_an_update_does_not_move_a_game(env):
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import get_db
+    from app.models import Game
+
+    client, *_ = env
+    db = next(app.dependency_overrides[get_db]())
+    owner = db.query(User).first()
+    now = datetime.now(timezone.utc)
+    for i, name in enumerate(["oldest", "middle", "newest"]):
+        db.add(Game(name=name, owner_id=owner.id, repo_url="https://github.com/ada/x", created_at=now - timedelta(days=3 - i),
+                    updated_at=now - timedelta(days=3 - i)))
+    db.commit()
+    assert [g["name"] for g in client.get("/games").json()] == ["newest", "middle", "oldest"]
+    old = db.get(Game, "oldest")
+    old.updated_at = now  # it was just updated: the newest *update*, but still the oldest game
+    db.commit()
+    assert [g["name"] for g in client.get("/games").json()] == ["newest", "middle", "oldest"]
