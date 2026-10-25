@@ -14,3 +14,4 @@ def test_settings(monkeypatch):
     monkeypatch.setattr(settings, "enforce_game_standards", False)
     monkeypatch.setattr(settings, "email_provider", "log")  # never sends real email
     monkeypatch.setattr(settings, "email_only_to", "")
+    monkeypatch.setattr(settings, "feature_switches", False)  # admin switches come from a database; tests that want them turn this on

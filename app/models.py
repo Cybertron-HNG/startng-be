@@ -327,3 +327,15 @@ class Activity(Base):
     target: Mapped[str | None] = mapped_column(String(255))
     detail: Mapped[dict | None] = mapped_column(JSON)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class FeatureSwitch(Base):
+    """A feature an admin switched on or off in the admin page. It wins over the FEATURES setting; deleting the row goes back
+    to the setting (app/flags.py)."""
+
+    __tablename__ = "feature_switches"
+
+    feature: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    changed_by: Mapped[str] = mapped_column(String(255))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

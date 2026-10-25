@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     # Feature flags (app/flags.py): comma-separated feature names that are switched on, e.g. "wardrobe,profiles".
     # Every new feature ships dark (off) until its owner says it's ready. "*" switches every feature on (local testing).
     features: str = ""
+    # Switches an admin sets in the admin page (table feature_switches) win over FEATURES. Off in tests.
+    feature_switches: bool = True
     # Email (app/features/email, H1). EMAIL_PROVIDER: "log" writes emails to the server log instead of sending
     # (local work and tests); "brevo" sends through Brevo and "smtp" sends through an SMTP server. EMAIL_ONLY_TO:
     # while it's set, mail goes only to these comma-separated addresses and everyone else's is skipped (testing before
