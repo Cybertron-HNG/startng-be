@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -106,14 +106,14 @@ def round_at(db: Session, track: str, at: datetime, create: bool = True) -> Leag
 
 
 def _free_seat(db: Session, rnd: LeagueRound, tier: int) -> tuple[LeagueGroup, int]:
-    """The first group of this tier with space, and the next seat in it (a new group when they're all full)."""
+    """The first group of this tier with space, and its lowest free seat (a new group when they're all full). A seat
+    left by a deleted account is given out again, so it never clashes with a seat that's still taken."""
     groups = db.scalars(select(LeagueGroup).where(LeagueGroup.round_id == rnd.id, LeagueGroup.tier == tier)
                         .order_by(LeagueGroup.number)).all()
-    taken = dict(db.execute(select(LeagueEntry.group_id, func.count()).where(LeagueEntry.round_id == rnd.id)
-                            .group_by(LeagueEntry.group_id)).all())
     for group in groups:
-        if taken.get(group.id, 0) < GROUP_SIZE:
-            return group, taken.get(group.id, 0) + 1
+        taken = set(db.scalars(select(LeagueEntry.seat).where(LeagueEntry.group_id == group.id)))
+        if len(taken) < GROUP_SIZE:
+            return group, min(set(range(1, GROUP_SIZE + 1)) - taken)
     group = LeagueGroup(round_id=rnd.id, tier=tier, number=(groups[-1].number + 1) if groups else 1)
     db.add(group)
     db.flush()

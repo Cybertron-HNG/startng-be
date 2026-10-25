@@ -27,6 +27,7 @@ FEATURES: list[str] = [
     "email",  # H1 email and notifications (Hamzat)
     "game_health",  # H2 game health checks (Hamzat)
     "game_review",  # F2 admin review before a new game is listed (Hamzat)
+    "github_app",  # F1 GitHub App: a push updates the game straight away (Hamzat)
     "progress",
     "integrity",
     "spotlight",  # A2 Game of the Week and the daily challenge (Hamzat, for Ade)
@@ -39,6 +40,9 @@ FEATURES: list[str] = [
     "kit",  # M1 the start.ng Kit: game_sessions (Mo)
     "leagues",  # M2 leagues (Mo)
     "wardrobe",  # wardrobe rewards: coins, rarity items, the shop and game goals (Kaka)
+    "rooms",  # refereed multiplayer games: rooms with a code, matchmaking and bots (Hamzat)
+    "tags",  # tags and category pages (Chloe)
+    "game_pages",  # about, how to play, FAQ and walkthrough pages of games (Chloe)
 ]
 
 _loaded: dict[str, ModuleType] = {}

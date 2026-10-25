@@ -182,3 +182,63 @@ def test_continue_playing_and_play_next(env):
     assert nxt == ["quiet", "beginner", "old-b"]  # games they have not opened first, best ranked first, then the one they have
     assert client.get("/discover/next?after=old-a&limit=3").json()["games"][0] == "old-b"
     assert client.get("/discover/next").status_code == 422
+
+
+def _tournament(db, names, starts=None, ends=None):
+    from app.models import Tournament, TournamentGame
+
+    t = Tournament(starts_at=starts or ago(hours=1), ends_at=ends or (datetime.now(timezone.utc) + timedelta(hours=5)))
+    t.games = [TournamentGame(game_name=n, position=i) for i, n in enumerate(names)]
+    db.add(t)
+    db.commit()
+
+
+def test_play_next_inside_a_tournament_only_offers_that_tournaments_games(env):
+    client, tokens, ids, Session = env
+    with Session() as db:
+        busy(db, "old-a", 10)
+        busy(db, "quiet", 2)
+        db.add(GameOpen(user_id=ids["tunde"], game_name="quiet", first_at=ago(3), last_at=ago(1)))
+        _tournament(db, ["old-a", "old-b", "quiet"])
+    # in the tournament: only its other games, in its order after this one, those not opened first
+    got = client.get("/discover/next?after=old-a", headers=tokens["tunde"]).json()
+    assert got == {"games": ["old-b", "quiet"], "tournament": "today's tournament"}
+    assert client.get("/discover/next?after=old-b").json()["games"] == ["quiet", "old-a"]  # goes round; signed out is fine
+    assert client.get("/discover/next?after=quiet", headers=tokens["tunde"]).json()["games"] == ["old-a", "old-b"]
+    # a game that is not in the tournament gets the usual suggestions, which may include tournament games
+    outside = client.get("/discover/next?after=beginner", headers=tokens["tunde"]).json()
+    assert outside["tournament"] is None and set(outside["games"]) == {"old-a", "old-b", "quiet"}
+
+
+def test_play_next_ignores_a_tournament_that_is_over_hidden_games_and_a_tournament_of_one(env):
+    client, tokens, ids, Session = env
+    with Session() as db:
+        busy(db, "old-b", 4)
+        _tournament(db, ["old-a", "old-b"], starts=ago(days=2), ends=ago(days=1))  # over
+    assert client.get("/discover/next?after=old-a").json()["tournament"] is None
+    with Session() as db:
+        db.query(Game).filter(Game.name == "quiet").update({"hidden": "flagged"})
+        _tournament(db, ["old-a", "quiet"])  # its only other game is hidden: nothing to offer, so the usual suggestions
+    got = client.get("/discover/next?after=old-a").json()
+    assert got["tournament"] is None and "quiet" not in got["games"] and got["games"]
+
+
+def test_play_next_uses_a_private_tournament_only_for_its_members(env, monkeypatch):
+    from app.features.private_tournaments.models import PrivateTournament, PrivateTournamentGame, PrivateTournamentMember
+
+    monkeypatch.setattr(settings, "features", "discovery,private_tournaments")
+    client, tokens, ids, Session = env
+    with Session() as db:
+        busy(db, "old-b", 4)
+        t = PrivateTournament(code="abc123", owner_id=ids["ada"], title="Our crew", starts_at=ago(hours=1), ends_at=datetime.now(timezone.utc) + timedelta(hours=5))
+        t.games = [PrivateTournamentGame(game_name="old-a", position=0), PrivateTournamentGame(game_name="beginner", position=1)]
+        t.members = [PrivateTournamentMember(user_id=ids["tunde"])]
+        db.add(t)
+        db.commit()
+    member = client.get("/discover/next?after=old-a", headers=tokens["tunde"]).json()
+    assert member == {"games": ["beginner"], "tournament": "Our crew"}
+    other = client.get("/discover/next?after=old-a", headers=tokens["ada"]).json()  # not a member: never told its games
+    assert other["tournament"] is None
+    assert client.get("/discover/next?after=old-a").json()["tournament"] is None
+    monkeypatch.setattr(settings, "features", "discovery")  # the feature is off: not used even for a member
+    assert client.get("/discover/next?after=old-a", headers=tokens["tunde"]).json()["tournament"] is None
