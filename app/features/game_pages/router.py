@@ -123,6 +123,7 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
     if page is None:
         return _not_found(shell, name, kind)
 
+    kind = next(k for k in gen.KINDS if k == kind)  # our own word for it, not the request's text (KIND only lets these through)
     title = _title(game.name)
     path = f"/games/{game.name}/{kind}"
     site = _site()

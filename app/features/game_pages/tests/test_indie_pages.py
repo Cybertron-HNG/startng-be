@@ -82,7 +82,7 @@ def test_the_faq_page_answers_questions_from_the_same_facts(env):
                          "When was Moon Garden added to start.ng?", "Does Moon Garden have a leaderboard on start.ng?"]
     answers = {q["name"]: q["acceptedAnswer"]["text"] for q in faq["mainEntity"]}
     assert answers["What is Moon Garden?"] == DESCRIPTION
-    assert "ada.itch.io" in answers["Where can I play Moon Garden?"]
+    assert re.search(r"\bada\.itch\.io\b", answers["Where can I play Moon Garden?"])
     assert answers["Is Moon Garden made by start.ng?"].startswith("No.")
     assert re.fullmatch(r"Moon Garden was added to start.ng in [A-Z][a-z]+ \d{4}\.", answers["When was Moon Garden added to start.ng?"])
     assert answers["Does Moon Garden have a leaderboard on start.ng?"].startswith("No.")
