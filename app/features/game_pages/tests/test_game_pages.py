@@ -747,3 +747,66 @@ def test_waiting_drafts_of_old_games_are_approved(env, monkeypatch):
         monkeypatch.setattr(settings, "game_pages_auto_approve", True)
         assert service.approve_waiting(db) >= 1
     assert "draft" not in _statuses(Session).values()
+
+
+# ---- the daily agent's door: a secret key, quotes that must be real, nothing a person touched
+
+AGENT = {"Authorization": "Bearer agent-secret"}
+GOOD = {
+    "title": "About Lagos Apocalypto", "description": "A zombie survival game set in Lagos.",
+    "body": "## The story\nA zombie survival game set in Lagos. It begins at 8:11 a.m.",
+    "quotes": ["A zombie survival game set in Lagos", "It begins at 8:11 a.m."],
+}
+
+
+def _on(monkeypatch):
+    monkeypatch.setattr(settings, "agent_api_key", "agent-secret")
+
+
+def test_the_agent_door_is_shut_without_the_key(env, monkeypatch):
+    client, _, _, _, _ = env
+    assert client.get("/agent/game-pages/todo").status_code == 404  # no key set at all
+    _on(monkeypatch)
+    assert client.get("/agent/game-pages/todo").status_code == 404
+    assert client.get("/agent/game-pages/todo", headers={"Authorization": "Bearer wrong"}).status_code == 404
+    assert client.get("/agent/game-pages/todo", headers=AGENT).status_code == 200
+
+
+def test_todo_lists_games_with_their_facts_and_drops_finished_ones(env, monkeypatch):
+    client, _, _, _, _ = env
+    _on(monkeypatch)
+    todo = client.get("/agent/game-pages/todo", headers=AGENT).json()
+    assert {t["game"] for t in todo} == {"lagos-apocalypto", "bare"} and next(t for t in todo if t["game"] == "lagos-apocalypto")["facts"], todo
+    assert client.put("/agent/game-pages/lagos-apocalypto/about", json=GOOD, headers=AGENT).status_code == 200
+    assert {t["game"] for t in client.get("/agent/game-pages/todo", headers=AGENT).json()} == {"bare"}
+    assert client.post("/agent/game-pages/bare/skip?reason=Nothing%20to%20say", headers=AGENT).status_code == 200
+    assert client.get("/agent/game-pages/todo", headers=AGENT).json() == []
+
+
+def test_a_saved_page_needs_real_quotes_and_passes_the_checks(env, monkeypatch):
+    client, _, Session, _, _ = env
+    _on(monkeypatch)
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    url = "/agent/game-pages/lagos-apocalypto/about"
+    assert client.put(url, json={**GOOD, "quotes": ["A zombie survival game set in Lagos"]}, headers=AGENT).status_code == 422  # too few
+    assert client.put(url, json={**GOOD, "quotes": ["A zombie survival game set in Lagos", "it has dragons and a moat"]}, headers=AGENT).status_code == 422  # invented
+    assert client.put(url, json={**GOOD, "body": "Visit https://spam.example now"}, headers=AGENT).status_code == 422
+    res = client.put(url, json=GOOD, headers=AGENT)
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "approved"
+    with Session() as db:
+        page = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="about").one()
+        assert page.writer == "agent" and page.approved_by_id is None
+
+
+def test_the_agent_never_replaces_a_page_a_person_took_down(env, monkeypatch):
+    client, tokens, Session, _, _ = env
+    _on(monkeypatch)
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    url = "/agent/game-pages/lagos-apocalypto/about"
+    client.put(url, json=GOOD, headers=AGENT)
+    with Session() as db:
+        page = db.query(GamePage).filter_by(game_name="lagos-apocalypto", kind="about").one()
+        service.unapprove(db, page.id)
+    assert client.put(url, json=GOOD, headers=AGENT).status_code == 409
+    assert "lagos-apocalypto" not in {t["game"] for t in client.get("/agent/game-pages/todo", headers=AGENT).json()}
