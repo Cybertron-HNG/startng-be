@@ -238,3 +238,55 @@ def test_homepage_with_no_games_and_with_many(env):
     for i in range(9):
         add_game(env, f"game-{i}")
     assert '<a class="btn" href="/games">See all 9 games →</a>' in client.get("/pages/home").text
+
+
+def test_games_page_text_lists_the_hangout_then_newest_first(env):
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import get_db
+    from app.main import app
+
+    client, *_ = env
+    add_game(env, "moon-garden")
+    add_game(env, "lane-dash")
+    db = next(app.dependency_overrides[get_db]())
+    now = datetime.now(timezone.utc)
+    db.get(Game, "moon-garden").updated_at = now
+    db.get(Game, "lane-dash").updated_at = now - timedelta(days=1)
+    db.add(Game(name="copy-cat", owner_id=1, repo_url="https://github.com/ada/copy-cat", hidden="reported"))
+    db.commit()
+    res = client.get("/pages/games")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    text = res.text
+    assert "<html" not in text  # only what goes inside #root
+    assert "<h1>All games from the community</h1>" in text
+    assert '<span class="count">3 games</span>' in text  # the Hangout counts, as on the real page
+    hangout, moon, lane = (text.index(f'<a href="{href}">') for href in ("/hangout", "/games/moon-garden", "/games/lane-dash"))
+    assert hangout < moon < lane
+    assert "<p>moon-garden.start.ng</p>" in text and '<span class="by">by Ada</span>' in text
+    assert "copy-cat" not in text
+    assert "pagination" not in text  # one page only
+
+
+def test_games_page_text_pages_like_the_app(env):
+    client, *_ = env
+    for i in range(44):  # 45 cards with the Hangout: 3 pages
+        add_game(env, f"game-{i:02d}")
+    first = client.get("/pages/games").text
+    assert '<span class="count">1–20 of 45</span>' in first
+    assert '<span class="off">← Previous</span>' in first
+    assert '<a href="/games?page=2" rel="next" aria-label="Next page">Next →</a>' in first
+    assert '<a href="/games" aria-label="Page 1" aria-current="page">1</a>' in first
+    last = client.get("/pages/games?page=3").text
+    assert '<span class="count">41–45 of 45</span>' in last
+    assert '<a href="/games?page=2" rel="prev"' in last and "/hangout" not in last
+    assert client.get("/pages/games?page=99").text == last  # past the end: the last page, as the app does
+    assert client.get("/pages/games?page=0").status_code == 422
+
+
+def test_games_page_text_with_no_games_says_so(env):
+    client, *_ = env
+    text = client.get("/pages/games").text
+    assert "No community games yet" in text and '<a href="/hangout">The Hangout</a>' in text
+    assert '<span class="count">1 game</span>' in text
