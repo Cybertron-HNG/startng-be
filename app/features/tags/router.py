@@ -89,6 +89,7 @@ class ReviewRow(BaseModel):
     game: str
     approved: list[str]
     suggested: list[str]
+    requested: list[str] = []  # what the creator wrote under "other_category" (none of our categories fit)
 
 
 class SetTags(BaseModel):
