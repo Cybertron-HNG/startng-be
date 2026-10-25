@@ -6,8 +6,12 @@ player's real name and look. Rooms live in this process's memory (like the Hango
 
 Messages (JSON text):
   you -> server    {type: "move", data: <the game's move>} | {type: "resign"} | {type: "bot"} | {type: "ping"}
-  server -> you    {type: "welcome", you: seat, room: CODE, game, players: [player], status, state, turn, result}
-                   {type: "state", state, turn, result, status}     after every move (state is that player's own view)
+                   hosted games (a quiz, bingo; the creator of the room is the host, seat 0): {type: "setup", data: {...}} (up to 64 KB,
+                   before the game starts) and {type: "start"}
+  server -> you    {type: "welcome", you: seat, room: CODE, game, players: [player], status, state, turn, result, host, now}
+                   {type: "state", state, turn, result, status, now}  after every move (state is that player's own view)
+                   {type: "setup_ok"}                                 the host's setup was accepted
+                   (now is the server's clock in milliseconds, so a page can show a countdown that matches the server)
                    {type: "join", player} | {type: "away", seat, grace} | {type: "back", seat}
                    {type: "waiting"}  {type: "no_match"}             matchmaking: no one yet / offer to play a bot
                    {type: "error", code, message}  {type: "closed", reason}  {type: "pong"}
@@ -52,6 +56,22 @@ REPLACED = 4409
 TOO_MANY = 4429
 
 clock = time.monotonic  # tests replace this
+MAX_SETUP = 64 * 1024  # bytes: what a host may send to set a game up (a quiz's questions)
+
+
+def wall_ms() -> int:
+    """The server's clock in milliseconds since 1970: deadlines inside a game and the clock pages count down against."""
+    return int(time.time() * 1000)
+
+
+def startable(rules) -> bool:
+    """A game where the creator of the room (seat 0) starts it: a quiz or bingo (hosted), or a card or board game for 2 to 4 (start_mode "start")."""
+    return getattr(rules, "start_mode", "full") in ("host", "start")
+
+
+def hosted(rules) -> bool:
+    """A game with a host (a quiz, bingo): whoever makes the room is the host (seat 0) and starts it, instead of it starting when it is full."""
+    return getattr(rules, "start_mode", "full") == "host"
 
 
 @dataclass
@@ -92,6 +112,7 @@ class Room:
     last_move: float = 0.0
     finished_at: float | None = None
     empty_since: float | None = None
+    options: object = None  # what the host set up (hosted games)
 
 
 rooms: dict[str, Room] = {}
@@ -129,7 +150,8 @@ async def send(conn: Conn | None, message: dict) -> None:
 
 def players_of(room: Room) -> list[dict]:
     return [
-        {"seat": i, "id": s.user_id, "name": s.name, "style": s.style, "online": s.bot or s.conn is not None, "bot": s.bot}
+        {"seat": i, "id": s.user_id, "name": s.name, "style": s.style, "online": s.bot or s.conn is not None, "bot": s.bot,
+         **({"host": True} if startable(room.rules) and i == 0 else {})}
         for i, s in enumerate(room.seats)
     ]
 
@@ -143,7 +165,7 @@ async def tell_state(room: Room, only: Conn | None = None) -> None:
         if seat.conn is None or (only is not None and seat.conn is not only):
             continue
         view = room.rules.view(room.state, i) if room.state is not None else None
-        await send(seat.conn, {"type": "state", "state": view, "turn": turn_of(room), "result": room.result, "status": room.status})
+        await send(seat.conn, {"type": "state", "state": view, "turn": turn_of(room), "result": room.result, "status": room.status, "now": wall_ms()})
 
 
 async def tell_all(room: Room, message: dict, skip: Conn | None = None) -> None:
@@ -157,6 +179,7 @@ async def welcome(room: Room, conn: Conn) -> None:
     await send(conn, {
         "type": "welcome", "you": conn.seat, "room": room.code, "game": room.game, "players": players_of(room),
         "status": room.status, "state": view, "turn": turn_of(room), "result": room.result,
+        "host": 0 if startable(room.rules) else None, "now": wall_ms(),
     })
 
 
@@ -195,7 +218,7 @@ async def attach(room: Room, seat_index: int, conn: Conn) -> None:
 
 
 async def start_if_ready(room: Room) -> None:
-    if room.status != "waiting" or len(room.seats) < room.rules.max_players:
+    if room.status != "waiting" or len(room.seats) < room.rules.max_players or startable(room.rules):
         return
     room.status = "playing"
     room.state = room.rules.new_state(len(room.seats))
@@ -265,6 +288,51 @@ async def play_move(room: Room, conn: Conn, move) -> None:
     await bots_play(room)
 
 
+async def host_setup(room: Room, conn: Conn, data) -> None:
+    if not hosted(room.rules) or conn.seat != 0 or room.status != "waiting":
+        return
+    options, error = room.rules.validate_setup(data)
+    if error:
+        await send(conn, {"type": "error", "code": "bad_setup", "message": error})
+        return
+    room.options = options
+    await send(conn, {"type": "setup_ok"})
+
+
+async def host_start(room: Room, conn: Conn) -> None:
+    if not startable(room.rules) or conn.seat != 0 or room.status != "waiting":
+        return
+    if len(room.seats) < room.rules.min_players:
+        await send(conn, {"type": "error", "code": "need_players", "message": "Wait for someone to join first."})
+        return
+    try:
+        room.state = room.rules.new_state(len(room.seats), room.options)
+    except ValueError as err:
+        await send(conn, {"type": "error", "code": "bad_setup", "message": str(err)})
+        return
+    room.status, room.last_move = "playing", clock()
+    for seat in room.seats:
+        if seat.conn is not None:
+            await welcome(room, seat.conn)
+    await bots_play(room)
+
+
+async def tick() -> None:
+    """Hosted games run on timers (a question's time, the next number to call): ask each one whether its time has come."""
+    for room in list(rooms.values()):
+        if room.status != "playing" or not hosted(room.rules) or not hasattr(room.rules, "tick"):
+            continue
+        state, changed = room.rules.tick(room.state, wall_ms())
+        if not changed:
+            continue
+        room.state, room.last_move = state, clock()
+        result = room.rules.result(state)
+        if result:
+            await finish(room, result)
+        else:
+            await tell_state(room)
+
+
 async def add_bot(room: Room) -> None:
     room.seats.append(Seat(user_id=None, name="Bot", style=None, bot=True))
     await tell_all(room, {"type": "join", "player": players_of(room)[-1]})
@@ -311,6 +379,10 @@ async def connect(ws: WebSocket, user, game: str, mode: str) -> None:
             seat_human(room, conn)
             await welcome(room, conn)
         elif mode == "match":
+            if startable(GAMES[game]):
+                await send(conn, {"type": "error", "code": "no_match", "message": "This game is played in a room with a host. Make a room, or join one with its code."})
+                await ws.close(NOT_FOUND, "No matchmaking for this game")
+                return
             await match(conn)
         else:
             if too_many_bad_codes(user.id):
@@ -322,12 +394,14 @@ async def connect(ws: WebSocket, user, game: str, mode: str) -> None:
                 await send(conn, {"type": "closed", "reason": "not_found"})
                 await ws.close(NOT_FOUND, "That room has closed or never existed")
                 return
-            if len(room.seats) >= room.rules.max_players:
+            if len(room.seats) >= room.rules.max_players or (room.status == "playing" and not hosted(room.rules)):
                 await ws.close(ROOM_FULL, "That room is full")
                 return
             seat_human(room, conn)
+            if hosted(room.rules) and room.status == "playing" and hasattr(room.rules, "add_player"):
+                room.state = room.rules.add_player(room.state, conn.seat)  # someone who comes in late gets in from here on
             await tell_all(room, {"type": "join", "player": players_of(room)[conn.seat]}, skip=conn)
-            if len(room.seats) < room.rules.max_players:  # otherwise the game starts, and starting welcomes everyone
+            if startable(room.rules) or len(room.seats) < room.rules.max_players:  # otherwise the game starts, and starting welcomes everyone
                 await welcome(room, conn)
             await start_if_ready(room)
         await pump(conn)
@@ -365,7 +439,8 @@ async def pump(conn: Conn) -> None:
         text = event.get("text")
         if not text:
             continue
-        if len(text.encode()) > MAX_MESSAGE:
+        size = len(text.encode())
+        if size > MAX_SETUP:
             await send(conn, {"type": "error", "code": "too_big", "message": "That message is too big."})
             continue
         if not rate_ok(conn):
@@ -373,6 +448,9 @@ async def pump(conn: Conn) -> None:
         try:
             msg = json.loads(text)
         except ValueError:
+            msg = None
+        if size > MAX_MESSAGE and not (isinstance(msg, dict) and msg.get("type") == "setup"):  # only a host's setup may be bigger than a normal message
+            await send(conn, {"type": "error", "code": "too_big", "message": "That message is too big."})
             continue
         if not isinstance(msg, dict):
             continue
@@ -382,7 +460,11 @@ async def pump(conn: Conn) -> None:
             await send(conn, {"type": "pong"})
         elif kind == "move" and room is not None:
             await play_move(room, conn, msg.get("data"))
-        elif kind == "resign" and room is not None and room.status == "playing":
+        elif kind == "setup" and room is not None:
+            await host_setup(room, conn, msg.get("data"))
+        elif kind == "start" and room is not None:
+            await host_start(room, conn)
+        elif kind == "resign" and room is not None and room.status == "playing" and not hosted(room.rules) and len(room.seats) == 2:
             others = [i for i in range(len(room.seats)) if i != conn.seat]
             await finish(room, {"winner": others[0] if len(others) == 1 else None, "reason": "resigned"})
         elif kind == "bot":
@@ -393,7 +475,9 @@ async def pump(conn: Conn) -> None:
                 seat_human(room, conn)
                 await welcome(room, conn)
                 await add_bot(room)
-            elif room is not None and room.status == "waiting" and len(room.seats) == 1:
+            elif room is not None and room.status == "waiting" and not hosted(room.rules) and (
+                    (startable(room.rules) and conn.seat == 0 and len(room.seats) < room.rules.max_players)
+                    or (not startable(room.rules) and len(room.seats) == 1)):
                 await add_bot(room)
 
 
@@ -423,12 +507,19 @@ async def sweep() -> None:
     for room in list(rooms.values()):
         if room.status == "closed":
             continue
-        if room.status == "playing":
+        if room.status == "playing" and getattr(room.rules, "forfeit", room.rules.max_players == 2):
             for i, seat in enumerate(room.seats):
                 others = [j for j, s in enumerate(room.seats) if j != i and not s.bot]
                 if seat.away_since is not None and now - seat.away_since > SEAT_GRACE and others and not seat.bot:
                     await finish(room, {"winner": others[0] if len(others) == 1 else None, "reason": "left"})
                     break
+        if room.status == "playing" and startable(room.rules) and not hosted(room.rules):
+            # a person who stayed away too long: a bot plays their seat, so the others can finish
+            for seat in room.seats:
+                if seat.away_since is not None and now - seat.away_since > SEAT_GRACE and not seat.bot:
+                    seat.bot, seat.conn, seat.away_since = True, None, None
+                    await tell_all(room, {"type": "join", "player": players_of(room)[room.seats.index(seat)]})
+            await bots_play(room)
         if now - room.created > MAX_AGE:
             await close_room(room, "too_old")
         elif room.status == "waiting" and now - room.created > WAIT_FOR_FRIEND:

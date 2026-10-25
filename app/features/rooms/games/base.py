@@ -27,3 +27,16 @@ class GameRules(Protocol):
     def result(self, state: Any) -> dict | None: ...
     def view(self, state: Any, seat: int) -> dict: ...
     def bot_move(self, state: Any, seat: int, level: str) -> Any: ...
+
+
+# Hosted games (a quiz, bingo) add these. Whoever makes the room is the host and takes seat 0; the others are players.
+#
+#     start_mode = "host"          the host starts the game; it does not start when the room is full
+#     min_players, max_players     include the host
+#     forfeit = False              a player leaving must not end the game (default: True only for two player games)
+#     validate_setup(data) -> (options, error)       what the host sends before starting (a quiz's questions); error is a sentence
+#     new_state(players, options)  may raise ValueError("...") when something needed was not set up
+#     add_player(state, seat) -> state               someone joined while it is running
+#     tick(state, now_ms) -> (state, changed)        called every second: time-based changes (a question closing, the next number)
+#
+# Seat 0 (the host) and the players call apply() with their own moves; the module checks who may do what.
