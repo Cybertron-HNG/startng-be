@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # Game health (app/features/game_health, H2): besides checking each game's files, open its address and expect an
     # answer. Off when the games' addresses aren't reachable from the API (a laptop without the Worker running).
     game_health_http: bool = True
+    # A game that fails its health checks 3 times in a row is hidden through "needs fixing" (needs that feature on).
+    game_health_auto_hide: bool = True
+    # Emails to developers about their own games (hidden by a health check, a review's result). Super admins are
+    # always emailed. Off: developers still see everything in Your games.
+    dev_emails: bool = True
     email_merge_minutes: int = 10  # an email waits this long, so notes for the same player that day share one email
 
 

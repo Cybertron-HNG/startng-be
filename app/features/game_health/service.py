@@ -1,6 +1,8 @@
 """Game health (H2): a background job looks at every live game about every 20 minutes. A game that fails
 FAILS_IN_A_ROW checks in a row is unhealthy: admins see it, its owner sees it in Your games, and
 game_unhealthy is published (Discovery drops it from featured). One good check makes it healthy again.
+F8: an unhealthy game is also hidden through "needs fixing", and its owner and the super admins are emailed
+(auto_hide.py), unless many games fail at once.
 
 A check, without a browser:
   - index.html is there and isn't blank (some script, canvas or text to show);
@@ -97,8 +99,9 @@ def fetch_status(url: str) -> int | str:
         return type(e).__name__
 
 
-def check(store: GameStore, name: str, fetch=fetch_status) -> list[Problem]:
-    """What's wrong with a live game right now. An empty list: it's fine."""
+def check(store: GameStore, name: str, fetch=fetch_status, http: bool = True) -> list[Problem]:
+    """What's wrong with a game right now. An empty list: it's fine. http=False skips opening its address (a hidden
+    game's address answers with an error page on purpose)."""
     page = store.read_file(name, "index.html")
     if page is None:
         return [Problem("no_page", "index.html isn't there, so the game can't open.")]
@@ -115,7 +118,7 @@ def check(store: GameStore, name: str, fetch=fetch_status) -> list[Problem]:
         path = _local_path(src)
         if path is not None and path not in files:
             problems.append(Problem("missing_file", f'index.html loads "{src}", but there\'s no {path} in the game.'))
-    if settings.game_health_http:
+    if settings.game_health_http and http:
         status = fetch(_address(name))
         if status != 200:
             why = f"answered {status}" if isinstance(status, int) else f"didn't answer ({status})"
@@ -152,12 +155,18 @@ def record(db: Session, name: str, problems: list[Problem]) -> tuple[GameHealth,
     return row, False
 
 
-def check_and_record(db: Session, store: GameStore, name: str, fetch=fetch_status) -> GameHealth:
-    """Check one game now, save it, and tell the others if it just became unhealthy."""
-    row, became = record(db, name, check(store, name, fetch))
+def check_and_record(db: Session, store: GameStore, name: str, fetch=fetch_status, hide: bool = True) -> GameHealth:
+    """Check one game now, save it, and tell the others if it just became unhealthy. hide: also hide it if it's
+    unhealthy (F8, auto_hide.py); the background round does that itself, for all its games at once."""
+    game = db.get(Game, name)
+    row, became = record(db, name, check(store, name, fetch, http=game is None or game.hidden is None))
     db.commit()
     if became:
         events.publish("game_unhealthy", {"game": name, "reason": row.problems[0]["code"]})
+    if hide:
+        from . import auto_hide
+
+        auto_hide.act(db, store, [name], checked=1, failed=int(row.status != "ok"))
     return row
 
 
@@ -182,13 +191,22 @@ def due(db: Session, at: datetime | None = None, limit: int = PER_TICK) -> list[
 def check_due(db: Session, store: GameStore | None, fetch=fetch_status) -> int:
     if store is None:
         return 0
+    from . import auto_hide
+
     names = due(db)
+    failed = 0
     for name in names:
         try:
-            check_and_record(db, store, name, fetch)
+            row = check_and_record(db, store, name, fetch, hide=False)
+            failed += row.status != "ok"
         except Exception:
             db.rollback()
             log.exception("Couldn't check %s", name)
+    try:
+        auto_hide.act(db, store, names, checked=len(names), failed=failed)
+    except Exception:
+        db.rollback()
+        log.exception("Couldn't hide unhealthy games")
     return len(names)
 
 

@@ -22,5 +22,6 @@ class FixRequestOut(BaseModel):
     owner_note: str | None
     rounds: int
     created_by: str | None  # for admins only
+    automatic: bool = False  # marked by start.ng's health check, not by an admin (F8)
     created_at: datetime
     owner_fixed_at: datetime | None
