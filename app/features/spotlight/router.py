@@ -10,6 +10,7 @@ from ... import leaderboard as boards
 from ...admin import AdminUser, require
 from ...db import get_db
 from ...models import Game, User
+from ...routers import pages
 from ...routers.games import _cover_url
 from ...routers.pages import _title
 from ...security import optional_user
@@ -136,3 +137,33 @@ def unpick(week: date = Query(...), admin: AdminUser = Depends(edit), db: Sessio
     adm.log(db, admin, "spotlight.clear", str(service.week_start(week)))
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---- /spotlight's text for search engines (nginx puts it inside #root, see startng-fe nginx.conf)
+
+@router.get("/pages/spotlight", response_class=Response, include_in_schema=False)
+def spotlight_page(db: Session = Depends(get_db)):
+    """The same words and classes as src/features/spotlight/SpotlightPage.tsx, signed out. Times are Nigeria time."""
+    s = spotlight(None, db)
+    c, pick = s.challenge, s.game_of_the_week
+    if c:
+        goal = f"Finish {c.game_title} in {c.goal_shown} or less" if c.goal_is_a_ceiling else f"Reach {c.goal_shown} in {c.game_title}"
+        daily = (
+            f'<div class="spot-card daily"><p class="eyebrow">Daily challenge · until {pages._clock(c.ends_at)} Nigeria time</p>'
+            f"<h2>{pages._esc(goal)}</h2><p class=\"lead-sm\">One goal a day, set from how people have been playing. "
+            f"{pages._esc(c.stat)} counts, and only today's runs.</p>"
+            f'<div class="spot-actions"><a class="btn" href="/games/{pages._esc(c.game)}">Play now</a></div></div>'
+        )
+    else:
+        daily = '<p class="note">No daily challenge yet: it appears once a few games have enough plays.</p>'
+    if pick:
+        cover = f'<img src="{pages._esc(pick.cover_url)}" alt="" loading="lazy">' if pick.cover_url else ""
+        note = f'<p class="lead-sm">{pages._esc(pick.note)}</p>' if pick.note else ""
+        week = (
+            f'<div class="spot-card week"><p class="eyebrow">Game of the Week</p><div class="spot-game">{cover}<div>'
+            f'<h2>{pages._esc(pick.title)}</h2>{note}<a class="btn" href="/games/{pages._esc(pick.game)}">Play {pages._esc(pick.title)}</a></div></div></div>'
+        )
+    else:
+        week = '<p class="note">No Game of the Week picked yet.</p>'
+    body = f'{pages.NAV}<main><section class="container spotlight-page"><h1>Spotlight</h1>{daily}{week}</section></main>{pages.FOOTER}'
+    return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

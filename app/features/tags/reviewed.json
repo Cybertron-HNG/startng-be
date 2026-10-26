@@ -1,0 +1,809 @@
+{
+ "3d-coin-collector": [
+  "coin-collecting",
+  "3d-games"
+ ],
+ "agege-rush": [
+  "endless-runners",
+  "3d-games",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "agent-protocol": [
+  "tower-defence-and-strategy",
+  "neon-and-cyberpunk",
+  "brainy-games"
+ ],
+ "alley-velocity": [
+  "endless-runners",
+  "racing-and-driving"
+ ],
+ "along": [
+  "racing-and-driving",
+  "simulation-and-management",
+  "3d-games",
+  "nigerian-themed"
+ ],
+ "arcade-hub": [
+  "with-friends"
+ ],
+ "archery-master": [
+  "archery",
+  "3d-games"
+ ],
+ "arrow-escape": [
+  "brainy-games",
+  "3d-games"
+ ],
+ "ayo-arena": [
+  "board-and-card",
+  "two-player-classics",
+  "nigerian-themed",
+  "3d-games",
+  "brainy-games"
+ ],
+ "balloon-funride": [
+  "endless-runners",
+  "3d-games"
+ ],
+ "bloom-circuit": [
+  "brainy-games",
+  "cosy-and-relaxing"
+ ],
+ "budget-panic": [
+  "simulation-and-management",
+  "money-and-careers",
+  "markets-and-street-life",
+  "food-and-cooking",
+  "3d-games"
+ ],
+ "bug-escape": [
+  "survival",
+  "catch-and-dodge",
+  "coding-and-tech",
+  "3d-games"
+ ],
+ "buggy-bash-3d": [
+  "racing-and-driving",
+  "3d-games"
+ ],
+ "bullseye-archery": [
+  "archery"
+ ],
+ "circuit-racer": [
+  "racing-and-driving"
+ ],
+ "city-hustle-lagos": [
+  "simulation-and-management",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "coconut-dodge": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "five-minute-fun"
+ ],
+ "coin-catcher": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "3d-games"
+ ],
+ "coin-dash": [
+  "coin-collecting"
+ ],
+ "coin-dash-arena": [
+  "coin-collecting",
+  "catch-and-dodge",
+  "3d-games",
+  "survival"
+ ],
+ "coin-dash-game": [
+  "coin-collecting"
+ ],
+ "coin-dash-runner": [
+  "endless-runners",
+  "coin-collecting"
+ ],
+ "coin-quest": [
+  "coin-collecting"
+ ],
+ "coin-rush": [
+  "coin-collecting",
+  "catch-and-dodge",
+  "3d-games"
+ ],
+ "coin-rush-3d": [
+  "coin-collecting",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "cork-fc": [
+  "football-and-sports",
+  "two-player-classics",
+  "3d-games"
+ ],
+ "cosmic-dash": [
+  "endless-runners",
+  "space-and-sci-fi",
+  "neon-and-cyberpunk",
+  "coin-collecting"
+ ],
+ "cosmic-surge": [
+  "space-and-sci-fi"
+ ],
+ "cyber-slash": [
+  "endless-runners",
+  "neon-and-cyberpunk",
+  "shooting-and-action"
+ ],
+ "cyberpulse": [
+  "neon-and-cyberpunk"
+ ],
+ "cybertron-runner": [
+  "endless-runners",
+  "3d-games"
+ ],
+ "danfo": [
+  "simulation-and-management",
+  "racing-and-driving",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "danfo-defense": [
+  "shooting-and-action",
+  "survival",
+  "neon-and-cyberpunk",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "danfo-make-way": [
+  "brainy-games",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "dead-signal": [
+  "survival",
+  "horror-and-spooky",
+  "racing-and-driving",
+  "3d-games"
+ ],
+ "dont-spill-the-soup": [
+  "food-and-cooking"
+ ],
+ "downshaft": [
+  "survival",
+  "platformers",
+  "3d-games"
+ ],
+ "dusk-stack": [
+  "stack-and-timing",
+  "cosy-and-relaxing",
+  "3d-games",
+  "lagos"
+ ],
+ "echo-grid-dan": [
+  "brainy-games"
+ ],
+ "echo-world-game": [
+  "platformers",
+  "brainy-games"
+ ],
+ "ember-dash": [
+  "endless-runners",
+  "coin-collecting"
+ ],
+ "finding-mama": [
+  "markets-and-street-life"
+ ],
+ "flappy-run": [
+  "catch-and-dodge"
+ ],
+ "flood-rise": [
+  "platformers",
+  "survival",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "flying-human": [
+  "catch-and-dodge",
+  "five-minute-fun"
+ ],
+ "follow-follow": [
+  "brainy-games",
+  "with-friends",
+  "for-a-class-or-cohort"
+ ],
+ "forest-hunter": [
+  "shooting-and-action",
+  "3d-games"
+ ],
+ "gem-dash": [
+  "coin-collecting",
+  "catch-and-dodge",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "gem-isle": [
+  "coin-collecting",
+  "platformers",
+  "3d-games"
+ ],
+ "gem-rush": [
+  "coin-collecting",
+  "five-minute-fun"
+ ],
+ "ghost-on-the-loose": [
+  "horror-and-spooky"
+ ],
+ "ghost-shift": [
+  "brainy-games"
+ ],
+ "gidi-hop": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "git-quest": [
+  "coding-and-tech",
+  "educational",
+  "fantasy-and-magic",
+  "3d-games"
+ ],
+ "glam-dash": [
+  "endless-runners",
+  "coin-collecting"
+ ],
+ "glitter-rain": [
+  "catch-and-dodge",
+  "five-minute-fun"
+ ],
+ "go-slow-danfo": [
+  "lagos",
+  "nigerian-themed",
+  "racing-and-driving"
+ ],
+ "hangout": [
+  "with-friends",
+  "3d-games",
+  "cosy-and-relaxing"
+ ],
+ "harrington-mystery": [
+  "mystery-and-detective",
+  "3d-games",
+  "brainy-games"
+ ],
+ "horsebound-endless-derby": [
+  "endless-runners",
+  "3d-games"
+ ],
+ "ile-ere": [
+  "board-and-card",
+  "two-player-classics",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "inkbreak": [
+  "shooting-and-action",
+  "3d-games"
+ ],
+ "iso-scrap": [
+  "neon-and-cyberpunk",
+  "3d-games"
+ ],
+ "jackpot": [
+  "board-and-card",
+  "with-friends"
+ ],
+ "jemi-game-arcade": [
+  "endless-runners",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "job-hunt": [
+  "money-and-careers",
+  "educational",
+  "simulation-and-management",
+  "3d-games"
+ ],
+ "jollof-catch": [
+  "catch-and-dodge",
+  "food-and-cooking",
+  "nigerian-themed",
+  "five-minute-fun"
+ ],
+ "jollof-rush": [
+  "food-and-cooking",
+  "nigerian-themed"
+ ],
+ "jollof-rush-3d": [
+  "3d-games",
+  "food-and-cooking",
+  "nigerian-themed"
+ ],
+ "junction-spirit": [
+  "simulation-and-management",
+  "brainy-games"
+ ],
+ "lagos-apocalypto": [
+  "survival",
+  "horror-and-spooky",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "lagos-bike-rush": [
+  "racing-and-driving",
+  "endless-runners",
+  "3d-games",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "lagos-crossing": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "lagos-hustle": [
+  "lagos",
+  "nigerian-themed",
+  "racing-and-driving",
+  "3d-games"
+ ],
+ "lagos-market-run": [
+  "endless-runners",
+  "3d-games",
+  "lagos",
+  "nigerian-themed",
+  "markets-and-street-life"
+ ],
+ "lagos-run": [
+  "racing-and-driving",
+  "3d-games",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "lanedash": [
+  "endless-runners",
+  "coin-collecting",
+  "3d-games"
+ ],
+ "lantern-isles": [
+  "platformers",
+  "3d-games",
+  "fantasy-and-magic"
+ ],
+ "mama-put-rush": [
+  "simulation-and-management",
+  "food-and-cooking",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "mami": [
+  "simulation-and-management",
+  "food-and-cooking",
+  "markets-and-street-life",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "mango-rush": [
+  "catch-and-dodge",
+  "3d-games"
+ ],
+ "market-dash": [
+  "coin-collecting",
+  "markets-and-street-life",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "market-rush-neon": [
+  "markets-and-street-life",
+  "lagos",
+  "nigerian-themed",
+  "catch-and-dodge"
+ ],
+ "maths-escape": [
+  "maths-and-numbers",
+  "educational",
+  "brainy-games",
+  "lagos",
+  "nigerian-themed"
+ ],
+ "murewa-gem-rush": [
+  "coin-collecting",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "naija-drafts": [
+  "board-and-card",
+  "two-player-classics",
+  "nigerian-themed",
+  "brainy-games"
+ ],
+ "naija-market-hustle": [
+  "nigerian-themed",
+  "markets-and-street-life"
+ ],
+ "naija-penalty": [
+  "football-and-sports",
+  "nigerian-themed"
+ ],
+ "naija-quickfire": [
+  "nigerian-themed"
+ ],
+ "naija-relic-hunter": [
+  "nigerian-themed",
+  "ancient-ruins-and-treasure"
+ ],
+ "naija-roots": [
+  "educational",
+  "brainy-games",
+  "african-themed",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "naira-run": [
+  "endless-runners",
+  "coin-collecting",
+  "3d-games",
+  "nigerian-themed"
+ ],
+ "nebula-dash": [
+  "space-and-sci-fi"
+ ],
+ "neon-brick-break": [
+  "neon-and-cyberpunk",
+  "five-minute-fun"
+ ],
+ "neon-drift": [
+  "endless-runners",
+  "neon-and-cyberpunk",
+  "coin-collecting"
+ ],
+ "neon-drift-arcade": [
+  "neon-and-cyberpunk"
+ ],
+ "neon-orchard": [
+  "catch-and-dodge",
+  "neon-and-cyberpunk",
+  "five-minute-fun"
+ ],
+ "neondrift": [
+  "endless-runners",
+  "neon-and-cyberpunk",
+  "3d-games"
+ ],
+ "neondrift-arcade": [
+  "endless-runners",
+  "neon-and-cyberpunk"
+ ],
+ "nepa-light-up-lagos": [
+  "brainy-games",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "nightfall-arena": [
+  "shooting-and-action",
+  "3d-games"
+ ],
+ "noir-detective": [
+  "mystery-and-detective"
+ ],
+ "okada-dodge": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "markets-and-street-life",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "onithsa-market-run": [
+  "endless-runners",
+  "3d-games",
+  "markets-and-street-life",
+  "nigerian-themed"
+ ],
+ "orb-frenzy": [
+  "coin-collecting",
+  "catch-and-dodge",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "orb-rush": [
+  "coin-collecting"
+ ],
+ "orb-rush-mando": [
+  "coin-collecting",
+  "with-friends",
+  "3d-games"
+ ],
+ "orb-temple": [
+  "ancient-ruins-and-treasure"
+ ],
+ "orbit-orchard": [
+  "coin-collecting",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "orbit-run": [
+  "endless-runners",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "orbital-run": [
+  "endless-runners"
+ ],
+ "oven-rush": [
+  "simulation-and-management",
+  "food-and-cooking",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "owambe": [
+  "nigerian-themed",
+  "lagos"
+ ],
+ "penalty-kings-3d": [
+  "football-and-sports",
+  "3d-games"
+ ],
+ "perihelion": [
+  "catch-and-dodge",
+  "space-and-sci-fi",
+  "five-minute-fun",
+  "3d-games"
+ ],
+ "pick-me": [
+  "words-and-reading",
+  "brainy-games",
+  "with-friends",
+  "two-player-classics"
+ ],
+ "platformer-hopper": [
+  "platformers"
+ ],
+ "portal-pals": [
+  "platformers",
+  "coin-collecting"
+ ],
+ "puff-puff-catch": [
+  "catch-and-dodge",
+  "food-and-cooking",
+  "nigerian-themed",
+  "five-minute-fun"
+ ],
+ "pulse-runner": [
+  "endless-runners"
+ ],
+ "quantum-breaker": [
+  "neon-and-cyberpunk",
+  "3d-games"
+ ],
+ "rain-bucket": [
+  "catch-and-dodge",
+  "lagos",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "relic-hunter": [
+  "ancient-ruins-and-treasure",
+  "shooting-and-action",
+  "platformers",
+  "3d-games"
+ ],
+ "relic-rush": [
+  "ancient-ruins-and-treasure",
+  "coin-collecting",
+  "3d-games"
+ ],
+ "relic-rush-3d": [
+  "endless-runners",
+  "3d-games",
+  "ancient-ruins-and-treasure",
+  "coin-collecting"
+ ],
+ "robot-dodge": [
+  "endless-runners",
+  "catch-and-dodge",
+  "3d-games"
+ ],
+ "rooftop-rush": [
+  "endless-runners",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "salone-run": [
+  "endless-runners",
+  "3d-games",
+  "african-themed"
+ ],
+ "shard-survival": [
+  "survival",
+  "shooting-and-action",
+  "3d-games"
+ ],
+ "sharp-sharp": [
+  "lagos",
+  "nigerian-themed",
+  "simulation-and-management",
+  "racing-and-driving",
+  "3d-games"
+ ],
+ "sky-courier": [
+  "catch-and-dodge",
+  "coin-collecting",
+  "retro-and-pixel"
+ ],
+ "sky-hopper": [
+  "platformers",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "sky-patrol": [
+  "shooting-and-action"
+ ],
+ "skybund": [
+  "platformers",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "sneaky-squad": [
+  "escape-games",
+  "3d-games"
+ ],
+ "space-rescue": [
+  "space-and-sci-fi"
+ ],
+ "splash-course": [
+  "platformers",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "star-catcher": [
+  "catch-and-dodge",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "star-dash-3d": [
+  "3d-games",
+  "space-and-sci-fi"
+ ],
+ "star-dodge-by-jeffersdoherty": [
+  "catch-and-dodge",
+  "space-and-sci-fi",
+  "with-friends"
+ ],
+ "star-runner-3d": [
+  "endless-runners",
+  "3d-games",
+  "space-and-sci-fi"
+ ],
+ "star-sprint": [
+  "coin-collecting",
+  "3d-games",
+  "five-minute-fun"
+ ],
+ "starfall-neon-survival": [
+  "catch-and-dodge",
+  "neon-and-cyberpunk",
+  "survival"
+ ],
+ "startng-city-dash": [
+  "endless-runners",
+  "3d-games",
+  "coin-collecting"
+ ],
+ "startverse-neon-rush": [
+  "endless-runners",
+  "neon-and-cyberpunk"
+ ],
+ "streetpk-naija": [
+  "football-and-sports",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "style-sprint": [
+  "endless-runners",
+  "3d-games"
+ ],
+ "sumo-bump": [
+  "shooting-and-action",
+  "3d-games"
+ ],
+ "sunshade-dodger": [
+  "catch-and-dodge"
+ ],
+ "suomi-sniper": [
+  "shooting-and-action"
+ ],
+ "suwe": [
+  "board-and-card",
+  "two-player-classics",
+  "nigerian-themed",
+  "brainy-games"
+ ],
+ "suya-catcher": [
+  "catch-and-dodge",
+  "food-and-cooking",
+  "nigerian-themed",
+  "3d-games"
+ ],
+ "temple-runner": [
+  "endless-runners",
+  "3d-games",
+  "ancient-ruins-and-treasure",
+  "coin-collecting"
+ ],
+ "tesla-skyrun": [
+  "endless-runners"
+ ],
+ "testing-player-pick-me": [
+  "words-and-reading",
+  "brainy-games",
+  "with-friends",
+  "two-player-classics"
+ ],
+ "the-hooded-swordsman": [
+  "shooting-and-action"
+ ],
+ "the-lost-library": [
+  "words-and-reading",
+  "educational",
+  "brainy-games",
+  "fantasy-and-magic"
+ ],
+ "tower-stack": [
+  "stack-and-timing",
+  "five-minute-fun"
+ ],
+ "tower-tapper": [
+  "3d-games"
+ ],
+ "treasure-isle": [
+  "ancient-ruins-and-treasure",
+  "brainy-games",
+  "3d-games"
+ ],
+ "turbo-race": [
+  "racing-and-driving",
+  "neon-and-cyberpunk",
+  "retro-and-pixel"
+ ],
+ "vault-of-yankari": [
+  "ancient-ruins-and-treasure",
+  "escape-games",
+  "nigerian-themed"
+ ],
+ "volcano": [
+  "endless-runners",
+  "coin-collecting"
+ ],
+ "wheelie-wahala": [
+  "racing-and-driving",
+  "3d-games"
+ ],
+ "whimsy-wick": [
+  "platformers",
+  "cosy-and-relaxing",
+  "fantasy-and-magic",
+  "coin-collecting"
+ ],
+ "word-market": [
+  "words-and-reading",
+  "brainy-games"
+ ],
+ "zedu-dash": [
+  "endless-runners",
+  "coin-collecting"
+ ],
+ "zobo-sort": [
+  "brainy-games"
+ ]
+}

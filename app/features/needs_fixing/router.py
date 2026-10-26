@@ -17,11 +17,10 @@ from ...models import Game, User
 from ...routers.games import _cover_url, _game_or_404, _player_name
 from ...security import current_user
 from ...storage import game_url
+from . import service
 from .models import FixRequest
 from .schemas import FixRequestOut, MarkIn, NoteIn
-
-REASON = "needs_fixing"  # games.hidden while it waits
-adm.register_hide_reason(REASON)
+from .service import REASON
 
 router = APIRouter(tags=["needs fixing"])
 manage = require("games.needs_fixing")
@@ -33,12 +32,9 @@ def _out(r: FixRequest, for_admin: bool) -> FixRequestOut:
         id=r.id, game=g.name, game_url=game_url(g.name), cover_url=_cover_url(g),
         owner=_player_name(g.owner, g.owner.email) if for_admin and g.owner else None,
         status=r.status, note=r.note, owner_note=r.owner_note, rounds=r.rounds,
-        created_by=r.created_by if for_admin else None, created_at=r.created_at, owner_fixed_at=r.owner_fixed_at,
+        created_by=r.created_by if for_admin else None, automatic=r.created_by == service.HEALTH_CHECK,
+        created_at=r.created_at, owner_fixed_at=r.owner_fixed_at,
     )
-
-
-def _open_request(db: Session, game_name: str) -> FixRequest | None:
-    return db.scalar(select(FixRequest).where(FixRequest.game_name == game_name, FixRequest.status != "closed"))
 
 
 def _request_or_404(db: Session, request_id: int) -> FixRequest:
@@ -64,14 +60,10 @@ def mark(name: str, body: MarkIn, admin: AdminUser = Depends(manage), db: Sessio
          store: GameStore | None = Depends(get_game_store)):
     """Mark a game as needing a fix. It's hidden everywhere until an admin puts it back; the owner sees the note."""
     game = _game_or_404(db, name)
-    if _open_request(db, name):
+    if service.open_request(db, name):
         raise HTTPException(status.HTTP_409_CONFLICT, "This game is already marked as needing a fix")
-    r = FixRequest(game_name=name, note=body.note.strip(), created_by=admin.email)
-    db.add(r)
     adm.log(db, admin, "game.needs_fixing", name)
-    adm.hide_game(db, store, game, REASON)  # commits
-    db.refresh(r)
-    return _out(r, True)
+    return _out(service.mark(db, store, game, body.note, admin.email), True)  # commits
 
 
 @router.post("/admin/needs-fixing/{request_id}/approve", response_model=FixRequestOut)

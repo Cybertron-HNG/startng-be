@@ -167,3 +167,34 @@ def test_two_requests_for_the_same_link_get_409_not_500(env, monkeypatch):
     res = client.post("/indie", json=game(), headers=tokens["ada"])
     assert res.status_code == 409
     assert "already listed" in res.text
+
+
+# ---- categories (the tags feature): picked on the form, shown on the game's own page only
+
+def test_categories_are_ignored_while_the_tags_feature_is_off(env):
+    client, _, tokens, _ = env
+    res = client.post("/indie", json=game(categories=["not-a-category"]), headers=tokens["ada"])
+    assert res.status_code == 201 and client.get(f"/indie/{res.json()['id']}").json()["categories"] == []
+
+
+def test_categories_are_saved_and_shown_on_the_game_page(env, monkeypatch):
+    from app.config import settings
+
+    client, _, tokens, _ = env
+    monkeypatch.setattr(settings, "features", "tags")
+    res = client.post("/indie", json=game(categories=["Brainy games", "cosy-and-relaxing"], other_category="Gardening"), headers=tokens["ada"])
+    assert res.status_code == 201, res.text
+    assert res.json()["categories"] == ["Brainy games", "Cosy and relaxing"]
+    one = client.get(f"/indie/{res.json()['id']}").json()
+    assert one["categories"] == ["Brainy games", "Cosy and relaxing"]
+    assert all(g["categories"] == [] for g in client.get("/indie").json())  # not in the list on the home page
+
+
+def test_a_category_that_does_not_exist_is_refused_with_the_list(env, monkeypatch):
+    from app.config import settings
+
+    client, _, tokens, _ = env
+    monkeypatch.setattr(settings, "features", "tags")
+    res = client.post("/indie", json=game(categories=["racing"]), headers=tokens["ada"])
+    assert res.status_code == 422 and res.json()["errors"][0]["code"] == "bad_categories" and "endless-runners" in res.json()["errors"][0]["message"]
+    assert client.post("/indie", json=game(categories=["archery"] * 1 + ["survival", "lagos", "educational", "3d-games", "brainy-games"]), headers=tokens["ada"]).status_code == 422
