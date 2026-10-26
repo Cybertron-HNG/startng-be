@@ -6,11 +6,13 @@ player's real name and look. Rooms live in this process's memory (like the Hango
 
 Messages (JSON text):
   you -> server    {type: "move", data: <the game's move>} | {type: "resign"} | {type: "bot"} | {type: "ping"}
+                   {type: "rematch"}  after a game ends: play again in the same room (see rematch())
                    hosted games (a quiz, bingo; the creator of the room is the host, seat 0): {type: "setup", data: {...}} (up to 64 KB,
                    before the game starts) and {type: "start"}
   server -> you    {type: "welcome", you: seat, room: CODE, game, players: [player], status, state, turn, result, host, now}
                    {type: "state", state, turn, result, status, now}  after every move (state is that player's own view)
                    {type: "setup_ok"}                                 the host's setup was accepted
+                   {type: "rematch", seats: [seat]}                   who has asked to play again so far
                    (now is the server's clock in milliseconds, so a page can show a countdown that matches the server)
                    {type: "join", player} | {type: "away", seat, grace} | {type: "back", seat}
                    {type: "waiting"}  {type: "no_match"}             matchmaking: no one yet / offer to play a bot
@@ -152,6 +154,7 @@ class Room:
     options: object = None  # what the host set up (hosted games)
     shared: object = None  # a Relay room's shared state, and its version (see set_state)
     version: int = 0
+    rematch: set = field(default_factory=set)  # seats that asked to play again after the game ended
 
 
 rooms: dict[str, Room] = {}
@@ -390,6 +393,34 @@ async def host_start(room: Room, conn: Conn) -> None:
     await bots_play(room)
 
 
+async def rematch(room: Room, conn: Conn) -> None:
+    """After a game ends, play again in the same room. Everyone hears who has asked; once every person still in a seat has asked
+    (bots always agree), a new game starts with the seats moved round by one, so a different player goes first. In a game with
+    a host (a quiz, bingo) only the host asks, and the room goes back to waiting for them to start it, with the same setup."""
+    if room.status != "over" or relay(room.rules) or (hosted(room.rules) and conn.seat != 0):
+        return
+    room.rematch.add(conn.seat)
+    people = {i for i, s in enumerate(room.seats) if not s.bot}
+    if not hosted(room.rules) and not people <= room.rematch:
+        await tell_all(room, {"type": "rematch", "seats": sorted(room.rematch)})
+        return
+    room.rematch = set()
+    room.result, room.finished_at, room.last_move = None, None, clock()
+    if hosted(room.rules):
+        room.status, room.state = "waiting", None
+    else:
+        room.seats = room.seats[1:] + room.seats[:1]
+        for i, seat in enumerate(room.seats):
+            if seat.conn is not None:
+                seat.conn.seat = i
+        room.status = "playing"
+        room.state = room.rules.new_state(len(room.seats), room.options) if startable(room.rules) else room.rules.new_state(len(room.seats))
+    for seat in room.seats:
+        if seat.conn is not None:
+            await welcome(room, seat.conn)
+    await bots_play(room)
+
+
 async def tick() -> None:
     """Hosted games run on timers (a question's time, the next number to call): ask each one whether its time has come."""
     for room in list(rooms.values()):
@@ -540,6 +571,8 @@ async def pump(conn: Conn) -> None:
             await host_setup(room, conn, msg.get("data"))
         elif kind == "start" and room is not None:
             await host_start(room, conn)
+        elif kind == "rematch" and room is not None:
+            await rematch(room, conn)
         elif kind == "resign" and room is not None and room.status == "playing" and not hosted(room.rules) and not relay(room.rules) and len(room.seats) == 2:
             others = [i for i in range(len(room.seats)) if i != conn.seat]
             await finish(room, {"winner": others[0] if len(others) == 1 else None, "reason": "resigned"})
@@ -598,7 +631,7 @@ async def sweep() -> None:
             await bots_play(room)
         if now - room.created > MAX_AGE:
             await close_room(room, "too_old")
-        elif room.status == "waiting" and now - room.created > WAIT_FOR_FRIEND:
+        elif room.status == "waiting" and now - room.last_move > WAIT_FOR_FRIEND:  # last_move: made, or sent back to waiting by a rematch
             await close_room(room, "nobody_came")
         elif room.status == "playing" and now - room.last_move > IDLE:
             await close_room(room, "inactive")
