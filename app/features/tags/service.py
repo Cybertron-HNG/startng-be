@@ -251,7 +251,8 @@ def public_tags(db: Session) -> list[tuple[Tag, int]]:
 def links_for(db: Session, game_name: str) -> list[tuple[str, str]]:
     """(slug, label) of a game's approved tags that have a public page: what its page links to."""
     public = {t.slug for t, _ in public_tags(db)}
-    return [(t.slug, t.label) for t in tags_of(db, game_name) if t.slug in public]
+    # The search-word tags ("Web games", "Browser games"...) are on every game, so they say nothing about this one: no chips for them.
+    return [(t.slug, t.label) for t in tags_of(db, game_name) if t.slug in public and not t.everywhere]
 
 
 def games_of(db: Session, slug: str, page: int = 1) -> tuple[Tag, int, list[Game]]:
