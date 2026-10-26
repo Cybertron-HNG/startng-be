@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
@@ -14,7 +15,7 @@ from ...models import Game
 from ...routers.games import _cover_url, _player_name
 from ...routers.games import leaderboard as game_leaderboard
 from ...routers.pages import SHARE_IMAGE, _esc, _get_shell, _page, _site, _title
-from ...server_html import chrome, esc, game_card
+from ...server_html import chrome, colors_for, esc, game_card
 from ...storage import game_url
 from . import generate as gen
 from . import service
@@ -44,6 +45,46 @@ def _category_links(db: Session, name: str) -> list[tuple[str, str]]:
         return []
     from ..tags import service as tags
     return tags.links_for(db, name)
+
+
+_KEY = r"(?:[A-Z]|Space|Shift|Enter|Esc|Tab)"
+_KEYS = re.compile(rf"\b{_KEY}(?:\s*/\s*{_KEY})+\b|\bWASD\b")
+
+
+def _keycaps(html: str) -> str:
+    """Show keys as keys: "A / D" and "WASD" in the controls lines become little key caps (only lines that start with "Controls" or "Move",
+    so an "A" at the start of a sentence is never touched). The words stay the same."""
+    def caps(m: re.Match) -> str:
+        parts = list("WASD") if m.group(0) == "WASD" else [p.strip() for p in m.group(0).split("/")]
+        return " ".join(f'<kbd>{p}</kbd>' for p in parts)
+
+    def line(m: re.Match) -> str:
+        return m.group(1) + _KEYS.sub(caps, m.group(2)) + m.group(3)
+
+    return re.sub(r"(<li>(?:Controls|Move|Steer)[^<]*?)(?=\b)(.*?)(</li>)", lambda m: m.group(1) + _KEYS.sub(caps, m.group(2)) + m.group(3), html)
+
+
+def _sections(html: str, kind: str) -> str:
+    """The page text as cards, one for each heading. A FAQ is a list of questions that open and close. Same words, same order."""
+    parts = re.split(r"(?=<h2>)", html)
+    out = []
+    for part in parts:
+        m = re.match(r"<h2>(.*?)</h2>\n?(.*)", part, re.S)
+        if not m:
+            if part.strip():
+                out.append(f'<div class="gs-intro">{part}</div>')
+            continue
+        head, rest = m.group(1), m.group(2)
+        if kind == "faq":
+            out.append(f'<details class="gs-qa"><summary>{head}</summary><div>{rest}</div></details>')
+        else:
+            out.append(f'<section class="gs-card"><h2>{head}</h2>{rest}</section>')
+    return "".join(out)
+
+
+def _since(game: Game) -> str:
+    d = getattr(game, "created_at", None)
+    return d.strftime("%B %Y") if d else ""
 
 
 def _stat(stat: dict, value) -> str:
@@ -151,20 +192,34 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
                           "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}))
 
     cats = _category_links(db, game.name)
-    categories = (
-        '<div class="game-tags" aria-label="Categories"><p class="eyebrow">Categories</p><ul>'
-        + "".join(f'<li><a href="/categories/{_esc(s)}">{_esc(l)}</a></li>' for s, l in cats) + "</ul></div>"
-    ) if cats else ""
+    chips = ('<ul class="gs-chips" aria-label="Categories">' + "".join(f'<li><a href="/categories/{_esc(s)}">{_esc(l)}</a></li>' for s, l in cats) + "</ul>") if cats else ""
     others = "".join(f'<li><a href="/games/{game.name}/{k}">{_esc(gen.LABELS[k].format(t=title))}</a></li>' for k in kinds if k != kind)
+    tabs = "".join(
+        f'<a href="/games/{game.name}/{k}"' + (' aria-current="page"' if k == kind else "") + f">{_esc(gen.SHORT[k])}</a>" for k in gen.KINDS if k in kinds
+    )
+    a, b = colors_for(game.name)
+    cover = _cover_url(game)
+    art = f'<img src="{_esc(cover)}" alt="{_esc(title)} cover" decoding="async">' if cover else f"<span>{_esc(title[:1])}</span>"
+    ranked = [str(c.get("label") or c["key"]) for c in (game.leaderboard or []) if isinstance(c, dict) and c.get("key")]
+    facts = [("Made by", by)] + ([("On start.ng since", _since(game))] if _since(game) else []) + ([("Ranked by", ranked[0] + (f" and {len(ranked) - 1} more" if len(ranked) > 1 else ""))] if ranked else [])
+    facts_html = '<dl class="gs-facts">' + "".join(f"<div><dt>{_esc(k)}</dt><dd>{_esc(v)}</dd></div>" for k, v in facts) + "</dl>"
     inner = (
         '<main class="container game-sub">'
         f'<p class="crumbs"><a href="/games">Games</a> › <a href="/games/{game.name}">{_esc(title)}</a> › {_esc(gen.SHORT[kind])}</p>'
+        '<header class="gs-hero">'
+        f'<div class="gs-art" style="background: linear-gradient(135deg, {a}, {b})">{art}</div>'
+        '<div class="gs-hero-body">'
         f'<p class="eyebrow">{_esc(title)}</p><h1>{_esc(page.title)}</h1>'
-        f'<div class="game-sub-body">{gen.to_html(page.body)}</div>'
-        f'<p class="game-sub-play"><a class="btn" href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> <a class="btn ghost" href="/games/{game.name}">{_esc(title)} on start.ng</a></p>'
+        + (f'<p class="gs-lead">{_esc(page.description)}</p>' if page.description else "")
+        + chips
+        + f'<p class="game-sub-play"><a class="btn" href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> <a class="btn ghost" href="/games/{game.name}">{_esc(title)} on start.ng</a></p>'
+        "</div></header>"
+        f'<nav class="gs-tabs" aria-label="Pages about {_esc(title)}">{tabs}</nav>'
+        f"{facts_html}"
+        f'<div class="game-sub-body">{_sections(_keycaps(gen.to_html(page.body)), kind)}</div>'
         f"{_top_players(db, game, kind)}"
         f'<nav class="game-sub-links" aria-label="More about {_esc(title)}"><h2>More about {_esc(title)}</h2><ul>{others}<li><a href="/games/{game.name}">{_esc(title)} leaderboard and details</a></li><li><a href="/categories">Browse games by category</a></li></ul></nav>'
-        f"{categories}{_more_games(db, game, by)}</main>"
+        f"{_more_games(db, game, by)}</main>"
     )
     html = _page(shell, title=f"{page.title} · start.ng", description=page.description or f"{page.title} on start.ng", path=path, image=image, body=chrome(inner), extra_head="\n    ".join(extra))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})

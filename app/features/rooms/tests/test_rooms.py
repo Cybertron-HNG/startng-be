@@ -46,6 +46,7 @@ def env(monkeypatch):
         db.add_all(users)
         db.flush()
         db.add(Game(name=GAME, owner_id=users[0].id, repo_url="https://github.com/ada/ttt"))
+        db.add(Game(name="chess", owner_id=users[0].id, repo_url="https://github.com/ada/chess"))
         db.commit()
         ids = {u.name.lower(): u.id for u in users}
     with TestClient(app) as client:
@@ -286,6 +287,7 @@ def test_the_game_list(env):
     listed = client.get("/rooms/games").json()
     assert listed == [{"game": g.name, "min": g.min_players, "max": g.max_players} for g in GAMES.values()]
     assert {"game": GAME, "min": 2, "max": 2} in listed
+    assert {"game": "chess", "min": 2, "max": 2} in listed
 
 
 def test_after_a_game_ends_new_and_match_start_fresh(env):
@@ -301,3 +303,90 @@ def test_after_a_game_ends_new_and_match_start_fresh(env):
         assert again["status"] == "waiting" and again["room"] != first
     with client.websocket_connect(url(ids["tunde"], "match")) as tunde2:
         assert tunde2.receive_json() == {"type": "waiting"}
+
+
+def test_a_chess_game_in_a_room(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"], game="chess")) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code, game="chess")) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            for who, (a, b) in ((ada, ("f2", "f3")), (tunde, ("e7", "e5")), (ada, ("g2", "g4")), (tunde, ("d8", "h4"))):
+                who.send_json({"type": "move", "data": {"from": a, "to": b}})
+                x, y = ada.receive_json(), tunde.receive_json()
+            assert x["result"] == {"winner": 1, "reason": "checkmate"} and y["status"] == "over"  # fool's mate
+            assert y["state"]["last"] == {"from": "d8", "to": "h4"} and y["state"]["check"] is True
+
+
+def _finished_game(client, ids):
+    """Ada makes a room, Tunde joins, Ada resigns. Returns the two open connections (a context manager pair)."""
+    ada = client.websocket_connect(url(ids["ada"])).__enter__()
+    code = ada.receive_json()["room"]
+    tunde = client.websocket_connect(url(ids["tunde"], code)).__enter__()
+    ada.receive_json(), ada.receive_json(), tunde.receive_json()
+    ada.send_json({"type": "resign"})
+    assert ada.receive_json()["status"] == tunde.receive_json()["status"] == "over"
+    return ada, tunde, code
+
+
+def test_a_rematch_starts_when_both_ask_and_the_other_player_goes_first(env):
+    client, ids, _ = env
+    ada, tunde, code = _finished_game(client, ids)
+    try:
+        ada.send_json({"type": "rematch"})
+        assert ada.receive_json() == tunde.receive_json() == {"type": "rematch", "seats": [0]}
+        tunde.send_json({"type": "rematch"})
+        a, t = ada.receive_json(), tunde.receive_json()
+        assert a["type"] == t["type"] == "welcome" and a["room"] == t["room"] == code
+        assert a["status"] == "playing" and a["result"] is None and a["state"]["board"] == [None] * 9
+        assert (a["you"], t["you"]) == (1, 0) and a["turn"] == 0  # seats moved round: Tunde goes first now
+        tunde.send_json({"type": "move", "data": {"cell": 4}})
+        assert ada.receive_json()["state"]["board"][4] is not None
+    finally:
+        tunde.__exit__(None, None, None)
+        ada.__exit__(None, None, None)
+
+
+def test_rematch_only_after_the_game_ends(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code)) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            ada.send_json({"type": "rematch"})
+            ada.send_json({"type": "move", "data": {"cell": 0}})
+            assert ada.receive_json()["type"] == "state"  # the rematch was ignored: the next message is the move
+
+
+def test_a_rematch_against_the_bot_starts_straight_away(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"])) as ada:
+        ada.receive_json()
+        ada.send_json({"type": "bot"})
+        ada.receive_json(), ada.receive_json()  # the bot joins, then the game starts
+        ada.send_json({"type": "resign"})
+        assert ada.receive_json()["status"] == "over"
+        ada.send_json({"type": "rematch"})
+        again = ada.receive_json()
+        while again["type"] != "welcome":
+            again = ada.receive_json()
+        assert again["status"] == "playing" and again["you"] == 1
+
+
+def test_a_hosts_rematch_waits_again_and_is_not_closed_for_the_first_wait(env):
+    client, ids, now = env
+    room = core.make_room("quiz")
+    room.seats = [core.Seat(user_id=ids["ada"], name="Ada", style=None), core.Seat(user_id=ids["tunde"], name="Tunde", style=None)]
+    room.status, room.result, room.options = "over", {"winner": 0}, {"questions": []}
+    now[0] += core.WAIT_FOR_FRIEND + 60  # a long quiz: well past the room's first 15 minutes
+    host = core.Conn(user_id=ids["ada"], name="Ada", style=None, ws=None, game="quiz", seat=0)
+    guest = core.Conn(user_id=ids["tunde"], name="Tunde", style=None, ws=None, game="quiz", seat=1)
+    client.portal.call(core.rematch, room, guest)  # only the host can ask in a game with a host
+    assert room.status == "over"
+    client.portal.call(core.rematch, room, host)
+    assert room.status == "waiting" and room.result is None and room.options == {"questions": []}
+    client.portal.call(core.sweep)
+    assert room.code in core.rooms  # still open: the wait starts again from the rematch
+    now[0] += core.WAIT_FOR_FRIEND + 1
+    client.portal.call(core.sweep)
+    assert room.code not in core.rooms
