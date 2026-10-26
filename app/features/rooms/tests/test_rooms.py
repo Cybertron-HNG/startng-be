@@ -46,6 +46,7 @@ def env(monkeypatch):
         db.add_all(users)
         db.flush()
         db.add(Game(name=GAME, owner_id=users[0].id, repo_url="https://github.com/ada/ttt"))
+        db.add(Game(name="chess", owner_id=users[0].id, repo_url="https://github.com/ada/chess"))
         db.commit()
         ids = {u.name.lower(): u.id for u in users}
     with TestClient(app) as client:
@@ -286,6 +287,7 @@ def test_the_game_list(env):
     listed = client.get("/rooms/games").json()
     assert listed == [{"game": g.name, "min": g.min_players, "max": g.max_players} for g in GAMES.values()]
     assert {"game": GAME, "min": 2, "max": 2} in listed
+    assert {"game": "chess", "min": 2, "max": 2} in listed
 
 
 def test_after_a_game_ends_new_and_match_start_fresh(env):
@@ -301,6 +303,19 @@ def test_after_a_game_ends_new_and_match_start_fresh(env):
         assert again["status"] == "waiting" and again["room"] != first
     with client.websocket_connect(url(ids["tunde"], "match")) as tunde2:
         assert tunde2.receive_json() == {"type": "waiting"}
+
+
+def test_a_chess_game_in_a_room(env):
+    client, ids, _ = env
+    with client.websocket_connect(url(ids["ada"], game="chess")) as ada:
+        code = ada.receive_json()["room"]
+        with client.websocket_connect(url(ids["tunde"], code, game="chess")) as tunde:
+            ada.receive_json(), ada.receive_json(), tunde.receive_json()
+            for who, (a, b) in ((ada, ("f2", "f3")), (tunde, ("e7", "e5")), (ada, ("g2", "g4")), (tunde, ("d8", "h4"))):
+                who.send_json({"type": "move", "data": {"from": a, "to": b}})
+                x, y = ada.receive_json(), tunde.receive_json()
+            assert x["result"] == {"winner": 1, "reason": "checkmate"} and y["status"] == "over"  # fool's mate
+            assert y["state"]["last"] == {"from": "d8", "to": "h4"} and y["state"]["check"] is True
 
 
 def _finished_game(client, ids):
