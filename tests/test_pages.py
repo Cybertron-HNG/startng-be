@@ -88,7 +88,7 @@ def test_sitemap_lists_pages_and_games(env):
     res = client.get("/pages/sitemap.xml")
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("application/xml")
-    for loc in ["https://start.ng/", "https://start.ng/games", "https://start.ng/games/lane-dash", "https://start.ng/games/moon-garden"]:
+    for loc in ["https://start.ng/", "https://start.ng/games", "https://start.ng/about", "https://start.ng/games/lane-dash", "https://start.ng/games/moon-garden"]:
         assert f"<loc>{loc}</loc>" in res.text
 
 
@@ -230,6 +230,7 @@ def test_homepage_text_has_the_about_and_questions_and_escapes_names(env):
     assert "Nigeria&#x27;s home for browser games" in text  # escaped like every other text
     assert "<summary>Is it free?</summary>" in text
     assert '<a class="btn" href="/docs">Read the docs</a>' in text
+    assert '<p><a href="/about">More about start.ng →</a></p><h3>Questions</h3>' in text  # the About on the homepage leads to the About page
 
 
 def test_homepage_with_no_games_and_with_many(env):
