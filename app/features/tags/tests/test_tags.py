@@ -126,7 +126,7 @@ def test_a_games_own_tags_link_only_to_tags_that_have_a_page(env):
     approve_all(client, tokens, "nigerian-themed", NAMES[:3])
     approve_all(client, tokens, "lagos", NAMES[:1])  # only one game: no page yet
     slugs = [t["slug"] for t in client.get(f"/games/{NAMES[0]}/tags").json()]
-    assert "nigerian-themed" in slugs and "web-games" in slugs and "lagos" not in slugs
+    assert "nigerian-themed" in slugs and "web-games" not in slugs and "lagos" not in slugs  # the every-game search words are not chips
 
 
 def test_related_tags_are_the_others_in_the_same_group(env):
@@ -258,7 +258,7 @@ def test_the_server_written_game_page_links_to_the_games_categories(env, monkeyp
     approve_all(client, tokens, "lagos", NAMES[:1])  # one game only: no page, so no link
     html = client.get(f"/pages/games/{NAMES[0]}").text
     assert 'aria-label="Categories"' in html and 'href="/categories/nigerian-themed"' in html and ">Nigerian themed<" in html
-    assert 'href="/categories/web-games"' in html and "/categories/lagos" not in html
+    assert 'href="/categories/web-games"' not in html and "/categories/lagos" not in html
 
 
 def test_a_game_page_has_no_categories_block_while_the_flag_is_off(env, monkeypatch):
