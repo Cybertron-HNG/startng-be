@@ -42,7 +42,7 @@ SEO_BLOCK = re.compile(r"<!--seo-->[\s\S]*?<!--/seo-->")
 ROOT = '<div id="root"></div>'
 SHARE_IMAGE = "/hangout-cover.jpg"  # used when a game has no cover
 SHELL_SECONDS = 300
-FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs"]
+FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs", "/about"]
 # Pages of features (app/features) that anyone can read, listed while the feature is on: {feature: path}.
 FEATURE_PAGES = {"spotlight": "/spotlight", "wardrobe": "/shop", "creator_hub": "/by", "private_tournaments": "/friends"}
 
@@ -264,7 +264,7 @@ def _home_body(games: list[Game]) -> str:
     az = f'<details class="az-games"><summary>Every game on start.ng, A to Z ({total})</summary><ul>{links}</ul></details>' if games else ""
     see_all = f'<div class="see-all"><a class="btn" href="/games">See all {total} games →</a></div>' if total > HOME_GAMES else ""
     steps = "".join(f"<li><b>{_esc(t)}</b><span>{text}</span></li>" for t, text in HOW_STEPS)
-    about = "".join(f"<p>{_esc(p)}</p>" for p in HOME_ABOUT)
+    about = "".join(f"<p>{_esc(p)}</p>" for p in HOME_ABOUT) + '<p><a href="/about">More about start.ng →</a></p>'
     questions = "".join(f"<details><summary>{_esc(q)}</summary><p>{_esc(a)}</p></details>" for q, a in HOME_QUESTIONS)
     return (
         f"{NAV}<main>"
