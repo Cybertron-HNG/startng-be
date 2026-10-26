@@ -810,3 +810,17 @@ def test_the_agent_never_replaces_a_page_a_person_took_down(env, monkeypatch):
         service.unapprove(db, page.id)
     assert client.put(url, json=GOOD, headers=AGENT).status_code == 409
     assert "lagos-apocalypto" not in {t["game"] for t in client.get("/agent/game-pages/todo", headers=AGENT).json()}
+
+
+# ---- the page layout: a hero, tabs, facts and cards, with the same words as before
+
+def test_a_game_page_has_a_hero_tabs_facts_and_cards(env, monkeypatch):
+    client, _, Session, store, _ = env
+    monkeypatch.setattr(settings, "game_pages_auto_approve", True)
+    with Session() as db:
+        service.generate_for(db, store, db.get(Game, "lagos-apocalypto"))
+    about = client.get("/pages/games/lagos-apocalypto/about").text
+    assert 'class="gs-hero"' in about and 'class="gs-tabs"' in about and 'aria-current="page">About<' in about and 'class="gs-facts"' in about
+    assert 'class="gs-card"' in about and "<kbd>W</kbd>" in about and "A zombie survival game set in Lagos" in about
+    faq = client.get("/pages/games/lagos-apocalypto/faq").text
+    assert '<details class="gs-qa"><summary>' in faq and "FAQPage" in faq  # questions open and close; the markup for search engines stays
