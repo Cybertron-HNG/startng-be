@@ -31,7 +31,7 @@ from .. import tournaments
 from ..config import settings
 from ..db import get_db
 from ..models import Game, IndieGame
-from ..server_html import site_footer
+from ..server_html import pages_nav, site_footer
 from ..storage import game_url
 from .games import _cover_url, _player_name
 
@@ -238,12 +238,9 @@ HOW_STEPS = [
     ("Publish it", "One API call with your repo link, no key needed. Or hand your AI <code>start.ng/docs</code> and let it do the lot."),
     ("Approve it once", "Open the link you get back and it's live at <code>yourgame.start.ng</code>, with its own leaderboard if you want one. After that, every push updates it."),
 ]
-# The site's header and footer, as the app draws them (src/App.tsx).
-NAV = (
-    '<header class="container nav"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
-    '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a>'
-    '<a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
-)
+# The site's header, as the app draws it (src/App.tsx). A function, because its links follow the feature switches.
+def nav() -> str:
+    return f'<header class="container nav"><a class="logo" href="/"><b>start<span>.ng</span></b></a>{pages_nav()}</header>'
 
 
 def _visible_games(db: Session) -> list[Game]:
@@ -267,7 +264,7 @@ def _home_body(games: list[Game]) -> str:
     about = "".join(f"<p>{_esc(p)}</p>" for p in HOME_ABOUT) + '<p><a href="/about">More about start.ng →</a></p>'
     questions = "".join(f"<details><summary>{_esc(q)}</summary><p>{_esc(a)}</p></details>" for q, a in HOME_QUESTIONS)
     return (
-        f"{NAV}<main>"
+        f"{nav()}<main>"
         '<section class="container hero"><p class="eyebrow">Big imagination. Played everywhere.</p>'
         "<h1>Good vibes.<br><mark>Good games.</mark></h1>"
         '<p class="lead">Games made by builders in the community. Each one lives at its own start.ng address. '
@@ -337,7 +334,7 @@ def _games_body(games: list[Game], page: int) -> str | None:
         for title, link, host, by in shown
     )
     return (
-        f"{NAV}<main>"
+        f"{nav()}<main>"
         '<section id="games" class="container all-games"><div class="section-head"><h1>All games from the community</h1></div>'
         f'<div class="list-tools"><span class="count">{_esc(count)}</span></div>{empty}<div class="grid">{items}</div>'
         f"{_pagination(page, pages)}</section>"
@@ -385,7 +382,7 @@ def _creators_body(games: list[IndieGame], page: int) -> str | None:
         for g in shown
     )
     return (
-        f"{NAV}<main>"
+        f"{nav()}<main>"
         '<section class="container all-games creators-page"><div class="section-head"><h1>Games by independent creators</h1></div>'
         "<div class=\"creators-intro\"><p>Made and hosted by creators outside start.ng. Tap a card to read about a game, or play it on the creator's own site.</p></div>"
         f'<div class="list-tools"><span class="count">{_esc(count)}</span></div>{empty}<div class="grid">{items}</div>'
@@ -466,7 +463,7 @@ def _tournament_body(db: Session) -> str:
     )
     if t is None:
         empty = "<p class=\"empty\">No tournament today: there aren't enough games with leaderboards yet. Check back tomorrow.</p>"
-        return f'{NAV}<main><section class="container tournament-page">{head}{empty}</section></main>{site_footer()}'
+        return f'{nav()}<main><section class="container tournament-page">{head}{empty}</section></main>{site_footer()}'
 
     res = tournaments.results(db, t)
     status = (
@@ -504,7 +501,7 @@ def _tournament_body(db: Session) -> str:
     past_html = (f'<ul class="winners">{"".join(winners)}</ul>' if winners
                  else "<p class=\"board-empty\">The first winner is named when today's tournament ends.</p>")
     return (
-        f'{NAV}<main><section class="container tournament-page">{head}{status}'
+        f'{nav()}<main><section class="container tournament-page">{head}{status}'
         f'<div class="grid tournament-games">{"".join(cards)}</div><div class="tournament-columns">'
         f'<section aria-labelledby="standings-heading"><h2 id="standings-heading">Standings</h2>{standings}</section>'
         f'<section aria-labelledby="winners-heading"><h2 id="winners-heading">Past winners</h2>{past_html}</section>'
@@ -537,7 +534,7 @@ def leaderboard_page(period: Literal["all", "week"] = "all", db: Session = Depen
         "They come from the daily tournament: <a href=\"/tournament\">enter today's</a>.</p>"
     )
     body = (
-        f'{NAV}<main><section class="container tournament-page"><div class="section-head"><div><h1>Leaderboard</h1>'
+        f'{nav()}<main><section class="container tournament-page"><div class="section-head"><div><h1>Leaderboard</h1>'
         "<p class=\"tournament-sub\">Points from the daily tournaments. <a href=\"/tournament\">Today's tournament →</a></p></div></div>"
         f"{tabs}{board}</section></main>{site_footer()}"
     )
@@ -556,7 +553,7 @@ def friends_page():
     if not flags.is_on("private_tournaments"):
         return Response("Not found", status_code=404, media_type="text/plain")
     body = (
-        f'{NAV}<main><section class="container tournament-page"><div class="section-head"><div><h1>Tournament with friends</h1>'
+        f'{nav()}<main><section class="container tournament-page"><div class="section-head"><div><h1>Tournament with friends</h1>'
         f'<p class="tournament-sub">Pick up to {FRIENDS_GAMES} games and how long it runs, send the link, and see how everyone scores. '
         "<a href=\"/tournament\">Today's tournament →</a></p></div></div>"
         f"<p>Name it, pick the games, and choose how long it runs: {FRIENDS_LENGTHS}. Only the friends you invite are in it.</p>"

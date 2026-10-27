@@ -160,7 +160,7 @@ def shop_page(db: Session = Depends(get_db)):
         )
 
     body = (
-        f'{pages.NAV}<main><section class="container wd-page"><header class="shop-hero"><div><h1>Shop</h1>'
+        f'{pages.nav()}<main><section class="container wd-page"><header class="shop-hero"><div><h1>Shop</h1>'
         '<p class="tournament-sub">Spend the coins you earn playing, then wear what you own in every game. '
         "Epic and Legendary items can't be bought: earn them.</p></div>"
         '<span class="shop-restock">New stock every day at midnight, Nigeria time</span></header>'

@@ -185,7 +185,7 @@ def leaderboard_page(db: Session = Depends(get_db)):
     board = (f'<ol class="creator-board">{rows}</ol>' if leaders
              else '<p class="empty">No plays yet this month. <a href="/games">Play something</a> and the board fills up.</p>')
     body = (
-        f'{pages.NAV}<main><section class="container creator-page"><h1>Top creators</h1>'
+        f'{pages.nav()}<main><section class="container creator-page"><h1>Top creators</h1>'
         '<p class="lead-sm">The people whose games the most different players opened in the last 30 days.</p>'
         f"{board}</section></main>{pages.site_footer()}"
     )

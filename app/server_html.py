@@ -18,20 +18,33 @@ def esc(s: str) -> str:
     return html.escape(s, quote=True)
 
 
+def pages_nav() -> str:
+    """The top bar's links, word for word what src/App.tsx draws. Play with friends is linked only while the private_tournaments
+    feature is on, like the app."""
+    from . import flags
+
+    friends = '<a href="/friends">Play with friends</a>' if flags.is_on("private_tournaments") else ""
+    return (
+        f'<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a>{friends}'
+        '<a href="/creators">Creators</a><a href="/docs">Docs</a></nav>'
+    )
+
+
 def site_footer() -> str:
     """The site's footer, word for word what src/SiteFooter.tsx draws (a page that search engines read must match what people see).
-    Categories is linked only while the tags feature is on, like the app."""
+    Categories is linked only while the tags feature is on, and Play with friends only while private_tournaments is on, like the app."""
     from datetime import datetime, timezone
 
     from . import flags
 
     year = datetime.now(timezone.utc).year
     categories = '<li><a href="/categories">Categories</a></li>' if flags.is_on("tags") else ""
+    friends = '<li><a href="/friends">Play with friends</a></li>' if flags.is_on("private_tournaments") else ""
     return (
         '<footer class="container site-footer"><div class="site-footer-grid">'
         '<div class="site-footer-brand"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
         "<p>Nigeria's home for browser games, made by the community and by creators across Africa.</p></div>"
-        '<nav aria-label="Play"><h2>Play</h2><ul><li><a href="/games">All games</a></li><li><a href="/tournament">Daily tournament</a></li>'
+        f'<nav aria-label="Play"><h2>Play</h2><ul><li><a href="/games">All games</a></li><li><a href="/tournament">Daily tournament</a></li>{friends}'
         f'<li><a href="/leaderboard">Leaderboard</a></li>{categories}<li><a href="/hangout">The Hangout</a></li></ul></nav>'
         '<nav aria-label="Make games"><h2>Make games</h2><ul><li><a href="/creators">Independent creators</a></li>'
         '<li><a href="/docs">Build a game</a></li><li><a href="/docs.md">Docs for your AI (.md)</a></li></ul></nav>'
@@ -43,7 +56,7 @@ def site_footer() -> str:
 def chrome(inner: str) -> str:
     return (
         '<header class="container sub-top"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
-        '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a><a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
+        f"{pages_nav()}</header>"
         f"{inner}"
         f"{site_footer()}"
     )
