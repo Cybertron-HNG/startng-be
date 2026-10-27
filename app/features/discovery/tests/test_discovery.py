@@ -242,3 +242,33 @@ def test_play_next_uses_a_private_tournament_only_for_its_members(env, monkeypat
     assert client.get("/discover/next?after=old-a").json()["tournament"] is None
     monkeypatch.setattr(settings, "features", "discovery")  # the feature is off: not used even for a member
     assert client.get("/discover/next?after=old-a", headers=tokens["tunde"]).json()["tournament"] is None
+
+
+def _say_mobile(Session, name):
+    with Session() as db:  # startng.json says "mobile": true
+        manifest.apply_sections(db, db.get(Game, name), manifest.parse_sections(b'{"mobile": true}'))
+        db.commit()
+
+
+def test_the_games_list_says_which_games_work_on_a_phone(env, monkeypatch):
+    client, tokens, ids, Session = env
+    _say_mobile(Session, "old-a")
+    games = {g["name"]: g["mobile"] for g in client.get("/games").json()}
+    assert games == {"old-a": True, "old-b": False, "beginner": False, "quiet": False}  # not saying counts as not mobile ready
+    assert {g["name"]: g["mobile"] for g in client.get("/games/mine", headers=tokens["ada"]).json()}["old-a"] is True
+    with Session() as db:
+        assert service.mobile_ready(db) == {"old-a", "hangout"}  # the Hangout has a touch joystick and no startng.json
+    monkeypatch.setattr(settings, "features", "")  # the feature is off: nobody is told a game is mobile ready
+    assert not any(g["mobile"] for g in client.get("/games").json())
+
+
+def test_a_games_server_page_has_the_same_laptop_and_phone_words_as_the_app(env, monkeypatch):
+    from app.routers import pages
+    client, tokens, ids, Session = env
+    monkeypatch.setattr(pages, "_get_shell", lambda: '<html><head><!--seo--><title>x</title><!--/seo--></head><body><div id="root"></div></body></html>')
+    _say_mobile(Session, "old-a")
+    ready = client.get("/pages/games/old-a").text
+    assert '<p class="device-icons big"><span class="device">Works on laptop</span> <span class="device">Mobile ready</span></p>' in ready
+    assert '<span class="device off">Not mobile ready</span>' in client.get("/pages/games/old-b").text
+    monkeypatch.setattr(settings, "features", "")
+    assert "device-icons" not in client.get("/pages/games/old-a").text
