@@ -361,9 +361,10 @@ def approve_game(
     return out
 
 
-def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
+def _game_out(g: Game, owner_view: bool = False, plays: int = 0, mobile: bool = False) -> GameOut:
     return GameOut(
         plays=plays,
+        mobile=mobile,
         update_problem=g.update_problem if owner_view else None,
         checked_at=g.checked_at if owner_view else None,
         live_commit=(g.last_commit or None) and g.last_commit[:7] if owner_view else None,
@@ -424,13 +425,22 @@ def _recent_plays(db: Session) -> dict[str, int]:
     return {name: count for name, count in rows}
 
 
+def _mobile_ready(db: Session) -> set[str]:
+    """The games that say they work on a phone, while the discovery feature (which keeps that flag) is on."""
+    if not flags.is_on("discovery"):
+        return set()
+    from ..features.discovery import service as discovery  # here, not at the top: discovery's server page imports this module
+    return discovery.mobile_ready(db)
+
+
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)):
     """Every visible game, newest first by when it was first published, so new games are the first thing people see. (An update
     does not move a game up.)"""
     plays = _recent_plays(db)
+    mobile = _mobile_ready(db)
     games = db.scalars(select(Game).where(Game.hidden.is_(None)).order_by(Game.created_at.desc(), Game.name)).all()
-    return [_game_out(g, plays=plays.get(g.name, 0)) for g in games]
+    return [_game_out(g, plays=plays.get(g.name, 0), mobile=g.name in mobile) for g in games]
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
@@ -457,7 +467,8 @@ def my_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The signed-in builder's own games, newest first (for their profile)."""
     query = select(Game).where(Game.owner_id == user.id).order_by(Game.updated_at.desc())
     plays = _recent_plays(db)
-    return [_game_out(g, owner_view=True, plays=plays.get(g.name, 0)) for g in db.scalars(query).all()]
+    mobile = _mobile_ready(db)
+    return [_game_out(g, owner_view=True, plays=plays.get(g.name, 0), mobile=g.name in mobile) for g in db.scalars(query).all()]
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)

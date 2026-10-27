@@ -72,6 +72,18 @@ def _save_mobile(db: Session, game, value: bool) -> None:
 
 manifest.register_section("mobile", _parse_mobile, _save_mobile)
 
+ALWAYS_MOBILE = {"hangout"}  # start.ng's own park: it has a touch joystick but no startng.json
+
+
+def mobile_ready(db: Session) -> set[str]:
+    """The games that say they work on a phone ("mobile": true in their startng.json), for the laptop and phone icons."""
+    return set(db.scalars(select(GameDiscovery.game_name).where(GameDiscovery.mobile.is_(True)))) | ALWAYS_MOBILE
+
+
+def is_mobile_ready(db: Session, name: str) -> bool:
+    row = db.get(GameDiscovery, name)
+    return name in ALWAYS_MOBILE or bool(row and row.mobile)
+
 
 # ---- ranking
 

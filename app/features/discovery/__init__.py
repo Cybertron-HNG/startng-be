@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from ... import flags
 from ...db import SessionLocal
 from . import service  # noqa: F401  (registers the startng.json "mobile" section)
+from . import server_page  # noqa: F401  (adds the laptop and phone line to a game's server-written page)
 from .router import router  # noqa: F401
 
 NAME = "discovery"
