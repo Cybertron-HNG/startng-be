@@ -25,7 +25,7 @@ from ..checks import Problem, standards, uses_kit
 from ..publish import GameBundle, PublishError, Repo, download_repo, game_name, parse_repo_url, read_game
 from ..schemas import (
     CheckOut, GameOut, GameSessionOut, LeaderboardEntry, PendingInfo, PendingOut, PlayerOut, PublishIn, PublishOut,
-    ScoreIn, ScoreOut,
+    ScoreIn, ScoreOut, YourPlace,
 )
 from ..security import GAME_SESSION_MINUTES, create_game_session, current_user, game_player, lenient_user, optional_user
 from .. import leaderboard as boards
@@ -677,6 +677,31 @@ def leaderboard(name: str, limit: int = Query(10, ge=1, le=50), db: Session = De
         ]
 
     return integrity.cached(name, limit, build) if flags.is_on("integrity") else build()
+
+
+@router.get("/{name}/leaderboard/me", response_model=YourPlace)
+def your_place(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The signed-in player's rank on the game's board and the (up to two) players just above them."""
+    game = _game_or_404(db, name)
+    schema = _schema(game)
+    rows = _ranked(db, name, schema)
+    total = len(rows)
+    pos = next((i for i, s in enumerate(rows) if s.user_id == user.id), None)
+    if pos is None:
+        return YourPlace(rank=None, you=None, above=[], total=total)
+
+    def entry(i: int) -> LeaderboardEntry:
+        s = rows[i]
+        return LeaderboardEntry(
+            rank=i + 1,
+            player_id=s.user_id,
+            name=_player_name(s.user),
+            color=((s.user.character or {}).get("style") or {}).get("primaryColor"),
+            score=s.best,
+            stats=boards.stats_of(schema, s.stats, s.best),
+        )
+
+    return YourPlace(rank=pos + 1, you=entry(pos), above=[entry(i) for i in range(max(0, pos - 2), pos)], total=total)
 
 
 @router.delete("/{name}/scores/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
