@@ -53,6 +53,8 @@ SITEMAP_PROVIDERS: list = []
 # Features add links to a game's server-written page: GAME_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "". Use the same
 # words and class names as the website's own part for that feature (src/features/<feature>), so both versions of the page agree.
 GAME_PAGE_PARTS: list = []
+# Features add to a game's VideoGame JSON-LD: GAME_LD_PARTS.append(fn), where fn(db, game, ld) sets its keys on the dict.
+GAME_LD_PARTS: list = []
 # The same for a game by an independent creator (/creators/<id>-<name>): INDIE_PAGE_PARTS.append(fn), where fn(db, game) returns HTML or "".
 INDIE_PAGE_PARTS: list = []
 
@@ -153,6 +155,8 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         "applicationCategory": "Game",
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     }
+    for add_to_ld in GAME_LD_PARTS:
+        add_to_ld(db, game, ld)
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
     parts = "".join(part(db, game) for part in GAME_PAGE_PARTS)
     body = (

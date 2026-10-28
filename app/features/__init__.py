@@ -44,6 +44,7 @@ FEATURES: list[str] = [
     "rooms",  # refereed multiplayer games: rooms with a code, matchmaking and bots (Hamzat)
     "tags",  # tags and category pages (Chloe)
     "game_pages",  # about, how to play, FAQ and walkthrough pages of games (Chloe)
+    "screenshots",  # Ziki #19 screenshots on a game's page, from its startng.json (Oluwaseyifunmi)
 ]
 
 _loaded: dict[str, ModuleType] = {}
