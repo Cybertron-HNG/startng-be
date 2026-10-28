@@ -32,6 +32,7 @@ def site_footer() -> str:
         '<div class="site-footer-brand"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
         "<p>Nigeria's home for browser games, made by the community and by creators across Africa.</p></div>"
         '<nav aria-label="Play"><h2>Play</h2><ul><li><a href="/games">All games</a></li><li><a href="/tournament">Daily tournament</a></li>'
+        '<li><a href="/friends">Friend tournaments</a></li>'
         f'<li><a href="/leaderboard">Leaderboard</a></li>{categories}<li><a href="/hangout">The Hangout</a></li></ul></nav>'
         '<nav aria-label="Make games"><h2>Make games</h2><ul><li><a href="/creators">Independent creators</a></li>'
         '<li><a href="/docs">Build a game</a></li><li><a href="/docs.md">Docs for your AI (.md)</a></li></ul></nav>'
@@ -43,7 +44,7 @@ def site_footer() -> str:
 def chrome(inner: str) -> str:
     return (
         '<header class="container sub-top"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
-        '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a><a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
+        '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a><a href="/friends">Friends</a><a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
         f"{inner}"
         f"{site_footer()}"
     )
