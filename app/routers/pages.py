@@ -243,6 +243,14 @@ NAV = (
     '<header class="container nav"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
     '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a>'
     '<a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
+    # The phone tab bar (src/TabBar.tsx, Ziki #48): the same links; CSS shows it below 760 px only.
+    '<nav class="tab-bar" aria-label="Main">'
+    '<a href="/"><span class="tab-icon" aria-hidden="true">🏠</span><span class="tab-label">Home</span></a>'
+    '<a href="/games"><span class="tab-icon" aria-hidden="true">🎮</span><span class="tab-label">Games</span></a>'
+    '<a href="/tournament"><span class="tab-icon" aria-hidden="true">🏆</span><span class="tab-label">Tournament</span></a>'
+    '<a href="/hangout"><span class="tab-icon" aria-hidden="true">🛋️</span><span class="tab-label">Hangout</span></a>'
+    '<button type="button"><span class="tab-icon" aria-hidden="true">👤</span><span class="tab-label">Sign in</span></button>'
+    '</nav>'
 )
 
 
