@@ -42,7 +42,7 @@ SEO_BLOCK = re.compile(r"<!--seo-->[\s\S]*?<!--/seo-->")
 ROOT = '<div id="root"></div>'
 SHARE_IMAGE = "/hangout-cover.jpg"  # used when a game has no cover
 SHELL_SECONDS = 300
-FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs", "/about"]
+FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs", "/about", "/privacy", "/terms"]
 # Pages of features (app/features) that anyone can read, listed while the feature is on: {feature: path}.
 FEATURE_PAGES = {"spotlight": "/spotlight", "wardrobe": "/shop", "creator_hub": "/by", "private_tournaments": "/friends"}
 
