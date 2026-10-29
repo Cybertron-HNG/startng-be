@@ -222,10 +222,11 @@ def after_run(db: Session, user_id: int, game: str, stats: dict, tournament_id: 
         db.add(run)
         db.commit()
         return Result(run_id=run.id)
+    caught_up = catch_up(db, user_id, skip=game)  # their older scores in other games count too, before this run's rules
     run = _log_run(db, user_id, game, stats, now(), tournament_id, rank_after)
     maybe_purge(db)
     info = RunInfo(run_id=run.id, user_id=user_id, game=game, stats=stats)
-    unlocked = _evaluate_rules(db, user_id, info)
+    unlocked = caught_up + _evaluate_rules(db, user_id, info)
 
     events.publish("run_recorded", {"user_id": user_id, "game": game, "run_id": run.id})
     for award in unlocked:
@@ -279,6 +280,41 @@ def game_open(db: Session, user_id: int, game: str) -> GameOpen | None:
 
 
 # --- backfill --------------------------------------------------------------------------------------------------
+
+def catch_up(db: Session, user_id: int, rank_of: Callable[[Session, int, str], int | None] | None = None,
+             skip: str | None = None) -> list[dict]:
+    """Make a player's saved scores count when they have no run for that game: a score saved before the Progress Engine
+    existed, or while its flag was off. Each becomes the run it would have been, on the day the score was saved, with that
+    run's XP, and the award rules then see it, so games played, XP and badges like First score match the scores on their
+    page. rank_of (integrity.rank_of) records the player's current place, so a place-held badge like Top 10 can follow
+    from their next run there, the same rule as for everyone. skip leaves one game out (the run being saved right now).
+    Publishes no run_recorded (old runs earn no coins or quests), only the awards it unlocks. Returns those awards.
+    Only for players the engine has never tracked (no activity day at all): someone it has tracked can have scores without
+    runs because old runs are purged (purge_old_runs), and those must not earn their XP twice."""
+    if db.scalar(select(ActivityDay.user_id).where(ActivityDay.user_id == user_id).limit(1)) is not None:
+        return []
+
+    def missing():
+        no_run = ~exists().where(Run.user_id == Score.user_id, Run.game_name == Score.game_name)
+        q = select(Score).where(Score.user_id == user_id, no_run)
+        return db.scalars(q.where(Score.game_name != skip) if skip else q).all()
+
+    if not missing():
+        return []
+    db.scalar(select(User.id).where(User.id == user_id).with_for_update())  # one catch-up per player at a time
+    last = None
+    for s in missing():  # again, under the lock: another request may have just done it
+        when = s.updated_at if s.updated_at.tzinfo else s.updated_at.replace(tzinfo=timezone.utc)
+        last = _log_run(db, user_id, s.game_name, s.stats or {"score": s.best}, when,
+                        rank_after=rank_of(db, user_id, s.game_name) if rank_of else None)
+    if last is None:
+        db.commit()  # let the lock go
+        return []
+    unlocked = _evaluate_rules(db, user_id, RunInfo(run_id=last.id, user_id=user_id, game=last.game_name, stats=last.stats))
+    for award in unlocked:
+        events.publish("award_unlocked", {"user_id": user_id, "kind": award["kind"], "key": award["key"]})
+    return unlocked
+
 
 def backfill_from_scores(db: Session, batch: int = 1000) -> int:
     """Give players who scored before the Progress Engine existed one run per game they have a score in, so "tried 5
