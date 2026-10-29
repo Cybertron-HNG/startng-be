@@ -199,7 +199,7 @@ def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depend
         f"<main><h1>{_esc(game.name)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}, an independent creator</p>"
         f'<p><a href="/creators">All games by independent creators</a></p>{parts}</main>'
     )
-    page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
+    page = _page(shell, title=f"{game.name} by {by} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
