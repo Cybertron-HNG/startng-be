@@ -65,6 +65,13 @@ def test_it_shows_as_by_start_ng_and_the_live_room_ticket_works(env):
     assert client.post("/games/hangout/ticket", headers=auth).status_code == 200
 
 
+def test_it_links_to_the_hangout_page_not_a_hangout_start_ng_address(env):
+    # hangout.start.ng is a 404: the Hangout lives at start.ng/hangout (Ziki #54)
+    client, _, migrate = env
+    migrate(seed.upgrade)
+    assert [g["url"] for g in client.get("/games").json() if g["name"] == "hangout"] == ["https://start.ng/hangout"]
+
+
 def test_running_it_twice_changes_nothing(env):
     _, Session, migrate = env
     migrate(seed.upgrade)
