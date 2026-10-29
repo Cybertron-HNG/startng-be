@@ -126,6 +126,15 @@ def creator(user_id: int = CREATOR, viewer: User | None = Depends(optional_user)
     return _page_data(db, user, games, viewer)
 
 
+def _page_title(name: str, games) -> str:
+    """"Daniel's games: Git Quest, Lagos Run · start.ng". The games tell two creators with the same first name apart."""
+    shown = [_title(g.name) for g in games[:2]]
+    title = f"{name}'s games: {', '.join(shown)}"
+    if len(shown) == 2 and len(title) > 55:
+        title = f"{name}'s games: {shown[0]}"
+    return f"{title} · start.ng"
+
+
 @router.get("/by/{user_id}/page", response_class=Response)
 def creator_page(user_id: int = CREATOR, db: Session = Depends(get_db)):
     """The website's HTML with this creator's name and card in its tags, for search engines and shared links (nginx asks)."""
@@ -142,7 +151,7 @@ def creator_page(user_id: int = CREATOR, db: Session = Depends(get_db)):
     name, bio = _player_name(user), service.bio_of(db, user_id)
     description = bio or f"{name} makes games on start.ng: " + ", ".join(_title(g.name) for g in games[:5]) + ". Play them free in your browser."
     listing = "".join(f'<li><a href="/games/{pages._esc(g.name)}">{pages._esc(_title(g.name))}</a></li>' for g in games[:20])
-    page = pages._page(shell, title=f"{name}'s games · start.ng", description=description, path=f"/by/{service.slug_for(user)}",
+    page = pages._page(shell, title=_page_title(name, games), description=description, path=f"/by/{service.slug_for(user)}",
                        image=share.links("creator", str(user.id), creator_card.describe(db, str(user.id))).image_url, body=f"<main><h1>{pages._esc(name)}</h1><p>{pages._esc(description)}</p><ul>{listing}</ul><p><a href=\"/by\">See top creators</a></p></main>")
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
