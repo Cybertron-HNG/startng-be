@@ -1,12 +1,13 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import leaderboard as boards
 from .. import tournaments
 from ..db import get_db
-from ..models import Tournament, User
+from ..models import Tournament, TournamentScore, User
 from ..schemas import OverallEntry, TournamentGameOut, TournamentOut, TournamentRun, TournamentStanding, TournamentSummary
 from ..security import current_user, optional_user
 from ..storage import game_url
@@ -47,6 +48,11 @@ def _out(db: Session, t: Tournament, user: User | None) -> TournamentOut:
             ],
         ))
     mine = next((st for st in res.standings if user and st.user.id == user.id), None)
+    my_runs = db.scalar(
+        select(func.count()).select_from(TournamentScore).where(
+            TournamentScore.tournament_id == t.id, TournamentScore.user_id == user.id
+        )
+    ) or 0 if user else 0
     finished = t.finished_at is not None
     return TournamentOut(
         id=t.id,
@@ -56,6 +62,7 @@ def _out(db: Session, t: Tournament, user: User | None) -> TournamentOut:
         games=games,
         entrants=tournaments.entrants(db, t),
         entered=bool(user) and tournaments.is_entered(db, t, user.id),
+        my_runs=my_runs,
         standings=[_standing(st) for st in res.standings[:TOP_STANDINGS]],
         me=_standing(mine) if mine else None,
         winner=_standing(res.standings[0]) if finished and res.standings else None,
