@@ -1,0 +1,1 @@
+playwright==1.64.1  # only for PHONE_CHECK_BROWSER (app/features/phone_check); installed by the Dockerfile with --build-arg PHONE_CHECK_BROWSER=1

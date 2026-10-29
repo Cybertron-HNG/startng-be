@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     game_health_http: bool = True
     # A game that fails its health checks 3 times in a row is hidden through "needs fixing" (needs that feature on).
     game_health_auto_hide: bool = True
+    # Phone check (app/features/phone_check, Ziki #14): also open each published game in a headless browser at 320 and
+    # 375 px. Needs Playwright's Chromium in the image (Dockerfile: --build-arg PHONE_CHECK_BROWSER=1). Off: the check
+    # reads the game's files only (viewport tag, fixed widths).
+    phone_check_browser: bool = False
     # Emails to developers about their own games (hidden by a health check, a review's result). Super admins are
     # always emailed. Off: developers still see everything in Your games.
     dev_emails: bool = True
