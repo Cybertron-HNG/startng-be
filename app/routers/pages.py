@@ -31,6 +31,7 @@ from .. import tournaments
 from ..config import settings
 from ..db import get_db
 from ..models import Game, IndieGame
+from ..names import title_of
 from ..server_html import site_footer
 from ..storage import game_url
 from .games import _cover_url, _player_name
@@ -79,7 +80,7 @@ def _get_shell() -> str | None:
 
 
 def _title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    return title_of(name)
 
 
 def slugify(name: str) -> str:
