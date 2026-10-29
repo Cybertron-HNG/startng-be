@@ -361,6 +361,17 @@ def approve_game(
     return out
 
 
+def _description(g: Game) -> str:
+    """The game's own description, or a fallback matching its game page."""
+    if g.description:
+        return g.description
+    if g.name == "hangout":
+        return "start.ng's own multiplayer park. Sign in as your character, walk around and meet everyone else who's there."
+    title = " ".join(w.capitalize() for w in g.name.split("-"))
+    by = _player_name(g.owner, "a builder")
+    return f"Play {title} free in your browser on start.ng, a game by {by}."
+
+
 def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
     return GameOut(
         plays=plays,
@@ -375,7 +386,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
         cover_url=_cover_url(g),
-        description=g.description,
+        description=_description(g),
         leaderboard=_board_columns(g),
     )
 
