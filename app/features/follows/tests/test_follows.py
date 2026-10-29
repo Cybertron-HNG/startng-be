@@ -269,3 +269,41 @@ def test_contract_for_other_features(env):
         assert service.is_friend(db, ids["ada"], ids["chioma"]) is False
         assert service.is_friend(db, ids["ada"], ids["ada"]) is False
         assert service.counts(db, ids["ada"]) == {"followers": 2, "following": 1, "friends": 1}
+
+
+def add_games(Session, owner_id, *names, hidden=None):
+    from app.models import Game
+    with Session() as db:
+        for i, n in enumerate(names):
+            db.add(Game(name=n, owner_id=owner_id, repo_url=f"https://github.com/x/{n}", hidden=hidden,
+                        created_at=datetime.now(timezone.utc) - timedelta(days=len(names) - i)))
+        db.commit()
+
+
+def test_a_game_page_knows_its_creator_for_the_follow_button(env):
+    """Ziki #42: the Follow button on a game's page needs the creator, and whether you follow them."""
+    client, tokens, ids, Session = env
+    first, second = PLAYERS[0], PLAYERS[1]
+    add_games(Session, ids[first], "coin-rush")
+    add_games(Session, ids[first], "secret-game", hidden="flagged")
+    page = client.get("/follows/game/coin-rush").json()
+    assert page["game"] == "coin-rush" and page["creator"]["id"] == ids[first] and page["state"]["you_follow"] is False
+    client.put(f"/follows/{ids[first]}", headers=tokens[second])
+    assert client.get("/follows/game/coin-rush", headers=tokens[second]).json()["state"]["you_follow"] is True
+    for missing in ("no-such-game", "secret-game"):
+        assert client.get(f"/follows/game/{missing}").status_code == 404
+    block(Session, ids[first])
+    assert client.get("/follows/game/coin-rush").status_code == 404
+
+
+def test_the_homepage_row_lists_new_games_from_creators_you_follow(env):
+    client, tokens, ids, Session = env
+    first, second, third = PLAYERS[0], PLAYERS[1], PLAYERS[2]
+    add_games(Session, ids[first], "old-one", "new-one")
+    add_games(Session, ids[third], "not-followed")
+    add_games(Session, ids[first], "hidden-one", hidden="reported")
+    assert client.get("/me/following/games").status_code == 401
+    assert client.get("/me/following/games", headers=tokens[second]).json() == {"following": 0, "games": []}
+    client.put(f"/follows/{ids[first]}", headers=tokens[second])
+    row = client.get("/me/following/games", headers=tokens[second]).json()
+    assert row["following"] == 1 and [g["name"] for g in row["games"]] == ["new-one", "old-one"]  # newest first, no hidden, only followed

@@ -1,13 +1,15 @@
 """Friends & follows (S2) routes. main.py mounts them with the "follows" flag: 404 while it's off."""
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...db import get_db
 from ...errors import ApiError
-from ...models import User
+from ...models import Game, User
+from ...routers.games import _game_out
 from ...security import current_user, optional_user
 from . import service
-from .schemas import AcceptedOut, FollowStateOut, InviteOut, InvitePreviewOut, PeopleOut, PlayerOut
+from .schemas import AcceptedOut, FollowingGamesOut, FollowStateOut, GameCreatorOut, InviteOut, InvitePreviewOut, PeopleOut, PlayerOut
 
 router = APIRouter(tags=["follows"])
 
@@ -61,6 +63,31 @@ def follow_state(user_id: int, user: User | None = Depends(optional_user), db: S
     if target is None or target.blocked_at is not None:
         raise ApiError(status.HTTP_404_NOT_FOUND, "player_not_found", "That player wasn't found.")
     return _state(db, user_id, user)
+
+
+@router.get("/follows/game/{name}", response_model=GameCreatorOut)
+def game_creator(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    """Who made a game and whether you follow them, for the Follow button on the game's page (Ziki #42)."""
+    game = db.get(Game, name)
+    owner = game.owner if game is not None else None
+    if game is None or game.hidden is not None or owner is None or owner.blocked_at is not None:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "game_not_found", "That game wasn't found.")
+    return GameCreatorOut(game=game.name, creator=_player(owner), state=_state(db, owner.id, user))
+
+
+FOLLOWING_GAMES = 8  # the homepage row shows one line of cards
+
+
+@router.get("/me/following/games", response_model=FollowingGamesOut)
+def following_games(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The newest listed games by the creators you follow, newest first (Ziki #42)."""
+    ids = service.following_of(db, user.id)
+    if not ids:
+        return FollowingGamesOut(following=0, games=[])
+    games = db.scalars(
+        select(Game).where(Game.owner_id.in_(ids), Game.hidden.is_(None)).order_by(Game.created_at.desc()).limit(FOLLOWING_GAMES)
+    ).all()
+    return FollowingGamesOut(following=len(ids), games=[_game_out(g) for g in games])
 
 
 @router.get("/me/following", response_model=PeopleOut)
