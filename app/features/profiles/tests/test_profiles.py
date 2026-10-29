@@ -131,3 +131,57 @@ def test_hidden_games_dont_show_and_defaults_apply_to_new_players(env):
     assert fresh == {"public": True, "show_favorites": True, "show_ranks": True, "notice_seen": False}
     assert client.put("/me/profile-settings", json={"notice_seen": True}, headers=tokens["tunde"]).json()["notice_seen"] is True
     assert client.put("/me/profile-settings", json={}).status_code == 401
+
+def old_score(Session, user_id, game, score, days_ago=40):
+    """A score saved before the Progress Engine existed (or while it was off): a Score row and no run."""
+    from datetime import datetime, timedelta, timezone
+    with Session() as db:
+        db.add(Score(user_id=user_id, game_name=game, best=score, stats={"score": score}, updated_at=datetime.now(timezone.utc) - timedelta(days=days_ago)))
+        db.commit()
+
+
+def test_old_scores_count_on_the_page(env):
+    """Ziki #52: a player whose only scores are from before the Progress Engine showed 0 games, 0 XP and locked First score."""
+    client, tokens, ids, Session = env
+    old_score(Session, ids["ada"], "game-0", 1519, 40)
+    old_score(Session, ids["ada"], "game-1", 300, 12)
+    page = client.get(f"/players/{ids['ada']}/profile").json()
+    assert page["games_played"] == 2 and page["xp"] > 0
+    assert [b["key"] for b in page["badges"]] == ["first_score"]
+    assert {b["game"]: b["rank"] for b in page["bests"]} == {"game-0": 1, "game-1": 1}
+    # Once only: looking again, or playing again, adds nothing for those scores.
+    again = client.get(f"/players/{ids['ada']}/profile").json()
+    assert again["games_played"] == 2 and again["xp"] == page["xp"]
+    with Session() as db:
+        from app.features.progress.models import Run
+        assert db.query(Run).filter_by(user_id=ids["ada"]).count() == 2
+        assert all(r.rank_after == 1 for r in db.query(Run).filter_by(user_id=ids["ada"]))  # Top 10 can follow from the next run
+
+
+def test_top_10_follows_from_the_next_run_like_everyone(env):
+    client, tokens, ids, Session = env
+    old_score(Session, ids["ada"], "game-0", 1519)
+    client.get(f"/players/{ids['ada']}/profile")
+    assert "top_10" not in {b["key"] for b in client.get(f"/players/{ids['ada']}/profile").json()["badges"]}
+    with Session() as db:
+        unlocked = progress.after_run(db, ids["ada"], "game-0", {"score": 1600}, rank_after=1).unlocked
+    assert {"kind": "badge", "key": "top_10"} in unlocked  # the caught-up run and this one both held the place
+
+
+def test_a_run_in_one_game_catches_up_old_scores_in_the_others(env):
+    client, tokens, ids, Session = env
+    old_score(Session, ids["ada"], "game-0", 1519)
+    unlocked = play(Session, ids["ada"], "game-1", 50).unlocked  # their first run since the engine started
+    assert unlocked == [{"kind": "badge", "key": "first_score"}]
+    page = client.get(f"/players/{ids['ada']}/profile").json()
+    assert page["games_played"] == 2
+
+
+def test_players_already_tracked_are_left_alone(env):
+    """Old runs are purged after a while, so a tracked player can have a score with no run: that must not pay XP twice."""
+    client, tokens, ids, Session = env
+    play(Session, ids["ada"], "game-0", 10)
+    before = client.get(f"/players/{ids['ada']}/profile").json()
+    old_score(Session, ids["ada"], "game-1", 99)  # as if its runs had been purged
+    after = client.get(f"/players/{ids['ada']}/profile").json()
+    assert after["games_played"] == before["games_played"] and after["xp"] == before["xp"]
