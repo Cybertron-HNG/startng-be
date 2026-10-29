@@ -55,6 +55,17 @@ def test_game_page_is_rendered_for_crawlers(env):
     assert "index, follow" in text
 
 
+def test_game_page_byline_links_to_creator_page_only_while_creator_hub_is_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    add_game(env)
+    monkeypatch.setattr(settings, "features", "")
+    assert "<p>By <a " not in client.get("/pages/games/lane-dash").text
+    monkeypatch.setattr(settings, "features", "creator_hub")
+    assert '<p>By <a href="/by/1' in client.get("/pages/games/lane-dash").text
+
+
 def test_game_page_without_description_writes_one(env):
     client, *_ = env
     add_game(env)
