@@ -12,7 +12,8 @@ from ...admin import AdminUser, require
 from ...db import get_db
 from ...game_store import get_game_store
 from ...models import Game
-from ...routers.games import _cover_url, _player_name
+from ...covers import SHARE_SIZE
+from ...routers.games import _cover_url, _player_name, _share_url
 from ...routers.games import leaderboard as game_leaderboard
 from ...routers.pages import SHARE_IMAGE, _esc, _get_shell, _page, _site, _title
 from ...server_html import chrome, colors_for, esc, game_card
@@ -168,7 +169,8 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
     title = _title(game.name)
     path = f"/games/{game.name}/{kind}"
     site = _site()
-    image = _cover_url(game) or site + SHARE_IMAGE
+    share = _share_url(game)  # 1200 x 630, small enough for WhatsApp (Ziki #74)
+    image = share or site + SHARE_IMAGE
     kinds = service.approved_kinds(db, game.name)
     by = _player_name(game.owner, "a builder")
     crumbs = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
@@ -221,7 +223,8 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
         f'<nav class="game-sub-links" aria-label="More about {_esc(title)}"><h2>More about {_esc(title)}</h2><ul>{others}<li><a href="/games/{game.name}">{_esc(title)} leaderboard and details</a></li><li><a href="/categories">Browse games by category</a></li></ul></nav>'
         f"{_more_games(db, game, by)}</main>"
     )
-    html = _page(shell, title=f"{page.title} · start.ng", description=page.description or f"{page.title} on start.ng", path=path, image=image, body=chrome(inner), extra_head="\n    ".join(extra))
+    html = _page(shell, title=f"{page.title} · start.ng", description=page.description or f"{page.title} on start.ng", path=path, image=image, body=chrome(inner), extra_head="\n    ".join(extra),
+                 image_size=SHARE_SIZE if share else None)
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
