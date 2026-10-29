@@ -396,6 +396,8 @@ def _cover_url(g: Game) -> str | None:
     """Served by the Worker from the game's folder. ?v= changes with the cover, so browsers
     and Cloudflare never show an old one."""
     if not g.cover:
+        if g.name == "hangout":
+            return "/hangout-cover.jpg"
         return None
     version = int(g.cover_at.timestamp()) if g.cover_at else 0
     return f"{game_url(g.name)}/{quote(g.cover)}?v={version}"

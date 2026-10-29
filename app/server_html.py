@@ -51,7 +51,14 @@ def chrome(inner: str) -> str:
 
 def game_card(name: str, title: str, by: str, host: str, cover_url: str | None) -> str:
     a, b = colors_for(name)
-    art = f'<img src="{esc(cover_url)}" alt="" loading="lazy" decoding="async">' if cover_url else f"<span>{esc(title[:1])}</span>"
+    art = f'<img src="{esc(cover_url)}" alt="" loading="lazy" decoding="async">' if cover_url else (
+        f'<div class="generated-tile">'
+        f'<span class="tile-initial">{esc(title[:1])}</span>'
+        f'<div class="tile-details">'
+        f'<span class="tile-title">{esc(title)}</span>'
+        f'<span class="tile-by">by {esc(by)}</span>'
+        f'</div></div>'
+    )
     return (
         f'<article class="game"><a class="game-link" href="/games/{esc(name)}">'
         f'<div class="art" style="background: linear-gradient(135deg, {a}, {b})">{art}</div>'
