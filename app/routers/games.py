@@ -133,6 +133,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     # Saved whether or not the standards are enforced: tournaments only pick games that meet them.
     game.meets_standards = not standards([(f.path, f.data) for f in bundle.files])
     game.uses_kit = uses_kit([(f.path, f.data) for f in bundle.files])
+    game.size_bytes = bundle.total_bytes()
     manifest.apply_sections(db, game, bundle.sections)  # features' own startng.json sections (app/manifest.py)
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
@@ -377,6 +378,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         cover_url=_cover_url(g),
         description=g.description,
         leaderboard=_board_columns(g),
+        size_bytes=g.size_bytes,
     )
 
 
