@@ -7,7 +7,7 @@ from ...errors import ApiError
 from ...models import User
 from ...security import current_user, optional_user
 from . import service
-from .schemas import AcceptedOut, FollowStateOut, InviteOut, InvitePreviewOut, PeopleOut, PlayerOut
+from .schemas import AcceptedOut, FollowStateOut, InviteOut, InvitePreviewOut, PeopleOut, PlayerOut, QuickMessageIn, QuickMessageOut, QuickMessagesListOut, MuteOut
 
 router = APIRouter(tags=["follows"])
 
@@ -15,6 +15,12 @@ _STATUS = {
     "player_not_found": status.HTTP_404_NOT_FOUND,
     "invite_not_found": status.HTTP_404_NOT_FOUND,
     "follow_limit": status.HTTP_429_TOO_MANY_REQUESTS,
+    "rate_limited": status.HTTP_429_TOO_MANY_REQUESTS,
+    "not_friends": status.HTTP_403_FORBIDDEN,
+    "muted": status.HTTP_403_FORBIDDEN,
+    "cant_message_self": status.HTTP_400_BAD_REQUEST,
+    "invalid_preset": status.HTTP_400_BAD_REQUEST,
+    "cant_mute_self": status.HTTP_400_BAD_REQUEST,
 }
 
 
@@ -100,3 +106,96 @@ def accept_invite(code: str, user: User = Depends(current_user), db: Session = D
     except service.Refused as e:
         raise _refuse(e)
     return AcceptedOut(friend=_player(inviter))
+
+@router.post("/friends/messages", response_model=QuickMessageOut, status_code=status.HTTP_201_CREATED)
+def send_message(
+    payload: QuickMessageIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        msg = service.send_quick_message(
+            db,
+            user,
+            payload.recipient_id,
+            payload.preset,
+            game_name=payload.game_name,
+            challenge_code=payload.challenge_code,
+        )
+    except service.Refused as e:
+        raise _refuse(e)
+    return QuickMessageOut(
+        id=msg.id,
+        sender=_player(user),
+        recipient_id=msg.recipient_id,
+        preset=msg.preset,
+        game_name=msg.game_name,
+        challenge_code=msg.challenge_code,
+        created_at=msg.created_at,
+        read_at=msg.read_at,
+    )
+
+
+@router.get("/friends/messages", response_model=QuickMessagesListOut)
+def list_messages(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    messages = service.get_quick_messages(db, user.id)
+    senders = {u.id: _player(u) for u in service.people(db, {m.sender_id for m in messages})}
+    out = [
+        QuickMessageOut(
+            id=m.id,
+            sender=senders.get(m.sender_id, PlayerOut(id=m.sender_id, name="Player", character=None)),
+            recipient_id=m.recipient_id,
+            preset=m.preset,
+            game_name=m.game_name,
+            challenge_code=m.challenge_code,
+            created_at=m.created_at,
+            read_at=m.read_at,
+        )
+        for m in messages
+    ]
+    return QuickMessagesListOut(count=len(out), messages=out)
+
+
+@router.post("/friends/messages/{message_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_read(
+    message_id: int,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    service.mark_message_read(db, user.id, message_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/friends/mute/{user_id}", response_model=MuteOut)
+def mute_player(
+    user_id: int,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        service.mute_user(db, user, user_id)
+    except service.Refused as e:
+        raise _refuse(e)
+    return MuteOut(user_id=user_id, muted=True)
+
+
+@router.delete("/friends/mute/{user_id}", response_model=MuteOut)
+def unmute_player(
+    user_id: int,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    service.unmute_user(db, user, user_id)
+    return MuteOut(user_id=user_id, muted=False)
+
+
+@router.get("/friends/muted", response_model=list[int])
+def list_muted(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return sorted(service.get_muted_ids(db, user.id))
+
