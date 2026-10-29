@@ -152,3 +152,12 @@ def test_sessions_older_than_30_days_are_deleted_when_a_new_one_starts(env):
     age(Session, days=31)
     ping(client, "start", sid="n" * 20)
     assert [r.session_id for r in rows(Session)] == ["n" * 20]
+
+def test_clip_shared_ping(env):
+    client, _, _, Session = env
+    assert ping(client, "start").status_code == 204
+    assert ping(client, "clip_shared").status_code == 204
+    with Session() as db:
+        row = db.scalar(select(PlaySession))
+        assert row.started_at is not None
+
