@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
@@ -135,6 +136,28 @@ def _page_title(name: str, games) -> str:
     return f"{title} · start.ng"
 
 
+def _structured_data(name: str, bio: str | None, path: str, games) -> str:
+    """JSON-LD for search engines: this page is a profile of the creator, and their games are the list on it."""
+    site = pages._site()
+    person = {"@type": "Person", "name": name, "url": f"{site}{path}"}
+    if bio:
+        person["description"] = bio
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "ProfilePage",
+        "url": f"{site}{path}",
+        "mainEntity": {
+            **person,
+            "owns": {
+                "@type": "ItemList",
+                "numberOfItems": len(games),
+                "itemListElement": [{"@type": "ListItem", "position": i, "url": f"{site}/games/{g.name}", "name": _title(g.name)} for i, g in enumerate(games[:20], 1)],
+            },
+        },
+    }
+    return f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
+
+
 @router.get("/by/{user_id}/page", response_class=Response)
 def creator_page(user_id: int = CREATOR, db: Session = Depends(get_db)):
     """The website's HTML with this creator's name and card in its tags, for search engines and shared links (nginx asks)."""
@@ -150,8 +173,10 @@ def creator_page(user_id: int = CREATOR, db: Session = Depends(get_db)):
         return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
     name, bio = _player_name(user), service.bio_of(db, user_id)
     description = bio or f"{name} makes games on start.ng: " + ", ".join(_title(g.name) for g in games[:5]) + ". Play them free in your browser."
-    listing = "".join(f'<li><a href="/games/{pages._esc(g.name)}">{pages._esc(_title(g.name))}</a></li>' for g in games[:20])
-    page = pages._page(shell, title=_page_title(name, games), description=description, path=f"/by/{service.slug_for(user)}",
+    listing = "".join(
+        f'<li><a href="/games/{pages._esc(g.name)}">{pages._esc(_title(g.name))}</a>' + (f": {pages._esc(g.description)}" if g.description else "") + "</li>" for g in games[:20])
+    path = f"/by/{service.slug_for(user)}"
+    page = pages._page(shell, title=_page_title(name, games), description=description, path=path, extra_head=_structured_data(name, bio, path, games),
                        image=share.links("creator", str(user.id), creator_card.describe(db, str(user.id))).image_url, body=f"<main><h1>{pages._esc(name)}</h1><p>{pages._esc(description)}</p><ul>{listing}</ul><p><a href=\"/by\">See top creators</a></p></main>")
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
