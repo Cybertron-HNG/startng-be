@@ -354,3 +354,8 @@ def test_request_text_has_no_line_breaks_in_a_log_line():
 
     assert _plain("lane-dash\r\nINFO fake entry") == "lane-dashINFO fake entry"
     assert _plain("lane-dash") == "lane-dash"
+
+def test_the_footer_links_the_blog_like_the_app():
+    """startng-fe src/SiteFooterView.tsx lists Blog under About; the server's footer must say the same (Ziki #27)."""
+    from app.server_html import site_footer
+    assert '<li><a href="/about">About start.ng</a></li><li><a href="/blog">Blog</a></li>' in site_footer()

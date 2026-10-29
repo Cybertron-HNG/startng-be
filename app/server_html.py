@@ -35,7 +35,7 @@ def site_footer() -> str:
         f'<li><a href="/leaderboard">Leaderboard</a></li>{categories}<li><a href="/hangout">The Hangout</a></li></ul></nav>'
         '<nav aria-label="Make games"><h2>Make games</h2><ul><li><a href="/creators">Independent creators</a></li>'
         '<li><a href="/docs">Build a game</a></li><li><a href="/docs.md">Docs for your AI (.md)</a></li></ul></nav>'
-        '<nav aria-label="About"><h2>About</h2><ul><li><a href="/about">About start.ng</a></li></ul></nav></div>'
+        '<nav aria-label="About"><h2>About</h2><ul><li><a href="/about">About start.ng</a></li><li><a href="/blog">Blog</a></li></ul></nav></div>'
         f'<p class="site-footer-base"><span>© {year} start.ng</span><span>Games from Nigeria and across Africa.</span></p></footer>'
     )
 
