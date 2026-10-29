@@ -114,6 +114,19 @@ def test_facts_from_the_games_own_page_skip_scripts_and_find_the_how_to_play_wor
     assert not any("prize" in c for c in f.controls)  # words inside a script are not shown to anyone
 
 
+def test_key_names_in_inline_tags_stay_in_their_sentence():
+    # oven-rush and flood-rise write their controls like this; the kbd and b words used to be dropped (Ziki #89)
+    page = ("<html><body><h2>How to play</h2>"
+            "<p>Tap a <b>shelf</b> to pick up a cookie or boba (or press <kbd>1</kbd>–<kbd>6</kbd>). The tray holds 3.</p>"
+            "<ul><li><kbd>W A S D</kbd> or arrows to run</li><li><kbd>Space</kbd> to jump (hold for higher)</li></ul>"
+            "<p>Press <a href='/help'>help</a> any time.</p></body></html>")
+    f = F.Facts(title="T")
+    F.from_page(page.encode(), f)
+    assert f.controls[:3] == ["Tap a shelf to pick up a cookie or boba (or press 1–6). The tray holds 3.",
+                              "W A S D or arrows to run", "Space to jump (hold for higher)"]
+    assert "help" not in f.controls  # a link is still its own block, as before
+
+
 def test_text_is_cleaned_of_markup_and_control_characters():
     assert F.clean("**Bold** [a link](http://x.example) <b>tag</b>\x00 end") == "Bold a link tag end"
 
