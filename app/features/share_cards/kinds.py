@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from ... import tournaments
 from ...config import settings
-from ...models import Tournament, TournamentPoints
-from ...routers.games import _player_name
+from ...models import Game, Score, Tournament, TournamentPoints, User
+from ...routers.games import _player_name, _ranked, _schema
 from ...routers.pages import _title
 from . import service
 
@@ -51,3 +51,54 @@ def tournament_result(db: Session, id: str) -> service.Card | None:
 
 
 service.register("tournament_result", tournament_result)
+
+
+def score(db: Session, id: str) -> service.Card | None:
+    """A player's best score in a game.
+    id: "<game_name>-<user_id>" or numeric "<score_id>".
+    """
+    row: Score | None = None
+    if id.isdigit():
+        row = db.get(Score, int(id))
+    elif "-" in id:
+        parts = id.rsplit("-", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            row = db.scalar(select(Score).where(Score.game_name == parts[0], Score.user_id == int(parts[1])))
+    if row is None:
+        return None
+
+    user = db.get(User, row.user_id)
+    game = db.get(Game, row.game_name)
+    if user is None or game is None:
+        return None
+
+    name = _player_name(user)
+    game_title = _title(game.name)
+    score_val = row.best
+    schema = _schema(game)
+    rows = _ranked(db, game.name, schema)
+    rank = next((i + 1 for i, r in enumerate(rows) if r.user_id == user.id), None)
+
+    if rank:
+        place = _ordinal(rank)
+        facts = [(f"{score_val:,}", "score"), (place, "rank")]
+        badge = service.Badge(str(rank), place[len(str(rank)):], "rank", TONES.get(rank, "lime"))
+    else:
+        facts = [(f"{score_val:,}", "score")]
+        badge = service.Badge(f"{score_val:,}", label="score", tone="lime")
+
+    return service.Card(
+        eyebrow=f"Score · {game_title}",
+        name=name,
+        title=f"scored {score_val:,}",
+        facts=facts,
+        game=game_title,
+        badge=badge,
+        cta=f"Can you beat {score_val:,}?",
+        action=f"Play {game_title}",
+        path=f"/games/{game.name}",
+        text=f"I scored {score_val:,} on {game_title} on start.ng. Can you beat me?",
+    )
+
+
+service.register("score", score)

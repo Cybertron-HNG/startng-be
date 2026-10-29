@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import Base, get_db
 from app.features.share_cards import render, service
 from app.main import app
-from app.models import Game, Tournament, TournamentGame, TournamentPoints, User
+from app.models import Game, Score, Tournament, TournamentGame, TournamentPoints, User
 from app.routers import pages
 
 SHELL = '<html><head><!--seo--><title>start.ng</title><!--/seo--></head><body><div id="root"></div></body></html>'
@@ -170,3 +170,48 @@ def test_any_card_draws(size):
     bare = service.Card(title="Hi", path="/", text="t")
     for card in (long, bare, service.Card(title="Hi", path="/", text="t", badge=ringed)):
         assert Image.open(io.BytesIO(render.draw(card, size))).size == render.SIZES[size]
+
+
+
+def test_the_score_card(env):
+    client, Session, _ = env
+    with Session() as db:
+        ada = db.query(User).filter_by(name="Ada").first()
+        s = Score(user_id=ada.id, game_name="relic-hunter-0", best=4200)
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        sid = s.id
+        uid = ada.id
+
+    with Session() as db:
+        # Check by hyphenated game-user format
+        card = service.describe(db, "score", f"relic-hunter-0-{uid}")
+        assert card is not None
+        assert card.name == "Loki <3"
+        assert card.title == "scored 4,200"
+        assert card.game == "Relic Hunter 0"
+        assert card.badge == service.Badge("1", "st", "rank", "gold")
+        assert card.cta == "Can you beat 4,200?"
+        assert card.path == "/games/relic-hunter-0"
+        assert "scored 4,200 on Relic Hunter 0" in card.text
+
+        # Check by numeric Score.id format
+        card2 = service.describe(db, "score", str(sid))
+        assert card2 is not None
+        assert card2.title == "scored 4,200"
+
+        # Missing score answers None
+        assert service.describe(db, "score", "relic-hunter-0-99999") is None
+        assert service.describe(db, "score", "nonexistent") is None
+
+    # Full endpoint test
+    res = client.get(f"/share/score/relic-hunter-0-{uid}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["title"] == "Loki <3 scored 4,200"
+    assert data["path"] == "/games/relic-hunter-0"
+    assert "/s/score/relic-hunter-0-" in data["url"]
+
+    # 404 for missing
+    assert client.get("/share/score/relic-hunter-0-99999").status_code == 404

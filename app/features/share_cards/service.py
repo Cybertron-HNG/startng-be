@@ -37,6 +37,7 @@ from ...config import settings
 KINDS: dict[str, str] = {
     "challenge": "B1 challenge links",
     "tournament_result": "the daily tournament (described in share_cards/kinds.py)",
+    "score": "a single run score card on a game (described in share_cards/kinds.py)",
     "unlock": "K1 wardrobe rewards",
     "league_move": "M2 leagues",
     "private_tournament": "Tr1 private tournaments",
