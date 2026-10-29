@@ -24,7 +24,7 @@ from ...config import settings
 from ...db import SessionLocal
 from ...game_store import GameStore, get_game_store
 from ...models import Game
-from ...storage import game_url
+from ...storage import GAME_NAME_RE, game_url
 from .models import GameHealth
 
 log = logging.getLogger(__name__)
@@ -94,6 +94,8 @@ def _local_path(src: str) -> str | None:
 
 
 def _address(name: str) -> str:
+    if not GAME_NAME_RE.match(name):  # only ever a game's own address, never a URL a caller made up
+        raise ValueError("Not a game name")
     url = game_url(name)
     return url.replace("https://", "http://") if "localhost" in settings.games_base_domain else url
 

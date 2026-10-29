@@ -361,7 +361,7 @@ def approve_game(
     return out
 
 
-def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
+def _game_out(g: Game, owner_view: bool = False, plays: int = 0, creator_game_count: int = 0) -> GameOut:
     return GameOut(
         plays=plays,
         update_problem=g.update_problem if owner_view else None,
@@ -377,6 +377,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         cover_url=_cover_url(g),
         description=g.description,
         leaderboard=_board_columns(g),
+        is_verified=creator_game_count > 5, # <--- NEW LOGIC ADDED HERE
     )
 
 
@@ -430,7 +431,18 @@ def list_games(db: Session = Depends(get_db)):
     does not move a game up.)"""
     plays = _recent_plays(db)
     games = db.scalars(select(Game).where(Game.hidden.is_(None)).order_by(Game.created_at.desc(), Game.name)).all()
-    return [_game_out(g, plays=plays.get(g.name, 0)) for g in games]
+    
+    # NEW LOGIC: Count how many games each creator has
+    creator_counts = {}
+    for g in games:
+        if g.owner_id:
+            creator_counts[g.owner_id] = creator_counts.get(g.owner_id, 0) + 1
+
+    # Pass the count to _game_out
+    return [
+        _game_out(g, plays=plays.get(g.name, 0), creator_game_count=creator_counts.get(g.owner_id, 0)) 
+        for g in games
+    ]
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
