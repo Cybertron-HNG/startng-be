@@ -38,6 +38,10 @@ class AttemptOut(BaseModel):
     short_by: int | None  # how far from the target (None once beaten, or before a run)
 
 
+class CanOut(BaseModel):
+    can: bool  # the player has a run on the game to challenge with
+
+
 class ChallengeOut(BaseModel):
     code: str
     url: str  # start.ng/c/<code>
