@@ -16,6 +16,11 @@ Today these pages are written here:
 | `/games`, `/games?page=2` | `GET /pages/games` | games view in `src/App.tsx` |
 | `/games/<name>` | `GET /pages/games/{name}` | `src/GamePage.tsx` |
 | `/creators/<id>-<name>` | `GET /pages/creators/{id}` | `src/IndiePage.tsx` |
+| `/about` | not here: written at build time in `startng-fe` | `src/AboutView.tsx` |
+| `/privacy` | not here: written at build time in `startng-fe` | `src/LegalView.tsx` |
+| `/terms` | not here: written at build time in `startng-fe` | `src/LegalView.tsx` |
+
+The last three are written by `startng-fe`'s build rather than by this API, so their words live in that repo only. What this API still owns for them is the footer link (`app/server_html.py`, `site_footer`) and the sitemap entry (`FIXED_PAGES`): keep both in step.
 
 ### The content must match
 1. **Nothing for Google only.** Every word, heading, link and number written here must be on the React page when it loads, with no sign-in and no clicks beyond opening a dropdown. No hidden text, no extra keywords.
