@@ -187,6 +187,23 @@ def test_the_page_html_and_share_card(env):
     assert client.get(f"/share/creator/{ids['tega']}/card.jpg").status_code == 200
 
 
+def test_the_page_has_structured_data_and_each_games_description(env):
+    import json
+    import re
+
+    client, tokens, ids, Session = env
+    with Session() as db:
+        db.get(Game, "relic").description = "Dig up old coins <fast>."
+        db.commit()
+    html = client.get(f"/by/{ids['tega']}/page").text
+    ld = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S).group(1))
+    assert ld["@type"] == "ProfilePage" and ld["mainEntity"]["@type"] == "Person" and ld["mainEntity"]["name"] == "Tega Games"
+    items = ld["mainEntity"]["owns"]["itemListElement"]
+    assert [i["name"] for i in items] == ["Relic", "Lane Dash"] and ld["mainEntity"]["owns"]["numberOfItems"] == 2  # the hidden game isn't listed
+    assert items[0]["position"] == 1 and items[0]["url"].endswith("/games/relic")
+    assert "Dig up old coins &lt;fast&gt;." in html and "<fast>" not in html
+
+
 def test_two_creators_with_the_same_name_get_different_page_titles(env):
     client, tokens, ids, Session = env
     with Session() as db:
