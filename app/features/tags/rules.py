@@ -20,6 +20,7 @@ GROUPS: dict[str, list[tuple[str, str, str, str | None]]] = {
         ("football-and-sports", "Football and sports", "Goals, penalties and tactics", r"penalty|football|\bfc\b|cork|derby|showball|soccer|sport"),
         ("simulation-and-management", "Simulation and management", "Run a stall, plan a budget", r"budget|job.hunt|city.hustle|\boven\b|market.hustle|panic|soup|manage|simulat"),
         ("escape-games", "Escape games", "Find the way out", r"escape|\bvault\b"),
+        ("light-on-data", "Light on data", "Under 2 MB, easy on your data plan", None),
     ],
     "Setting and theme": [
         ("nigerian-themed", "Nigerian themed", "Lagos, jollof, danfo and more", r"lagos|naija|nigeria|jollof|danfo|okada|agege|mama.put|puff.puff|suya|zobo|naira|owambe|nepa|\bayo\b|boju|ile.ere|yankari|gidi|sharp.sharp|\bmami\b|suwe|streetpk|finding.mama|wahala|go.slow|murewa|onithsa|abuja|kano|ibadan"),

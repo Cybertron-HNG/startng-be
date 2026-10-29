@@ -55,10 +55,14 @@ def _visible_games():
     return select(Game).where(Game.hidden.is_(None))
 
 
-def suggest_for(name: str, description: str | None) -> list[str]:
-    """The tags the rules would suggest for a game, from its name and description."""
+def suggest_for(name: str, description: str | None, size_bytes: int | None = None) -> list[str]:
+    """The tags the rules would suggest for a game, from its name, description, and data size."""
     text = f"{name.replace('-', ' ')} {description or ''}".lower()
-    return [slug for slug, rx in _RULES.items() if rx.search(text)]
+    matches = [slug for slug, rx in _RULES.items() if rx.search(text)]
+    if size_bytes is not None and 0 < size_bytes <= 2 * 1024 * 1024:
+        if "light-on-data" not in matches:
+            matches.append("light-on-data")
+    return matches
 
 
 def suggest_all(db: Session) -> int:
@@ -68,7 +72,7 @@ def suggest_all(db: Session) -> int:
     existing = {(g, t) for g, t in db.execute(select(GameTag.game_name, GameTag.tag_id)).all()}
     added = 0
     for game in db.scalars(_visible_games()).all():
-        for slug in suggest_for(game.name, game.description):
+        for slug in suggest_for(game.name, game.description, getattr(game, "size_bytes", None)):
             tag = tags[slug]
             if (game.name, tag.id) not in existing:
                 db.add(GameTag(game_name=game.name, tag_id=tag.id, status="suggested"))
@@ -91,7 +95,7 @@ def suggest_game(db: Session, game_name: str) -> int:
     tags = ensure_tags(db)
     have = set(db.scalars(select(GameTag.tag_id).where(GameTag.game_name == game_name)).all())
     added = 0
-    for slug in suggest_for(game.name, game.description):
+    for slug in suggest_for(game.name, game.description, getattr(game, "size_bytes", None)):
         if tags[slug].id not in have:
             db.add(GameTag(game_name=game_name, tag_id=tags[slug].id, status="suggested"))
             added += 1
