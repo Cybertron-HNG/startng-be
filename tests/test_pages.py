@@ -400,4 +400,3 @@ def test_request_text_has_no_line_breaks_in_a_log_line():
 
     assert _plain("lane-dash\r\nINFO fake entry") == "lane-dashINFO fake entry"
     assert _plain("lane-dash") == "lane-dash"
-
