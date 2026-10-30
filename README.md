@@ -336,10 +336,12 @@ names refused). Needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY
   email.broadcast("new_games", "weekly_digest", {...})          # everyone on a topic, visitors too
   ```
   Escape anything from players with `email.esc()`. `notify()` does nothing while the flag is off.
-- **Topics:** `tournament`, `results`, `records`, `new_games`, `follows`, `newsletter`. Signed-in players choose theirs;
-  visitors can ask for `tournament`, `new_games` and `newsletter`, and confirm by a link first (double opt-in).
+- **Topics:** `tournament`, `reminder`, `results`, `records`, `new_games`, `follows`, `newsletter`. Signed-in players
+  choose theirs; visitors can ask for `tournament`, `new_games` and `newsletter`, and confirm by a link first (double
+  opt-in).
 - **One email a day:** notes wait a few minutes (`EMAIL_MERGE_MINUTES`); notes for the same player that day join the
-  waiting email. After it's sent, more notes that day are dropped and logged as `capped`.
+  waiting email. After it's sent, more notes that day are dropped and logged as `capped`. A kind registered with
+  `capped=False` skips this: the `reminder` topic's email goes out at once, 10 minutes before the tournament starts.
 - **Every email** has a "choose your emails" link and one-click unsubscribe (a link, plus the `List-Unsubscribe` and
   `List-Unsubscribe-Post` headers).
 - **The outbox** (`email_outbox`) keeps every email. A background loop sends what's due every 30 seconds and retries
