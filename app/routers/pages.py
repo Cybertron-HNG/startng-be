@@ -651,4 +651,3 @@ def sitemap(db: Session = Depends(get_db)):
             urls.append(f"  <url><loc>{_esc(site + path)}</loc>{f'<lastmod>{when}</lastmod>' if when else ''}</url>")
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
     return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
-
