@@ -293,6 +293,52 @@ def test_games_page_text_with_no_games_says_so(env):
     assert '<span class="count">1 game</span>' in text
 
 
+def test_games_schema_matches_visible_paginated_cards(monkeypatch):
+    from types import SimpleNamespace
+
+    visible = [
+        SimpleNamespace(name=f"game-{i:02d}", owner=SimpleNamespace(name="Ada", character={}))
+        for i in range(44)
+    ]
+    monkeypatch.setattr(pages, "_visible_games", lambda _db: visible)
+    assert "The Hangout" in pages._games_body(visible, 1)
+
+    first_res = pages.games_schema_page(page=1, db=None)
+    assert first_res.status_code == 200
+    assert first_res.media_type == "application/ld+json"
+    first = json.loads(first_res.body)
+    assert first["@type"] == "CollectionPage"
+    assert first["url"] == "https://start.ng/games"
+    first_items = first["mainEntity"]["itemListElement"]
+    assert first["mainEntity"]["numberOfItems"] == 20
+    assert first_items[0] == {
+        "@type": "ListItem", "position": 1, "name": "The Hangout", "url": "https://start.ng/hangout"
+    }
+    assert all("hidden-game" not in item["name"] for item in first_items)
+
+    second = json.loads(pages.games_schema_page(page=2, db=None).body)
+    assert second["url"] == "https://start.ng/games?page=2"
+    second_items = second["mainEntity"]["itemListElement"]
+    assert len(second_items) == 20
+    assert second_items[0]["position"] == 21
+
+    third = json.loads(pages.games_schema_page(page=3, db=None).body)
+    assert third["mainEntity"]["numberOfItems"] == 5
+    assert third["mainEntity"]["itemListElement"][-1]["position"] == 45
+    assert pages.games_schema_page(page=4, db=None).status_code == 404
+
+
+def test_leaderboard_schema_matches_period_address_and_visible_rows(monkeypatch):
+    monkeypatch.setattr(pages.tournaments, "overall", lambda _db, _period, _limit: [])
+    all_time = json.loads(pages.leaderboard_schema_page(period="all", db=None).body)
+    this_week = json.loads(pages.leaderboard_schema_page(period="week", db=None).body)
+    assert all_time["@type"] == "CollectionPage"
+    assert all_time["url"] == "https://start.ng/leaderboard"
+    assert this_week["url"] == "https://start.ng/leaderboard?period=week"
+    assert all_time["mainEntity"]["@type"] == "ItemList"
+    assert all_time["mainEntity"]["itemListElement"] == []
+
+
 def test_creators_page_text_lists_the_newest_first(env):
     client, *_ = env
     older = add_indie("Moon Garden", "Grow plants.")
@@ -354,3 +400,4 @@ def test_request_text_has_no_line_breaks_in_a_log_line():
 
     assert _plain("lane-dash\r\nINFO fake entry") == "lane-dashINFO fake entry"
     assert _plain("lane-dash") == "lane-dash"
+
