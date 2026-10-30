@@ -336,12 +336,53 @@ def _games_body(games: list[Game], page: int) -> str | None:
         f'<article class="card"><h3><a href="{_esc(link)}">{_esc(title)}</a></h3><p>{_esc(host)}</p><span class="by">by {_esc(by)}</span></article>'
         for title, link, host, by in shown
     )
+    site = _site()
+    crumbs = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{site}/"},
+            {"@type": "ListItem", "position": 2, "name": "Games", "item": f"{site}/games"},
+        ]
+    }
+    collection = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "All games from the community · start.ng",
+        "description": "Browse and search every game built by the start.ng community. Pick one and play right in your browser, no download needed.",
+        "url": f"{site}/games" + (f"?page={page}" if page > 1 else ""),
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": len(cards),
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": (page - 1) * PER_PAGE + i + 1,
+                    "url": f"{site}{link}",
+                    "name": title,
+                    "item": {
+                        "@type": "VideoGame",
+                        "name": title,
+                        "url": f"{site}{link}",
+                        "author": {"@type": "Person", "name": by},
+                        "gamePlatform": "Web Browser",
+                        "applicationCategory": "Game",
+                    }
+                }
+                for i, (title, link, host, by) in enumerate(shown)
+            ]
+        }
+    }
+    ld_scripts = (
+        f'<script type="application/ld+json">{json.dumps(crumbs).replace("<", chr(92) + "u003c")}</script>\n'
+        f'<script type="application/ld+json">{json.dumps(collection).replace("<", chr(92) + "u003c")}</script>'
+    )
     return (
         f"{NAV}<main>"
         '<section id="games" class="container all-games"><div class="section-head"><h1>All games from the community</h1></div>'
         f'<div class="list-tools"><span class="count">{_esc(count)}</span></div>{empty}<div class="grid">{items}</div>'
         f"{_pagination(page, pages)}</section>"
-        f"</main>{site_footer()}"
+        f"</main>{site_footer()}{ld_scripts}"
     )
 
 
@@ -536,10 +577,20 @@ def leaderboard_page(period: Literal["all", "week"] = "all", db: Session = Depen
         f'<p class="board-empty">No points {"this week" if period == "week" else "yet"}. '
         "They come from the daily tournament: <a href=\"/tournament\">enter today's</a>.</p>"
     )
+    site = _site()
+    crumbs = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{site}/"},
+            {"@type": "ListItem", "position": 2, "name": "Leaderboard", "item": f"{site}/leaderboard"},
+        ]
+    }
+    ld_script = f'<script type="application/ld+json">{json.dumps(crumbs).replace("<", chr(92) + "u003c")}</script>'
     body = (
         f'{NAV}<main><section class="container tournament-page"><div class="section-head"><div><h1>Leaderboard</h1>'
         "<p class=\"tournament-sub\">Points from the daily tournaments. <a href=\"/tournament\">Today's tournament →</a></p></div></div>"
-        f"{tabs}{board}</section></main>{site_footer()}"
+        f"{tabs}{board}</section></main>{site_footer()}{ld_script}"
     )
     return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
