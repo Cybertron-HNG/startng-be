@@ -75,6 +75,7 @@ class GameStatsOut(BaseModel):
     avg_session_seconds: int | None  # null unless the game uses the Kit
     change_7: int
     trend: list[TrendDay]
+    embed_plays_30: int = 0
 
 
 class DashboardOut(BaseModel):
