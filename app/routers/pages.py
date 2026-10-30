@@ -316,12 +316,17 @@ def _pagination(page: int, pages: int, base: str = "/games") -> str:
     return f'<nav class="pagination" aria-label="Pages">{prev}<span class="numbers">{numbers}</span>{nxt}</nav>'
 
 
-def _games_body(games: list[Game], page: int) -> str | None:
-    """None for a page past the last one."""
-    cards = [HANGOUT_CARD] + [
+def _game_cards(games: list[Game]) -> list[tuple[str, str, str, str]]:
+    """The Hangout and community cards in the same order as /games."""
+    return [HANGOUT_CARD] + [
         (_title(g.name), f"/games/{g.name}", game_url(g.name).removeprefix("https://"), _player_name(g.owner, "A builder"))
         for g in games
     ]
+
+
+def _games_body(games: list[Game], page: int) -> str | None:
+    """None for a page past the last one."""
+    cards = _game_cards(games)
     pages = max(1, -(-len(cards) // PER_PAGE))
     if page > pages:
         return None
@@ -332,6 +337,8 @@ def _games_body(games: list[Game], page: int) -> str | None:
         '<p class="empty">No community games yet. The first ones are on their way. <a href="/#how">Put yours here.</a></p>'
         if not games else ""
     )
+
+
     items = "".join(
         f'<article class="card"><h3><a href="{_esc(link)}">{_esc(title)}</a></h3><p>{_esc(host)}</p><span class="by">by {_esc(by)}</span></article>'
         for title, link, host, by in shown
@@ -343,6 +350,39 @@ def _games_body(games: list[Game], page: int) -> str | None:
         f"{_pagination(page, pages)}</section>"
         f"</main>{site_footer()}"
     )
+
+
+def _games_schema(games: list[Game], page: int) -> dict | None:
+    """Structured data for the same visible cards and page as _games_body."""
+    cards = _game_cards(games)
+    pages = max(1, -(-len(cards) // PER_PAGE))
+    if page > pages:
+        return None
+    shown = cards[(page - 1) * PER_PAGE:page * PER_PAGE]
+    page_path = "/games" if page == 1 else f"/games?page={page}"
+    return {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "All games from the community",
+        "url": _site() + page_path,
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": len(shown),
+            "itemListElement": [
+                {"@type": "ListItem", "position": (page - 1) * PER_PAGE + i, "name": title, "url": _site() + link}
+                for i, (title, link, _host_name, _by) in enumerate(shown, start=1)
+            ],
+        },
+    }
+
+
+@router.get("/games-schema", response_class=Response)
+def games_schema_page(page: int = Query(1, ge=1, le=100_000), db: Session = Depends(get_db)):
+    """JSON-LD for the same page of games included in /games' HTML head by nginx SSI."""
+    data = _games_schema(_visible_games(db), page)
+    if data is None:
+        return Response("No such page", status_code=404, media_type="text/plain")
+    return Response(json.dumps(data).replace("<", "\\u003c"), media_type="application/ld+json", headers={"Cache-Control": "public, max-age=60"})
 
 
 @router.get("/games", response_class=Response)
@@ -544,6 +584,36 @@ def leaderboard_page(period: Literal["all", "week"] = "all", db: Session = Depen
     return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
+def _leaderboard_schema(period: Literal["all", "week"], db: Session) -> dict:
+    """Structured data for the leaderboard rows shown by leaderboard_page."""
+    rows = tournaments.overall(db, period, LEADERBOARD_ROWS)
+    return {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "Leaderboard",
+        "url": _site() + ("/leaderboard?period=week" if period == "week" else "/leaderboard"),
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": len(rows),
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": position,
+                    "item": {"@type": "Person", "name": _player_name(row.user)},
+                }
+                for position, row in enumerate(rows, start=1)
+            ],
+        },
+    }
+
+
+@router.get("/leaderboard-schema", response_class=Response)
+def leaderboard_schema_page(period: Literal["all", "week"] = "all", db: Session = Depends(get_db)):
+    """JSON-LD for the same leaderboard period included in /leaderboard's HTML head by nginx SSI."""
+    data = _leaderboard_schema(period, db)
+    return Response(json.dumps(data).replace("<", "\\u003c"), media_type="application/ld+json", headers={"Cache-Control": "public, max-age=60"})
+
+
 # /friends (a feature, private_tournaments): the page that starts a tournament with friends. Its words are the app's
 # (src/features/private_tournaments/MyTournaments.tsx); the rest of that page is a form.
 FRIENDS_GAMES = 5  # MAX_GAMES there
@@ -581,3 +651,4 @@ def sitemap(db: Session = Depends(get_db)):
             urls.append(f"  <url><loc>{_esc(site + path)}</loc>{f'<lastmod>{when}</lastmod>' if when else ''}</url>")
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
     return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
+
