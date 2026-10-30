@@ -248,6 +248,7 @@ class GameStats:
     avg_session_seconds: int | None
     change_7: int  # plays in the last 7 days minus the 7 before
     trend: list[dict] = field(default_factory=list)  # [{day, plays}] for the last 30 days
+    embed_plays_30: int = 0
 
 
 @dataclass
@@ -271,13 +272,14 @@ def dashboard(db: Session, user_id: int, today: date | None = None) -> Dashboard
     for g in mine:
         s = series[g.name]
         p30, p7, prev7 = sum(d["plays"] for d in s), sum(d["plays"] for d in s[-7:]), sum(d["plays"] for d in s[-14:-7])
+        embed_30 = db.scalar(select(func.count(GamePlay.id)).where(GamePlay.game_name == g.name, GamePlay.at >= since, GamePlay.embed.is_(True))) or 0
         out.append(GameStats(
             game=g.name, title=_title(g.name), hidden=g.hidden, plays_7=p7, plays_30=p30, plays_all=totals.get(g.name, 0),
             visitors_30=unique_visitors(db, [g.name], 30, today),
             players_30=db.scalar(select(func.count(func.distinct(Run.user_id))).where(Run.game_name == g.name, Run.created_at >= since, Run.flagged.is_(False))) or 0,
             repeat_players_30=repeat_players(db, g.name, 30, today), runs_30=sum(d["runs"] for d in s),
             avg_session_seconds=session_seconds(db, g.name, since), change_7=p7 - prev7,
-            trend=[{"day": d["day"], "plays": d["plays"]} for d in s]))
+            trend=[{"day": d["day"], "plays": d["plays"]} for d in s], embed_plays_30=embed_30))
     best = max(out, key=lambda x: (x.plays_30, x.plays_all), default=None)
     return Dashboard(games=out, best_game=best.game if best and best.plays_30 > 0 else None, plays_7=sum(x.plays_7 for x in out),
                      plays_30=sum(x.plays_30 for x in out), visitors_30=unique_visitors(db, names, 30, today))

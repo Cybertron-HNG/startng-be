@@ -377,6 +377,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         cover_url=_cover_url(g),
         description=g.description,
         leaderboard=_board_columns(g),
+        allow_embed=getattr(g, "allow_embed", True),
     )
 
 
@@ -434,18 +435,19 @@ def list_games(db: Session = Depends(get_db)):
 
 
 @router.post("/{name}/plays", status_code=status.HTTP_204_NO_CONTENT)
-def count_play(name: str, request: Request, user: User | None = Depends(lenient_user), db: Session = Depends(get_db)):
+def count_play(name: str, request: Request, embed: bool = False, user: User | None = Depends(lenient_user), db: Session = Depends(get_db)):
     """start.ng calls this when someone opens a game, to rank the most played. No sign-in needed; a signed-in player's
     open is also remembered (the Progress Engine)."""
     _game_or_404(db, name)
     _rate_limit(request, _plays, PLAYS_PER_HOUR, "Too many plays from here, try again later")
     visitor = visitor_of(request)
     now = datetime.now(timezone.utc)
+    is_embed = embed or request.query_params.get("embed") in ("1", "true", "yes")
     again = db.scalar(select(GamePlay.id).where(
         GamePlay.game_name == name, GamePlay.visitor == visitor, GamePlay.at >= now - timedelta(minutes=PLAY_AGAIN_MINUTES),
     ).limit(1))
     if again is None:
-        db.add(GamePlay(game_name=name, visitor=visitor, at=now))
+        db.add(GamePlay(game_name=name, visitor=visitor, at=now, embed=is_embed))
     db.execute(delete(GamePlay).where(GamePlay.at < now - timedelta(days=PLAYS_KEPT_DAYS)))
     db.commit()
     if user is not None and flags.is_on(progress.NAME):
