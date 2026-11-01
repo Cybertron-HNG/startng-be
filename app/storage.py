@@ -66,7 +66,12 @@ def content_type_for(path: str) -> str:
     return _TYPES.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
+HANGOUT = "hangout"  # start.ng's own game is a page of the site (HANGOUT in src/games.ts); nothing is served at hangout.start.ng
+
+
 def game_url(name: str) -> str:
+    if name == HANGOUT:
+        return f"{settings.site_url.rstrip('/')}/hangout"
     return f"https://{name}.{settings.games_base_domain}"
 
 

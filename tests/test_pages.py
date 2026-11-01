@@ -55,6 +55,15 @@ def test_game_page_is_rendered_for_crawlers(env):
     assert "index, follow" in text
 
 
+def test_hangout_game_page_plays_at_start_ng_hangout(env):
+    # nothing is served at hangout.start.ng: Play goes to the Hangout page (Ziki #54)
+    client, *_ = env
+    add_game(env, "hangout")
+    text = client.get("/pages/games/hangout").text
+    assert '<a href="https://start.ng/hangout">Play Hangout</a>' in text
+    assert "hangout.start.ng" not in text
+
+
 def test_game_page_without_description_writes_one(env):
     client, *_ = env
     add_game(env)
