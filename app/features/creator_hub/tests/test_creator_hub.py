@@ -187,6 +187,23 @@ def test_the_page_html_and_share_card(env):
     assert client.get(f"/share/creator/{ids['tega']}/card.jpg").status_code == 200
 
 
+def test_two_creators_with_the_same_name_get_different_page_titles(env):
+    client, tokens, ids, Session = env
+    with Session() as db:
+        twin = User(email="twin@example.com", name="Tega", google_sub="g-twin")
+        twin.character = {"name": "Tega Games", "style": {}}
+        db.add(twin)
+        db.flush()
+        db.add(Game(name="moon-hop", owner_id=twin.id, repo_url="e"))
+        db.commit()
+        twin_id = twin.id
+    a = client.get(f"/by/{ids['tega']}/page").text
+    b = client.get(f"/by/{twin_id}/page").text
+    assert "<title>Tega Games&#x27;s games: Relic, Lane Dash · start.ng</title>" in a
+    assert "<title>Tega Games&#x27;s games: Moon Hop · start.ng</title>" in b
+    assert "Secret" not in a
+
+
 def test_one_player_is_not_plural_on_the_card(env, monkeypatch):
     client, tokens, ids, Session = env
     seed(Session, ids)
