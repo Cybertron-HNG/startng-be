@@ -75,6 +75,14 @@ def test_bad_names_are_refused(env):
     assert client.get("/pages/games/Bad_Name").status_code == 422
 
 
+def test_board_tables_have_cells():
+    table = pages._table("Overall leaderboard", ["#", "Player", "Points"], [["1", "Ada", "10"]])
+    assert 'role="table"' in table
+    assert table.count('role="columnheader"') == 3
+    assert table.count('role="cell"') == 3  # every body span, so the rows are not empty to a screen reader
+    assert '<span class="rk">' not in table
+
+
 def test_page_unavailable_when_the_website_cant_be_read(env, monkeypatch):
     client, *_ = env
     monkeypatch.setattr(pages, "_get_shell", lambda: None)

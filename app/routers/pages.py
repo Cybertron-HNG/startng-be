@@ -451,7 +451,7 @@ def _table(label: str, heads: list[str], rows: list[list[str]]) -> str:
                    for i, h in enumerate(heads))
     kinds = ["rk", "nm"] + ["num"] * (len(heads) - 2)
     body = "".join(
-        '<div role="row" class="board-row">' + "".join(f'<span class="{k}">{cell}</span>' for k, cell in zip(kinds, row)) + "</div>"
+        '<div role="row" class="board-row">' + "".join(f'<span role="cell" class="{k}">{cell}</span>' for k, cell in zip(kinds, row)) + "</div>"
         for row in rows
     )
     return (f'<div class="board-table" role="table" aria-label="{label}" style="grid-template-columns: {cols}">'
