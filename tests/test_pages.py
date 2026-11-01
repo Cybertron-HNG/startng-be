@@ -47,6 +47,7 @@ def test_game_page_is_rendered_for_crawlers(env):
     assert "<title>Lane Dash · Play free on start.ng</title>" in text
     assert 'rel="canonical" href="https://start.ng/games/lane-dash"' in text
     assert 'property="og:title" content="Lane Dash · Play free on start.ng"' in text
+    assert 'property="og:image:alt" content="A screenshot of the Hangout, start.ng&#x27;s own multiplayer game"' in text
     assert "Dodge the lava &lt;b&gt;fast&lt;/b&gt;." in text  # escaped, never raw HTML
     assert "<b>fast</b>" not in text
     assert '"@type": "VideoGame"' in text
@@ -160,6 +161,7 @@ def test_indie_game_page_is_rendered_for_crawlers(env):
     assert "<title>Moon Garden · Play free on start.ng</title>" in text
     assert f'rel="canonical" href="https://start.ng/creators/{game_id}-moon-garden"' in text
     assert f'content="https://api.start.ng/indie/{game_id}/cover.webp"' in text
+    assert 'property="og:image:alt" content="Moon Garden cover"' in text
     assert "Grow plants &lt;i&gt;fast&lt;/i&gt; &amp; win." in text and "<i>fast</i>" not in text
     assert "an independent creator" in text and '"@type": "VideoGame"' in text
     assert "/assets/app.js" in text
