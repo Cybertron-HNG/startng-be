@@ -41,6 +41,7 @@ router = APIRouter(prefix="/pages", tags=["pages"], include_in_schema=False)
 SEO_BLOCK = re.compile(r"<!--seo-->[\s\S]*?<!--/seo-->")
 ROOT = '<div id="root"></div>'
 SHARE_IMAGE = "/hangout-cover.jpg"  # used when a game has no cover
+SHARE_IMAGE_ALT = "A screenshot of the Hangout, start.ng's own multiplayer game"  # the app's SHARE_IMAGE_ALT (src/seo.ts)
 SHELL_SECONDS = 300
 FIXED_PAGES = ["/", "/games", "/creators", "/tournament", "/leaderboard", "/hangout", "/docs", "/about"]
 # Pages of features (app/features) that anyone can read, listed while the feature is on: {feature: path}.
@@ -97,7 +98,7 @@ def _esc(s: str) -> str:
     return html.escape(s, quote=True)
 
 
-def _page(shell: str, *, title: str, description: str, path: str, image: str, body: str, noindex: bool = False, extra_head: str = "") -> str:
+def _page(shell: str, *, title: str, description: str, path: str, image: str, body: str, noindex: bool = False, extra_head: str = "", image_alt: str = SHARE_IMAGE_ALT) -> str:
     url = f"{_site()}{path}"
     robots = "noindex, nofollow" if noindex else "index, follow, max-image-preview:large"
     head = "\n    ".join([
@@ -112,6 +113,7 @@ def _page(shell: str, *, title: str, description: str, path: str, image: str, bo
         f'<meta property="og:description" content="{_esc(description)}" />',
         f'<meta property="og:url" content="{_esc(url)}" />',
         f'<meta property="og:image" content="{_esc(image)}" />',
+        f'<meta property="og:image:alt" content="{_esc(image_alt)}" />',
         '<meta name="twitter:card" content="summary_large_image" />',
         f'<meta name="twitter:title" content="{_esc(title)}" />',
         f'<meta name="twitter:description" content="{_esc(description)}" />',
@@ -139,7 +141,8 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
     title = _title(game.name)
     by = _player_name(game.owner, "a builder")
     description = game.description or f"Play {title} free in your browser on start.ng, a game by {by}."
-    image = _cover_url(game) or _site() + SHARE_IMAGE
+    cover = _cover_url(game)
+    image = cover or _site() + SHARE_IMAGE
     path = f"/games/{game.name}"
     ld = {
         "@context": "https://schema.org",
@@ -159,7 +162,8 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}</p>"
         f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p>{parts}</main>'
     )
-    page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
+    page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image,
+                 image_alt=f"{title} cover" if cover else SHARE_IMAGE_ALT, body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
@@ -199,7 +203,8 @@ def indie_page(game_id: int = Path(ge=1, le=2_000_000_000), db: Session = Depend
         f"<main><h1>{_esc(game.name)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}, an independent creator</p>"
         f'<p><a href="/creators">All games by independent creators</a></p>{parts}</main>'
     )
-    page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
+    page = _page(shell, title=f"{game.name} · Play free on start.ng", description=description, path=path, image=image,
+                 image_alt=f"{game.name} cover", body=body, extra_head=extra)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 
