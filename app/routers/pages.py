@@ -155,8 +155,12 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
     }
     extra = f'<script type="application/ld+json">{json.dumps(ld).replace("<", chr(92) + "u003c")}</script>'
     parts = "".join(part(db, game) for part in GAME_PAGE_PARTS)
+    byline = _esc(by)
+    if flags.is_on("creator_hub"):  # the creator's page lives at /by/<id>-<name> (creator_hub.service.slug_for)
+        slug = slugify(_player_name(game.owner))
+        byline = f'<a href="/by/{game.owner.id}{"-" + slug if slug else ""}">{byline}</a>'
     body = (
-        f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}</p>"
+        f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {byline}</p>"
         f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p>{parts}</main>'
     )
     page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
