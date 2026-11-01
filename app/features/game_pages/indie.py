@@ -96,7 +96,7 @@ def _enabled() -> bool:
 
 
 def _not_found(shell: str, game_id: int, kind: str) -> Response:
-    body = chrome('<main class="container game-sub"><h1>Page not found</h1><p>There is no page like that on start.ng.</p><p><a href="/creators">Browse games by independent creators</a></p></main>')
+    body = chrome('<main id="main" class="container game-sub"><h1>Page not found</h1><p>There is no page like that on start.ng.</p><p><a href="/creators">Browse games by independent creators</a></p></main>')
     page = _page(shell, title="Page not found · start.ng", description="There is no page like that on start.ng. Browse the games instead.",
                  path=f"/creators/{game_id}/{kind}", image=_site() + SHARE_IMAGE, body=body, noindex=True)
     return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
@@ -154,7 +154,7 @@ def indie_sub_page(game_id: int = GAME_ID, kind: str = KIND, db: Session = Depen
 
     other = "faq" if kind == "about" else "about"
     inner = (
-        '<main class="container game-sub">'
+        '<main id="main" class="container game-sub">'
         f'<p class="crumbs"><a href="/creators">Independent creators</a> › <a href="{_esc(base)}">{_esc(name)}</a> › {_esc(SHORT[kind])}</p>'
         f'<p class="eyebrow">{_esc(name)}</p><h1>{_esc(title)}</h1>'
         f'<div class="game-sub-body">{body}</div>'

@@ -75,6 +75,13 @@ def test_bad_names_are_refused(env):
     assert client.get("/pages/games/Bad_Name").status_code == 422
 
 
+def test_chrome_puts_the_skip_link_before_the_header(env):
+    from app.server_html import chrome
+
+    html = chrome('<main id="main">Hi</main>')
+    assert html.startswith('<a class="skip-link" href="#main">Skip to content</a><header')
+
+
 def test_page_unavailable_when_the_website_cant_be_read(env, monkeypatch):
     client, *_ = env
     monkeypatch.setattr(pages, "_get_shell", lambda: None)
@@ -260,6 +267,8 @@ def test_games_page_text_lists_the_hangout_then_newest_first(env):
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/html")
     text = res.text
+    assert text.startswith('<a class="skip-link" href="#main">Skip to content</a>')
+    assert '<main id="main">' in text
     assert "<html" not in text  # only what goes inside #root
     assert "<h1>All games from the community</h1>" in text
     assert '<span class="count">3 games</span>' in text  # the Hangout counts, as on the real page

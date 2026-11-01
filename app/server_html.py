@@ -5,6 +5,9 @@ import html
 
 CARD_COLORS = [("#ffd400", "#e10600"), ("#1dd1a1", "#0c6e5a"), ("#a55eea", "#4b7bec"), ("#ff6b6b", "#f7b731"), ("#45aaf2", "#2b2f4a"), ("#fd9644", "#eb3b5a")]
 
+# The app's skip link (src/App.tsx): the first focusable thing on the page, hidden until a keyboard user tabs to it.
+SKIP_LINK = '<a class="skip-link" href="#main">Skip to content</a>'
+
 
 def colors_for(name: str) -> tuple[str, str]:
     """The colour pair for a name: the same as src/games.ts colorsFor, so a card looks the same here and in the app."""
@@ -42,6 +45,7 @@ def site_footer() -> str:
 
 def chrome(inner: str) -> str:
     return (
+        f"{SKIP_LINK}"
         '<header class="container sub-top"><a class="logo" href="/"><b>start<span>.ng</span></b></a>'
         '<nav aria-label="Pages"><a href="/games">Games</a><a href="/tournament">Tournament</a><a href="/creators">Creators</a><a href="/docs">Docs</a></nav></header>'
         f"{inner}"
