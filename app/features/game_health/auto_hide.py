@@ -18,6 +18,7 @@ from ... import flags
 from ...activity import record
 from ...config import settings
 from ...models import Activity, Game
+from ...names import title_of
 from ..email import service as email
 from ..email.service import Note, esc
 from ..needs_fixing import service as needs_fixing
@@ -35,7 +36,7 @@ ALERT_EVERY = timedelta(hours=1)
 
 
 def _title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    return title_of(name)
 
 
 def _link(path: str) -> str:

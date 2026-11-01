@@ -13,6 +13,7 @@ from ..config import settings
 from ..db import get_db
 from ..game_store import GameStore, get_game_store
 from ..models import Activity, Admin, DeveloperContact, Game, GamePlay, GameReport, Role, Tournament, User
+from ..names import title_of
 from ..schemas import (
     AdminIn, AdminMe, AdminOut, AnalyticsOut, DayCount, TopGame, AdminRoleIn, AdminTournamentOut, AdminTournamentsOut, CloseIn, ContactIn, ContactOut,
     DeveloperOut, FlagIn, GameCard, LogOut, LogPage, OverviewOut, Permission, ReportIn, ReportOut, RestoreIn, ReviewGameOut, RoleIn,
@@ -134,7 +135,7 @@ def analytics(admin: AdminUser = Depends(current_admin), db: Session = Depends(g
 
 
 def _title_of(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    return title_of(name)
 
 
 @router.get("/permissions", response_model=list[Permission])

@@ -20,6 +20,7 @@ from ...activity import record
 from ...config import settings
 from ...db import SessionLocal
 from ...models import Game, User
+from ...names import title_of
 from ...storage import game_url
 from ..email import service as email
 from ..email.service import Note, esc
@@ -47,7 +48,7 @@ REJECT_REASONS: dict[str, str] = {
 
 
 def _title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    return title_of(name)
 
 
 def _site(path: str) -> str:
