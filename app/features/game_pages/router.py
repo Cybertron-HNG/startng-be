@@ -33,7 +33,7 @@ def _ld(data: dict) -> str:
 
 
 def _not_found(shell: str, name: str, kind: str) -> Response:
-    body = chrome('<main class="container game-sub"><h1>Page not found</h1><p>There is no page like that on start.ng.</p><p><a href="/games">Browse all games</a></p></main>')
+    body = chrome('<main id="main" class="container game-sub"><h1>Page not found</h1><p>There is no page like that on start.ng.</p><p><a href="/games">Browse all games</a></p></main>')
     page = _page(shell, title="Page not found · start.ng", description="There is no page like that on start.ng. Browse the games instead.", path=f"/games/{name}/{kind}", image=_site() + SHARE_IMAGE, body=body, noindex=True)
     return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
@@ -204,7 +204,7 @@ def game_sub_page(name: str = GAME, kind: str = KIND, db: Session = Depends(get_
     facts = [("Made by", by)] + ([("On start.ng since", _since(game))] if _since(game) else []) + ([("Ranked by", ranked[0] + (f" and {len(ranked) - 1} more" if len(ranked) > 1 else ""))] if ranked else [])
     facts_html = '<dl class="gs-facts">' + "".join(f"<div><dt>{_esc(k)}</dt><dd>{_esc(v)}</dd></div>" for k, v in facts) + "</dl>"
     inner = (
-        '<main class="container game-sub">'
+        '<main id="main" class="container game-sub">'
         f'<p class="crumbs"><a href="/games">Games</a> › <a href="/games/{game.name}">{_esc(title)}</a> › {_esc(gen.SHORT[kind])}</p>'
         '<header class="gs-hero">'
         f'<div class="gs-art" style="background: linear-gradient(135deg, {a}, {b})">{art}</div>'

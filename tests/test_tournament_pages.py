@@ -14,6 +14,8 @@ def test_tournament_text_has_the_games_standings_and_times(env):
     res = client.get("/pages/tournament")
     assert res.status_code == 200 and res.headers["content-type"].startswith("text/html")
     text = res.text
+    assert text.startswith('<a class="skip-link" href="#main">Skip to content</a>')
+    assert '<main id="main">' in text
     assert "<html" not in text  # only what goes inside #root
     assert "<h1>Today's tournament</h1>" in text
     assert "Ends at <b>6:00 PM</b> Nigeria time. 2 players have entered." in text

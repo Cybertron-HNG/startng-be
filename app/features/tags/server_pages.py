@@ -33,7 +33,7 @@ def _html(page: str, status: int = 200) -> Response:
 
 
 def _not_found(shell: str, path: str) -> Response:
-    body = chrome('<main class="container tags-page"><h1>That category isn\'t here</h1><p>There is no category with that name yet.</p><p><a href="/categories">See all categories</a> · <a href="/games">Browse all games</a></p></main>')
+    body = chrome('<main id="main" class="container tags-page"><h1>That category isn\'t here</h1><p>There is no category with that name yet.</p><p><a href="/categories">See all categories</a> · <a href="/games">Browse all games</a></p></main>')
     return _html(_page(shell, title="Category not found · start.ng", description="There is no category with that name yet. Browse the games instead.", path=path, image=_site() + SHARE_IMAGE, body=body, noindex=True), 404)
 
 
@@ -49,7 +49,7 @@ def categories_page(db: Session = Depends(get_db)):
         for g in GROUP_ORDER if any(t.group_name == g for t, _ in pairs)
     )
     inner = (
-        '<main class="container tags-page"><p class="crumbs"><a href="/games">Games</a> › Categories</p>'
+        '<main id="main" class="container tags-page"><p class="crumbs"><a href="/games">Games</a> › Categories</p>'
         '<h1>Browse games by category</h1>'
         '<p class="lead-sm">Pick how you want to play, or the mood you are in. One game can be in more than one category.</p>'
         f"{groups}</main>"
@@ -92,7 +92,7 @@ def category_page(slug: str = SLUG, page: int = Query(1, ge=1, le=1000), db: Ses
     if related:
         more = '<div class="tags-group"><h2>More like this</h2><div class="tag-tiles">' + "".join(tag_tile(t.slug, t.label, n) for t, n in related) + "</div></div>"
     inner = (
-        f'<main class="container tags-page"><p class="crumbs"><a href="/games">Games</a> › <a href="/categories">Categories</a> › {esc(tag.label)}</p>'
+        f'<main id="main" class="container tags-page"><p class="crumbs"><a href="/games">Games</a> › <a href="/categories">Categories</a> › {esc(tag.label)}</p>'
         f'<p class="eyebrow">Category</p><h1>{esc(h)}</h1>'
         f'<p class="lead-sm">{esc(tag.blurb)}. Play free in your browser, no download. Every game has its own address and its own leaderboard.</p>'
         f'<div class="section-head"><h2>Games</h2><span class="count">{total} {"game" if total == 1 else "games"}</span></div>'
