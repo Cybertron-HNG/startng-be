@@ -125,3 +125,18 @@ def test_bad_uploads_are_refused(env, monkeypatch):
     monkeypatch.setattr(covers, "MAX_UPLOAD_BYTES", 1000)
     assert client.put("/games/lane-dash/cover", content=picture(), headers=tokens["ada"]).status_code == 413
     assert cover_of(client) is None
+
+
+def test_hangout_has_seeded_cover_fallback():
+    from app.models import Game
+    from app.routers.games import _cover_url
+    g = Game(name="hangout", cover=None)
+    assert _cover_url(g) == "/hangout-cover.jpg"
+
+
+def test_generated_tile_in_server_html():
+    from app.server_html import game_card
+    html = game_card("sunshade-dodger", "Sunshade Dodger", "Ada", "sunshade-dodger.start.ng", None)
+    assert 'class="generated-tile"' in html
+    assert 'class="tile-title">Sunshade Dodger<' in html
+    assert 'class="tile-by">by Ada<' in html
