@@ -15,6 +15,8 @@ STORY = re.compile(r"story|premise|overview|synopsis|about", re.I)
 WALK = re.compile(r"walk-?through|guide|tips|strategy|how to win|hints?", re.I)
 CONTROL_WORDS = re.compile(r"\b(wasd|arrow keys?|arrows|space ?bar|spacebar|click|tap|swipe|mouse|drag|joystick|keyboard|press|hold)\b", re.I)
 SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
+# Tags inside a sentence: their words belong to the paragraph around them ("<kbd>Space</kbd> to jump" is one line, not two)
+INLINE_TAGS = {"b", "strong", "em", "i", "u", "s", "kbd", "code", "samp", "var", "span", "small", "mark", "abbr", "sub", "sup"}
 
 
 @dataclass
@@ -146,9 +148,19 @@ class _Page(HTMLParser):
         self._skip = 0
         self._tags: list[str] = []
         self._title = False
+        self._words: list[str] = []  # the block being read, inline tags and all
+        self._block = ""
+
+    def _flush(self):
+        text = clean("".join(self._words), 400)
+        if text:
+            self.blocks.append((self._block, text))
+        self._words = []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if tag not in INLINE_TAGS:
+            self._flush()
         if tag == "title":
             self._title = True
         if tag == "meta" and (a.get("name") or "").lower() == "description":
@@ -158,6 +170,8 @@ class _Page(HTMLParser):
         self._tags.append(tag)
 
     def handle_endtag(self, tag):
+        if tag not in INLINE_TAGS:
+            self._flush()
         if tag == "title":
             self._title = False
         if tag in SKIP_TAGS and tag != "head" and self._skip:
@@ -170,9 +184,13 @@ class _Page(HTMLParser):
         if self._title:
             self.title += data
             return
-        text = clean(data, 400)
-        if text and not self._skip:
-            self.blocks.append((self._tags[-1] if self._tags else "", text))
+        if not self._skip:
+            self._block = next((t for t in reversed(self._tags) if t not in INLINE_TAGS), "")
+            self._words.append(data)
+
+    def close(self):
+        super().close()
+        self._flush()
 
 
 def from_page(raw: bytes | None, facts: Facts) -> None:
@@ -181,6 +199,7 @@ def from_page(raw: bytes | None, facts: Facts) -> None:
     p = _Page()
     try:
         p.feed(raw[:MAX_BYTES].decode("utf-8", errors="ignore"))
+        p.close()
     except Exception:  # a broken page: use nothing from it
         return
     meta = clean(p.meta, 400)
