@@ -10,7 +10,7 @@ from ...security import current_user, optional_user
 from ...storage import game_url
 from . import service
 from .models import Challenge, ChallengeAttempt
-from .schemas import AttemptOut, ChallengeIn, ChallengeOut, GameOut, PlayerOut
+from .schemas import AttemptOut, CanOut, ChallengeIn, ChallengeOut, GameOut, PlayerOut
 
 # main.py mounts this with the feature's flag: every route answers 404 while the flag is off.
 router = APIRouter(prefix="/challenges", tags=["challenges"])
@@ -62,6 +62,12 @@ def create(body: ChallengeIn, user: User = Depends(current_user), db: Session = 
     except service.Refused as e:
         raise _refuse(e)
     return _out(db, service.find(db, c.code), user)
+
+
+@router.get("/can/{game}", response_model=CanOut)
+def can(game: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Whether you can challenge a friend on a game: you need a run on it. The game's page asks before showing the button."""
+    return CanOut(can=service.has_run(db, user, game))
 
 
 @router.get("/{code}", response_model=ChallengeOut)

@@ -215,3 +215,18 @@ def test_from_your_best_run_on_a_game(env):
     assert client.post("/challenges", json={"game": "relic-hunter"}, headers=tokens["ada"]).status_code == 404  # never played
     assert client.post("/challenges", json={}, headers=tokens["loki"]).status_code == 422
     assert client.post("/challenges", json={"game": "relic-hunter", "run_id": 1}, headers=tokens["loki"]).status_code == 422
+
+
+def test_can_only_challenge_a_game_you_played(env):
+    client, tokens, ids, Session, _ = env
+    assert client.get("/challenges/can/relic-hunter", headers=tokens["loki"]).json() == {"can": False}
+    play(client, tokens, "loki", "relic-hunter", 300)
+    assert client.get("/challenges/can/relic-hunter", headers=tokens["loki"]).json() == {"can": True}
+    assert client.get("/challenges/can/lane-dash", headers=tokens["loki"]).json() == {"can": False}  # another game
+    assert client.get("/challenges/can/relic-hunter", headers=tokens["ada"]).json() == {"can": False}  # another player
+    assert client.get("/challenges/can/no-such-game", headers=tokens["loki"]).json() == {"can": False}
+    with Session() as db:
+        db.get(Run, last_run(Session, ids["loki"])).flagged = True
+        db.commit()
+    assert client.get("/challenges/can/relic-hunter", headers=tokens["loki"]).json() == {"can": False}  # flagged runs don't count
+    assert client.get("/challenges/can/relic-hunter").status_code == 401

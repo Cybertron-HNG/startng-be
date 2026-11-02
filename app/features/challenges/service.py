@@ -109,6 +109,15 @@ def best_run(db: Session, user: User, game_name: str) -> int:
     return run_id
 
 
+def has_run(db: Session, user: User, game_name: str) -> bool:
+    """Whether the player has a run on a game that "Challenge a friend" can use, so its page only shows the button then."""
+    try:
+        best_run(db, user, game_name)
+    except Refused:
+        return False
+    return True
+
+
 def find(db: Session, code: str) -> Challenge | None:
     """An open challenge (None once it has expired, or if the code doesn't exist)."""
     c = db.scalar(select(Challenge).options(selectinload(Challenge.challenger), selectinload(Challenge.game))
