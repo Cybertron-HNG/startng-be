@@ -26,6 +26,7 @@ PERMISSIONS = {
     "reports.view": "See reported and flagged games",
     "reports.close": "Approve reports (which hides the game) or dismiss them, and put hidden games back",
     "games.flag": "Flag a game, which hides it",
+    "games.covers": "Make card-sized copies of games' own covers (once, after an update)",
     "developers.contact": "Record reaching out to a developer about an issue",
     "developers.block": "Block a developer contacted about enough issues (hides their games)",
     "developers.delete": "Delete a developer contacted about enough issues, with their games",

@@ -62,11 +62,77 @@ def test_games_have_no_cover_by_default(env):
     assert cover_of(client) is None
 
 
-def test_uses_the_games_own_cover_png(env):
-    client, _, tokens, archives = env
-    archives["zip"] = make_zip({**GAME, "cover.png": picture()})
+def test_the_games_own_cover_png_gets_a_card_sized_copy(env):
+    """Ziki #74: cards use a 640 x 400 WebP copy of the repo's cover.png; the original stays as it is."""
+    client, storage, tokens, archives = env
+    big = picture(size=(1600, 1000))
+    archives["zip"] = make_zip({**GAME, "cover.png": big})
+    publish(client, tokens)
+    assert cover_of(client).startswith(f"https://lane-dash.start.ng/{covers.CARD_FILE}?v=")
+    card = Image.open(storage.root / "lane-dash" / covers.CARD_FILE)
+    assert (card.format, card.size) == ("WEBP", covers.SIZE)
+    assert (storage.root / "lane-dash" / "cover.png").read_bytes() == big
+
+
+def test_a_cover_that_cant_be_read_is_used_as_it_is(env):
+    client, storage, tokens, archives = env
+    archives["zip"] = make_zip({**GAME, "cover.png": b"not really a png"})
     publish(client, tokens)
     assert cover_of(client).startswith("https://lane-dash.start.ng/cover.png?v=")
+    assert not (storage.root / "lane-dash" / covers.CARD_FILE).exists()
+
+
+def test_a_repo_file_cant_replace_the_card_copy(env):
+    client, storage, tokens, archives = env
+    archives["zip"] = make_zip({**GAME, "cover.png": picture(), covers.CARD_FILE: b"from the repo"})
+    publish(client, tokens)
+    assert Image.open(storage.root / "lane-dash" / covers.CARD_FILE).format == "WEBP"
+
+
+def test_the_share_picture_is_small_enough_for_whatsapp(env):
+    client, storage, tokens, archives = env
+    archives["zip"] = make_zip({**GAME, "cover.png": picture(size=(1600, 1000))})
+    publish(client, tokens)
+    share = next(g["share_url"] for g in client.get("/games").json() if g["name"] == "lane-dash")
+    assert share.startswith("https://api.start.ng/games/lane-dash/share.jpg?v=")
+    res = client.get("/games/lane-dash/share.jpg")
+    assert res.status_code == 200 and res.headers["content-type"] == "image/jpeg"
+    assert "immutable" in res.headers["cache-control"]
+    img = Image.open(io.BytesIO(res.content))
+    assert (img.format, img.size) == ("JPEG", covers.SHARE_SIZE) and len(res.content) < 300_000
+    page = client.get("/pages/games/lane-dash").text
+    assert f'<meta property="og:image" content="{share}" />' in page.replace("&amp;", "&")
+    assert '<meta property="og:image:width" content="1200" />' in page and '<meta property="og:image:height" content="630" />' in page
+
+
+def test_no_cover_no_share_picture(env):
+    client, _, tokens, _ = env
+    publish(client, tokens)
+    assert next(g["share_url"] for g in client.get("/games").json() if g["name"] == "lane-dash") is None
+    assert client.get("/games/lane-dash/share.jpg").status_code == 404
+    assert client.get("/games/nope/share.jpg").status_code == 404
+    assert "og:image:width" not in client.get("/pages/games/lane-dash").text  # start.ng's own picture has its own size
+
+
+def test_backfill_gives_older_games_their_card_copy(env, monkeypatch):
+    from app.config import settings
+    from app.db import get_db
+    from app.main import app
+    from app.models import Game, User
+    client, storage, tokens, archives = env
+    archives["zip"] = make_zip({**GAME, "cover.png": picture()})
+    publish(client, tokens)
+    db = next(app.dependency_overrides[get_db]())
+    game = db.get(Game, "lane-dash")
+    game.cover = "cover.png"  # as published before Ziki #74
+    db.get(User, game.owner_id).google_sub = "g-ada"  # admins sign in with Google
+    db.commit()
+    (storage.root / "lane-dash" / covers.CARD_FILE).unlink()
+    assert client.post("/admin/covers/backfill", headers=tokens["ada"]).status_code in (403, 404)  # admins only
+    monkeypatch.setattr(settings, "super_admin_emails", "ada@example.com")
+    assert client.post("/admin/covers/backfill", headers=tokens["ada"]).json() == {"made": 1, "tried": 1, "left": 0}
+    assert covers.CARD_FILE in cover_of(client)
+    assert client.post("/admin/covers/backfill", headers=tokens["ada"]).json() == {"made": 0, "tried": 0, "left": 0}
 
 
 def test_owner_uploads_a_cover_and_it_shows_everywhere(env):
@@ -103,7 +169,7 @@ def test_removing_the_upload_goes_back_to_the_games_own_cover(env):
     client.put("/games/lane-dash/cover", content=picture(), headers=tokens["ada"])
     res = client.delete("/games/lane-dash/cover", headers=tokens["ada"])
     assert res.status_code == 200
-    assert "/cover.png?v=" in res.json()["cover_url"]
+    assert f"/{covers.CARD_FILE}?v=" in res.json()["cover_url"]  # the game's own cover again, through its card copy
     assert not (storage.root / "lane-dash" / covers.COVER_FILE).exists()
 
 

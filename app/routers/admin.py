@@ -6,6 +6,7 @@ from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import admin as adm
+from .. import covers
 from .. import tournaments
 from ..activity import record
 from ..admin import AdminUser, current_admin, require, require_super
@@ -20,7 +21,7 @@ from ..schemas import (
 )
 from ..security import current_user
 from ..storage import game_url
-from .games import _cover_url, _game_or_404, _player_name
+from .games import _card_from_repo, _cover_url, _game_or_404, _player_name
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 reports_router = APIRouter(prefix="/games", tags=["reports"])
@@ -620,3 +621,21 @@ def search_log(
 def log_actions(admin: AdminUser = Depends(require("log.view")), db: Session = Depends(get_db)):
     """Every kind of action that has happened, for the log's filter."""
     return list(db.scalars(select(Activity.action).distinct().order_by(Activity.action).limit(300)).all())
+
+
+@router.post("/covers/backfill")
+def backfill_covers(limit: int = Query(25, ge=1, le=200), admin: AdminUser = Depends(require("games.covers")),
+                    db: Session = Depends(get_db), store: GameStore | None = Depends(get_game_store)):
+    """Ziki #74, once after deploying: give games published before it their card-sized cover copy, a few at a time
+    (call again until `left` is 0). Uploaded covers are already card-sized."""
+    if store is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Game storage isn't set up")
+    todo = db.scalars(select(Game).where(Game.cover.in_(covers.REPO_COVERS)).order_by(Game.name)).all()
+    made = 0
+    for game in todo[:limit]:
+        if _card_from_repo(store, game.name, game.cover) == covers.CARD_FILE:
+            game.cover, game.cover_at = covers.CARD_FILE, datetime.now(timezone.utc)
+            made += 1
+    adm.log(db, admin, "covers.backfill", None, made=made)
+    db.commit()
+    return {"made": made, "tried": min(limit, len(todo)), "left": max(0, len(todo) - limit)}

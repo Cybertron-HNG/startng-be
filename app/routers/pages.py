@@ -33,7 +33,8 @@ from ..db import get_db
 from ..models import Game, IndieGame
 from ..server_html import site_footer
 from ..storage import game_url
-from .games import _cover_url, _player_name
+from ..covers import SHARE_SIZE
+from .games import _cover_url, _player_name, _share_url
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/pages", tags=["pages"], include_in_schema=False)
@@ -97,7 +98,8 @@ def _esc(s: str) -> str:
     return html.escape(s, quote=True)
 
 
-def _page(shell: str, *, title: str, description: str, path: str, image: str, body: str, noindex: bool = False, extra_head: str = "") -> str:
+def _page(shell: str, *, title: str, description: str, path: str, image: str, body: str, noindex: bool = False, extra_head: str = "",
+          image_size: tuple[int, int] | None = None) -> str:
     url = f"{_site()}{path}"
     robots = "noindex, nofollow" if noindex else "index, follow, max-image-preview:large"
     head = "\n    ".join([
@@ -112,6 +114,7 @@ def _page(shell: str, *, title: str, description: str, path: str, image: str, bo
         f'<meta property="og:description" content="{_esc(description)}" />',
         f'<meta property="og:url" content="{_esc(url)}" />',
         f'<meta property="og:image" content="{_esc(image)}" />',
+        *([f'<meta property="og:image:width" content="{image_size[0]}" />', f'<meta property="og:image:height" content="{image_size[1]}" />'] if image_size else []),
         '<meta name="twitter:card" content="summary_large_image" />',
         f'<meta name="twitter:title" content="{_esc(title)}" />',
         f'<meta name="twitter:description" content="{_esc(description)}" />',
@@ -139,7 +142,8 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
     title = _title(game.name)
     by = _player_name(game.owner, "a builder")
     description = game.description or f"Play {title} free in your browser on start.ng, a game by {by}."
-    image = _cover_url(game) or _site() + SHARE_IMAGE
+    share = _share_url(game)  # 1200 x 630, small enough for WhatsApp (Ziki #74)
+    image = share or _site() + SHARE_IMAGE
     path = f"/games/{game.name}"
     ld = {
         "@context": "https://schema.org",
@@ -159,7 +163,8 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
         f"<main><h1>{_esc(title)}</h1><p>{_esc(description)}</p><p>By {_esc(by)}</p>"
         f'<p><a href="{_esc(game_url(game.name))}">Play {_esc(title)}</a> · <a href="/games">All games</a></p>{parts}</main>'
     )
-    page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra)
+    page = _page(shell, title=f"{title} · Play free on start.ng", description=description, path=path, image=image, body=body, extra_head=extra,
+                 image_size=SHARE_SIZE if share else None)
     return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
 

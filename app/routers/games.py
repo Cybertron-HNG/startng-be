@@ -116,7 +116,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     # Files a new version no longer has stay in the bucket; the Worker only serves what the
     # game links to, so they're harmless (same as the Worker's publish-game.js).
     # A repo file can't replace the cover the owner uploaded.
-    files = {f.path: f.data for f in bundle.files if f.path != covers.COVER_FILE}
+    files = {f.path: f.data for f in bundle.files if f.path not in covers.OURS}
     try:
         store.put_game(name, files)
     except Exception:
@@ -137,7 +137,7 @@ def _put_live(db: Session, store: GameStore, game: Game | None, name: str, owner
     game.update_problem = None  # this version made it
     auto_update.record_commit(game)  # so the update check doesn't publish this same commit again
     if game.cover != covers.COVER_FILE:  # an uploaded cover wins over the game's own
-        game.cover = covers.repo_cover(list(files))
+        game.cover = _card_from_repo(store, name, covers.repo_cover(list(files)), files)
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
     if auto:
         record(db, None, "system", "game.auto_updated", name, commit=(game.last_commit or "")[:7])
@@ -375,6 +375,7 @@ def _game_out(g: Game, owner_view: bool = False, plays: int = 0) -> GameOut:
         by=_player_name(g.owner, "A builder"),
         updated_at=g.updated_at,
         cover_url=_cover_url(g),
+        share_url=_share_url(g),
         description=g.description,
         leaderboard=_board_columns(g),
     )
@@ -390,6 +391,33 @@ def _board_columns(g: Game) -> list[dict] | None:
         return g.leaderboard
     has_scores = object_session(g).scalar(select(Score.id).where(Score.game_name == g.name).limit(1))
     return boards.DEFAULT if has_scores else None
+
+
+def _card_from_repo(store: GameStore, name: str, path: str | None, files: dict[str, bytes] | None = None) -> str | None:
+    """The cover file cards should use for a game's own cover at `path` (Ziki #74): its card-sized copy, made now, or
+    the original if the copy can't be made (an odd picture, the bucket not answering). None when there's no cover."""
+    if path is None:
+        return None
+    data = files.get(path) if files is not None else store.read_file(name, path)
+    if data is None:
+        return path
+    try:
+        store.put_file(name, covers.CARD_FILE, covers.make_cover(data), "image/webp")
+    except covers.CoverError:
+        return path
+    except Exception:
+        log.exception("Making the card cover of %s failed", _plain(name))
+        return path
+    return covers.CARD_FILE
+
+
+def _share_url(g: Game) -> str | None:
+    """The game's 1200 x 630 link-preview picture (og:image), made from its cover by GET /games/{name}/share.jpg.
+    ?v= changes with the cover. None when the game has no cover (pages then use start.ng's own picture)."""
+    if not g.cover:
+        return None
+    version = int(g.cover_at.timestamp()) if g.cover_at else 0
+    return f"{settings.api_url.rstrip('/')}/games/{quote(g.name)}/share.jpg?v={version}"
 
 
 def _cover_url(g: Game) -> str | None:
@@ -538,11 +566,33 @@ def remove_cover(
     game = _own_game(db, name, user)
     if game.cover == covers.COVER_FILE:
         store.delete_file(name, covers.COVER_FILE)
-        game.cover = covers.repo_cover(store.paths(name))
+        game.cover = _card_from_repo(store, name, covers.repo_cover(store.paths(name)))
         game.cover_at = datetime.now(timezone.utc) if game.cover else None
         record(db, user, "developer", "game.cover_removed", name)
         db.commit()
     return _game_out(game)
+
+
+SHARE_SOURCE_MAX = 8 * 1024 * 1024  # a cover bigger than this isn't turned into a preview (games are limited anyway)
+
+
+@router.get("/{name}/share.jpg")
+def share_picture(name: str, db: Session = Depends(get_db), store: GameStore = Depends(require_store)):
+    """The game's link-preview picture (og:image, Ziki #74): its cover as a 1200 x 630 JPEG, well under the ~300 KB
+    WhatsApp shows. Made from the original (a repo cover.png, or the upload), cached for a week (?v= changes with it)."""
+    game = db.get(Game, name)
+    if game is None or game.hidden or not game.cover:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No picture for that game")
+    source = covers.repo_cover(store.paths(name)) if game.cover == covers.CARD_FILE else game.cover
+    data = store.read_file(name, source) if source else None
+    if not data or len(data) > SHARE_SOURCE_MAX:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No picture for that game")
+    try:
+        jpg = covers.make_share(data)
+    except covers.CoverError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No picture for that game")
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=604800, immutable"})
+
 
 
 def _player_out(user: User) -> PlayerOut:
