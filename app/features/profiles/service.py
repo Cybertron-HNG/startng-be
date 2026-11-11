@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ... import flags
 from ...features.integrity.service import rank_of
 from ...features.progress import service as progress
 from ...features.progress.models import Run
@@ -93,6 +94,8 @@ def _shown(schema: list[dict], stats: dict | None, best: int) -> str:
 
 
 def build(db: Session, user: User) -> Profile:
+    if flags.is_on("progress"):  # old scores (from before the Progress Engine) count on the page too (Ziki #52)
+        progress.catch_up(db, user.id, rank_of=rank_of)
     snap = progress.snapshot(db, user.id)
     st = settings_of(db, user.id)
     owned = {a.key: a for a in progress.awards_of(db, user.id) if a.kind == "badge"}
