@@ -164,6 +164,8 @@ class GameOut(BaseModel):
     leaderboard: list[dict] | None = None
     # How many people opened it from start.ng in the last 7 days (the homepage shows the most played)
     plays: int = 0
+    # Whether it says it works on a phone ("mobile": true in its startng.json, app/features/discovery); False when it doesn't say
+    mobile: bool = False
     # Only in /games/mine: why it's hidden from start.ng ("reported", "flagged", "blocked"; app/admin.py), or None
     hidden: str | None = None
 
