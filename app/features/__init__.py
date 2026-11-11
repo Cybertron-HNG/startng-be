@@ -44,6 +44,7 @@ FEATURES: list[str] = [
     "rooms",  # refereed multiplayer games: rooms with a code, matchmaking and bots (Hamzat)
     "tags",  # tags and category pages (Chloe)
     "game_pages",  # about, how to play, FAQ and walkthrough pages of games (Chloe)
+    "jams",  # Ziki #35: monthly game jams, a theme, entries, votes and winners (Oluwaseyifunmi)
 ]
 
 _loaded: dict[str, ModuleType] = {}
