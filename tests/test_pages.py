@@ -349,6 +349,19 @@ def test_friends_page_text_only_while_the_feature_is_on(env, monkeypatch):
     assert "1 day, 3 days, 1 week, 2 weeks or 1 month" in text and "<html" not in text
 
 
+def test_header_and_footer_link_friends_only_while_the_feature_is_on(env, monkeypatch):
+    from app.config import settings
+
+    client, *_ = env
+    monkeypatch.setattr(settings, "features", "")
+    text = client.get("/pages/leaderboard").text
+    assert "Play with friends" not in text
+    monkeypatch.setattr(settings, "features", "private_tournaments")
+    text = client.get("/pages/leaderboard").text
+    assert '<a href="/tournament">Tournament</a><a href="/friends">Play with friends</a><a href="/creators">' in text
+    assert '<li><a href="/tournament">Daily tournament</a></li><li><a href="/friends">Play with friends</a></li>' in text
+
+
 def test_request_text_has_no_line_breaks_in_a_log_line():
     from app.routers.games import _plain
 
