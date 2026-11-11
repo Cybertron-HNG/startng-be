@@ -36,6 +36,8 @@ def record(db: Session, game: str, session_id: str, event: str, user_id: int | N
             return
         db.add(PlaySession(session_id=session_id, game_name=game, user_id=user_id, kit_version=kit, started_at=now, last_seen_at=now))
         prune(db, now)
+    elif event == "clip_shared":
+        row.last_seen_at = now
     elif event == "end":
         if row.ended_at is None:
             row.ended_at = now
