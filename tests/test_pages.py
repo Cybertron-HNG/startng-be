@@ -5,6 +5,7 @@ import pytest
 from app.leaderboard import parse_description
 from app.models import Game
 from app.routers import pages
+from app.server_html import site_footer
 from tests.test_publish import env  # noqa: F401 (fixture)
 
 SHELL = (
@@ -88,8 +89,16 @@ def test_sitemap_lists_pages_and_games(env):
     res = client.get("/pages/sitemap.xml")
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("application/xml")
-    for loc in ["https://start.ng/", "https://start.ng/games", "https://start.ng/about", "https://start.ng/games/lane-dash", "https://start.ng/games/moon-garden"]:
+    for loc in ["https://start.ng/", "https://start.ng/games", "https://start.ng/about", "https://start.ng/privacy", "https://start.ng/terms", "https://start.ng/games/lane-dash", "https://start.ng/games/moon-garden"]:
         assert f"<loc>{loc}</loc>" in res.text
+
+
+def test_footer_links_privacy_and_terms():
+    """The server writes the same footer as src/SiteFooterView.tsx: keep the legal links in step with it."""
+    footer = site_footer()
+    assert '<a href="/about">About start.ng</a>' in footer
+    assert '<a href="/privacy">Privacy</a>' in footer
+    assert '<a href="/terms">Terms</a>' in footer
 
 
 def test_publishing_saves_the_description_and_it_reaches_the_api(env):
