@@ -354,3 +354,28 @@ def test_request_text_has_no_line_breaks_in_a_log_line():
 
     assert _plain("lane-dash\r\nINFO fake entry") == "lane-dashINFO fake entry"
     assert _plain("lane-dash") == "lane-dash"
+
+
+
+def test_games_page_has_structured_data(env):
+    client, *_ = env
+    add_game(env, name="speed-runner")
+    res = client.get("/pages/games")
+    assert res.status_code == 200
+    text = res.text
+    assert '<script type="application/ld+json">' in text
+    assert '"@type": "BreadcrumbList"' in text
+    assert '"@type": "CollectionPage"' in text
+    assert '"@type": "ItemList"' in text
+    assert '"@type": "VideoGame"' in text
+    assert "https://start.ng/games" in text
+
+
+def test_leaderboard_page_has_structured_data(env):
+    client, *_ = env
+    res = client.get("/pages/leaderboard")
+    assert res.status_code == 200
+    text = res.text
+    assert '<script type="application/ld+json">' in text
+    assert '"@type": "BreadcrumbList"' in text
+    assert "https://start.ng/leaderboard" in text
