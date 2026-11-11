@@ -83,11 +83,18 @@ def test_the_picture_address_changes_with_the_card(env):
 
 
 @pytest.mark.parametrize("path", ["/share/tournament_result/999-1", "/share/tournament_result/nope",
-                                  "/share/tournament_result/1-2-3", "/share/nonsense/1", "/share/challenge/abc"])
-def test_nothing_to_share_is_404(env, path):
+                                  "/share/tournament_result/1-2-3", "/share/challenge/abc"])
+def test_nothing_to_share_yet_is_null_not_404(env, path):
     client, _, _ = env
-    assert client.get(path).status_code == 404
-    assert client.get(f"{path}/card.jpg").status_code == 404
+    res = client.get(path)
+    assert res.status_code == 200 and res.json() is None  # the Share button hides; the browser logs no error
+    assert client.get(f"{path}/card.jpg").status_code == 404  # there's still no picture to serve
+
+
+def test_an_unknown_kind_is_404(env):
+    client, _, _ = env
+    assert client.get("/share/nonsense/1").status_code == 404
+    assert client.get("/share/nonsense/1/card.jpg").status_code == 404
 
 
 def test_an_unfinished_tournament_has_no_card(env):
@@ -95,7 +102,8 @@ def test_an_unfinished_tournament_has_no_card(env):
     with Session() as db:
         db.query(Tournament).update({"finished_at": None})
         db.commit()
-    assert client.get(f"/share/tournament_result/{rid}").status_code == 404
+    res = client.get(f"/share/tournament_result/{rid}")
+    assert res.status_code == 200 and res.json() is None
 
 
 @pytest.mark.parametrize("size,dims", [("wide", (1200, 630)), ("square", (1080, 1080))])

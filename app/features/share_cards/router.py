@@ -20,10 +20,15 @@ def _card(db: Session, kind: str, id: str) -> service.Card:
     return card
 
 
-@router.get("/{kind}/{id}", response_model=ShareOut)
+@router.get("/{kind}/{id}", response_model=ShareOut | None)
 def share_info(kind: str = KIND, id: str = ID, db: Session = Depends(get_db)):
-    """The link, words and pictures for sharing one thing (what the website's Share button posts)."""
-    card = _card(db, kind, id)
+    """The link, words and pictures for sharing one thing (what the website's Share button posts). null while there's
+    nothing to share yet, so the button hides itself without the browser logging a 404; an unknown kind is still a 404."""
+    if kind not in service.KINDS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nothing to share at this link")
+    card = service.describe(db, kind, id)
+    if card is None:
+        return None
     s = service.links(kind, id, card)
     return ShareOut(url=s.url, text=s.text, image_url=s.image_url, square_image_url=s.square_image_url,
                     title=card.headline, path=card.path)
