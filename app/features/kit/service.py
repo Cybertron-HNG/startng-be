@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ...tournaments import utc
@@ -68,3 +68,12 @@ def prune(db: Session, now: datetime | None = None) -> None:
     """Deletes sessions older than KEEP_DAYS. Runs when a new session starts, so no scheduler is needed."""
     cutoff = (now or _now()) - timedelta(days=KEEP_DAYS)
     db.execute(delete(PlaySession).where(PlaySession.started_at < cutoff))
+
+
+def playing_now(db: Session, within: timedelta = timedelta(seconds=90), now: datetime | None = None) -> dict[str, int]:
+    """Players in each game right now: open sessions whose heartbeat (every 30 s while the game is on screen) came within
+    `within`. Guests count too. {game: players}, games with nobody left out. Used by "playing now" (live, Ziki #37)."""
+    since = (now or _now()) - within
+    rows = db.execute(select(PlaySession.game_name, func.count()).where(
+        PlaySession.last_seen_at >= since, PlaySession.ended_at.is_(None)).group_by(PlaySession.game_name)).all()
+    return {game: n for game, n in rows}
