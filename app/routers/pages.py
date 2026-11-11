@@ -78,8 +78,12 @@ def _get_shell() -> str | None:
         return _shell[1] if _shell else None  # an old copy beats none
 
 
+_ACRONYMS = {"fc", "3d", "2d", "hq", "ui", "ai", "rpg", "fps", "vr", "ar", "ng", "vs", "ok", "dj", "tv", "pc"}
+
+
 def _title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    """Words for a title: "cork-fc" -> "Cork FC", "star-dash-3d" -> "Star Dash 3D"."""
+    return " ".join(w.upper() if w.lower() in _ACRONYMS else w.capitalize() for w in name.split("-"))
 
 
 def slugify(name: str) -> str:
