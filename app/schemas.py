@@ -277,6 +277,7 @@ class TournamentOut(BaseModel):
     games: list[TournamentGameOut]
     entrants: int
     entered: bool = False  # the signed-in player has entered (always false when signed out)
+    my_runs: int = 0  # runs counted for the signed-in player in this tournament
     standings: list[TournamentStanding]  # the day's points so far (top 20); final once finished
     me: TournamentStanding | None = None  # the signed-in player's own row, when they have points
     winner: TournamentStanding | None = None  # once finished

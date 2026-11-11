@@ -166,18 +166,33 @@ def test_entering_twice_is_fine(env):
     assert client.get("/tournaments/current", headers=tokens["tunde"]).json()["entered"] is False
 
 
-def test_runs_count_only_after_entering_and_only_the_best(env):
+def test_first_run_auto_enters_and_keeps_best(env):
     client, tokens, ids, _ = env
-    client.get("/tournaments/current")
-    play(client, tokens, "ada", "g0", 900)  # before entering: only the game's own leaderboard
-    enter(client, tokens, "ada")
-    play(client, tokens, "ada", "g0", 50)
-    play(client, tokens, "ada", "g0", 80)
-    play(client, tokens, "ada", "g0", 60)
-    g0 = next(g for g in client.get("/tournaments/current").json()["games"] if g["name"] == "g0")
+    cur = client.get("/tournaments/current", headers=tokens["ada"]).json()
+    assert cur["entered"] is False
+    assert cur["my_runs"] == 0
+
+    # First run on a tournament game auto-enters the player without manual share
+    play(client, tokens, "ada", "g0", 900)
+    cur = client.get("/tournaments/current", headers=tokens["ada"]).json()
+    assert cur["entered"] is True
+    assert cur["my_runs"] == 1
+    g0 = next(g for g in cur["games"] if g["name"] == "g0")
     assert g0["players"] == 1
-    assert g0["top"][0]["stats"] == {"score": 80} and g0["top"][0]["points"] == 10
-    assert client.get("/games/g0/leaderboard").json()[0]["score"] == 900  # the all-time board is unchanged
+    assert g0["top"][0]["stats"] == {"score": 900} and g0["top"][0]["points"] == 10
+
+    # Subsequent lower runs do not displace best run, higher runs update it
+    play(client, tokens, "ada", "g0", 50)
+    play(client, tokens, "ada", "g0", 950)
+    cur = client.get("/tournaments/current", headers=tokens["ada"]).json()
+    g0 = next(g for g in cur["games"] if g["name"] == "g0")
+    assert g0["top"][0]["stats"] == {"score": 950}
+    assert cur["my_runs"] == 1
+
+    # Playing another tournament game increments my_runs to 2
+    play(client, tokens, "ada", "g1", 120)
+    cur = client.get("/tournaments/current", headers=tokens["ada"]).json()
+    assert cur["my_runs"] == 2
 
 
 def test_runs_on_other_games_dont_count(env):

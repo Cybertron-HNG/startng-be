@@ -216,7 +216,7 @@ def record(db: Session, game: Game, user: User, stats: dict, schema: list[dict],
     if t is None or t.finished_at is not None or game.name not in {g.game_name for g in t.games}:
         return False
     if not is_entered(db, t, user.id):
-        return False
+        enter(db, t, user)
     first = stats[schema[0]["key"]]
     where = (TournamentScore.tournament_id == t.id, TournamentScore.game_name == game.name, TournamentScore.user_id == user.id)
     row = db.scalar(select(TournamentScore).where(*where))
