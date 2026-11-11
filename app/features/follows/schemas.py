@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from ...schemas import GameOut
+
 
 class PlayerOut(BaseModel):
     """A player as others may see them: name and character only, never the email."""
@@ -36,3 +38,16 @@ class InvitePreviewOut(BaseModel):
 
 class AcceptedOut(BaseModel):
     friend: PlayerOut
+
+
+class GameCreatorOut(BaseModel):
+    """A game's creator, for the Follow button on the game's page."""
+    game: str
+    creator: PlayerOut
+    state: FollowStateOut  # you_follow is false when signed out, and for your own game you can't follow
+
+
+class FollowingGamesOut(BaseModel):
+    """The newest games from creators you follow, for the homepage."""
+    following: int  # how many creators you follow (0: the homepage shows nothing)
+    games: list[GameOut]
