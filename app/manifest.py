@@ -70,3 +70,17 @@ def apply_sections(db: Session, game: Any, values: dict[str, Any]) -> None:
 # ---- start.ng's own sections (the leaderboard and the description are saved by the publish code itself)
 register_section("leaderboard", parse_leaderboard)
 register_section("description", lambda value: clean_description(value) if isinstance(value, str) else None)
+
+def parse_embed(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() not in ("false", "0", "off", "no")
+    return True
+
+
+def apply_embed(db: Session, game: Any, value: bool) -> None:
+    game.allow_embed = value
+
+
+register_section("embed", parse_embed, apply_embed)

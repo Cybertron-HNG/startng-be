@@ -66,3 +66,19 @@ def test_owner_listing_shows_the_play_count(env):
     client.post("/games/lane-dash/plays", headers={"x-forwarded-for": "10.0.0.1"})
     client.post("/games/lane-dash/plays", headers={"x-forwarded-for": "10.0.0.2"})
     assert client.get("/games/mine", headers=tokens["ada"]).json()[0]["plays"] == 2
+
+
+def test_embed_play_and_allow_embed(env):
+    client, _, tokens, _ = env
+    publish(client, tokens, "lane-dash")
+    # By default, allow_embed is True
+    res = client.get("/games")
+    game_data = next(g for g in res.json() if g["name"] == "lane-dash")
+    assert game_data["allow_embed"] is True
+
+    # Count an embed play
+    assert client.post("/games/lane-dash/plays?embed=1", headers={"x-forwarded-for": "10.0.0.5"}).status_code == 204
+    db = next(client.app.dependency_overrides[games_router.get_db]())
+    recent_play = db.query(GamePlay).filter(GamePlay.game_name == "lane-dash").order_by(GamePlay.id.desc()).first()
+    assert recent_play is not None
+    assert recent_play.embed is True

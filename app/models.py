@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, false
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -64,6 +64,8 @@ class Game(Base):
     meets_standards: Mapped[bool | None] = mapped_column(Boolean)
     # Whether the live version loads the start.ng Kit (https://start.ng/kit.js, PRD M1), set with meets_standards.
     uses_kit: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Whether the game allows embedding on other sites (turned off with "embed": false in startng.json)
+    allow_embed: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     # Hidden from start.ng while admins look at it (app/admin.py): "reported" (a player reported it), "flagged"
     # (an admin flagged it) or "blocked" (its developer is blocked). None = listed as usual.
     hidden: Mapped[str | None] = mapped_column(String(20), index=True)
@@ -127,6 +129,7 @@ class IndieGame(Base):
     description: Mapped[str] = mapped_column(Text)
     cover: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    embed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     owner: Mapped[User] = relationship()
 
@@ -145,6 +148,7 @@ class GamePlay(Base):
     game_name: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
     visitor: Mapped[str] = mapped_column(String(32))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    embed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class IndiePlay(Base):
@@ -157,6 +161,7 @@ class IndiePlay(Base):
     indie_id: Mapped[int] = mapped_column(ForeignKey("indie_games.id", ondelete="CASCADE"))
     visitor: Mapped[str] = mapped_column(String(32))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    embed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class Favorite(Base):
@@ -293,6 +298,7 @@ class GameReport(Base):
     details: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(12), default="open", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    embed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_by: Mapped[str | None] = mapped_column(String(255))
     note: Mapped[str | None] = mapped_column(Text)  # what the admin decided
@@ -330,6 +336,7 @@ class Activity(Base):
     target: Mapped[str | None] = mapped_column(String(255))
     detail: Mapped[dict | None] = mapped_column(JSON)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    embed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class FeatureSwitch(Base):
