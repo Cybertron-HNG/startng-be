@@ -38,6 +38,7 @@ FEATURES: list[str] = [
     "challenges",
     "creator_hub",  # T2 creator hub (Hamzat, for Tega)
     "kit",  # M1 the start.ng Kit: game_sessions (Mo)
+    "player_pulse",  # Ziki #58 Player Pulse: "how was that?" after a round, for creators (Daniel)
     "leagues",  # M2 leagues (Mo)
     "wardrobe",  # wardrobe rewards: coins, rarity items, the shop and game goals (Kaka)
     "support",  # F10 problem reports about start.ng, with a coin reward for real bugs (Hamzat)
