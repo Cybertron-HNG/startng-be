@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from ... import events
 from ...models import User
-from .models import Follow, FriendInvite
+from .models import Follow, FriendInvite, QuickMessage, UserMute
 
 DAILY_FOLLOW_LIMIT = 100  # new follows per player in any 24 hours (accepting an invite doesn't count)
 INVITE_DAYS = 7  # how long an invite link works
@@ -198,3 +198,151 @@ def accept_invite(db: Session, user: User, code: str, at: datetime | None = None
     for a, b in new:
         events.publish("follow_created", {"follower_id": a, "target_user_id": b})
     return inviter
+
+ALLOWED_PRESETS = [
+    "GG! 🔥",
+    "Rematch?",
+    "Beat my score 😏",
+    "Nice one 👏",
+    "Well played!",
+    "You're on fire! 🚀",
+    "Catch me if you can 🏃",
+    "So close! 🤏",
+    "🔥",
+    "👏",
+    "😏",
+    "🚀",
+    "👑",
+    "🎯",
+]
+
+
+def is_muted(db: Session, user_id: int, target_id: int) -> bool:
+    """True when user_id has muted target_id."""
+    return db.scalar(
+        select(func.count()).select_from(UserMute)
+        .where(UserMute.user_id == user_id, UserMute.muted_user_id == target_id)
+    ) == 1
+
+
+def are_connected(db: Session, a_id: int, b_id: int) -> bool:
+    """True if players are mutual friends OR share a challenge rivalry."""
+    if is_friend(db, a_id, b_id):
+        return True
+    try:
+        from ..challenges.models import Challenge, ChallengeAttempt
+        shared = db.scalar(
+            select(func.count())
+            .select_from(ChallengeAttempt)
+            .join(Challenge, Challenge.id == ChallengeAttempt.challenge_id)
+            .where(
+                ((Challenge.challenger_id == a_id) & (ChallengeAttempt.user_id == b_id))
+                | ((Challenge.challenger_id == b_id) & (ChallengeAttempt.user_id == a_id))
+            )
+        )
+        if (shared or 0) > 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def send_quick_message(
+    db: Session,
+    sender: User,
+    recipient_id: int,
+    preset: str,
+    game_name: str | None = None,
+    challenge_code: str | None = None,
+    at: datetime | None = None,
+) -> QuickMessage:
+    at = at or _now()
+    if recipient_id == sender.id:
+        raise Refused("cant_message_self", "You cannot send messages to yourself.")
+
+    target = db.get(User, recipient_id)
+    if target is None or target.blocked_at is not None:
+        raise Refused("player_not_found", "That player wasn't found.")
+
+    if preset not in ALLOWED_PRESETS:
+        raise Refused("invalid_preset", "That message preset is not allowed.")
+
+    if not are_connected(db, sender.id, recipient_id):
+        raise Refused("not_friends", "You can only send quick messages to friends or challenge opponents.")
+
+    if is_muted(db, recipient_id, sender.id):
+        raise Refused("muted", "This player has muted messages from you.")
+
+    recent_count = db.scalar(
+        select(func.count()).select_from(QuickMessage)
+        .where(
+            QuickMessage.sender_id == sender.id,
+            QuickMessage.recipient_id == recipient_id,
+            QuickMessage.created_at >= at - timedelta(hours=1),
+        )
+    ) or 0
+    if recent_count >= 10:
+        raise Refused("rate_limited", "You have sent too many messages recently. Try again later.")
+
+    msg = QuickMessage(
+        sender_id=sender.id,
+        recipient_id=recipient_id,
+        preset=preset,
+        game_name=game_name[:40] if game_name else None,
+        challenge_code=challenge_code[:16] if challenge_code else None,
+        created_at=at,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    events.publish("quick_message_sent", {"id": msg.id, "sender_id": sender.id, "recipient_id": recipient_id, "preset": preset})
+    return msg
+
+
+def get_quick_messages(db: Session, user_id: int, limit: int = 50) -> list[QuickMessage]:
+    return list(
+        db.scalars(
+            select(QuickMessage)
+            .where(QuickMessage.recipient_id == user_id)
+            .order_by(QuickMessage.created_at.desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def mark_message_read(db: Session, user_id: int, message_id: int) -> bool:
+    msg = db.get(QuickMessage, message_id)
+    if msg is None or msg.recipient_id != user_id:
+        return False
+    if msg.read_at is None:
+        msg.read_at = _now()
+        db.commit()
+    return True
+
+
+def mute_user(db: Session, user: User, target_id: int) -> bool:
+    if target_id == user.id:
+        raise Refused("cant_mute_self", "You cannot mute yourself.")
+    target = db.get(User, target_id)
+    if target is None:
+        raise Refused("player_not_found", "That player wasn't found.")
+    if is_muted(db, user.id, target_id):
+        return False
+    db.add(UserMute(user_id=user.id, muted_user_id=target_id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
+
+
+def unmute_user(db: Session, user: User, target_id: int) -> bool:
+    db.execute(delete(UserMute).where(UserMute.user_id == user.id, UserMute.muted_user_id == target_id))
+    db.commit()
+    return True
+
+
+def get_muted_ids(db: Session, user_id: int) -> set[int]:
+    return set(db.scalars(select(UserMute.muted_user_id).where(UserMute.user_id == user_id)))
+

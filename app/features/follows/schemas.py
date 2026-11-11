@@ -36,3 +36,31 @@ class InvitePreviewOut(BaseModel):
 
 class AcceptedOut(BaseModel):
     friend: PlayerOut
+
+class QuickMessageIn(BaseModel):
+    recipient_id: int
+    preset: str
+    game_name: str | None = None
+    challenge_code: str | None = None
+
+
+class QuickMessageOut(BaseModel):
+    id: int
+    sender: PlayerOut
+    recipient_id: int
+    preset: str
+    game_name: str | None = None
+    challenge_code: str | None = None
+    created_at: datetime
+    read_at: datetime | None = None
+
+
+class QuickMessagesListOut(BaseModel):
+    count: int
+    messages: list[QuickMessageOut]
+
+
+class MuteOut(BaseModel):
+    user_id: int
+    muted: bool
+

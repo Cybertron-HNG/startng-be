@@ -40,3 +40,31 @@ class FriendInvite(Base):
     inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+class QuickMessage(Base):
+    """Canned preset quick message between friends or challenge opponents."""
+    __tablename__ = "quick_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    preset: Mapped[str] = mapped_column(String(64))
+    game_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    challenge_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserMute(Base):
+    """A player mutes another to stop receiving quick messages from them."""
+    __tablename__ = "user_mutes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "muted_user_id", name="uq_user_mute"),
+        CheckConstraint("user_id <> muted_user_id", name="ck_user_mute_not_self"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    muted_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+

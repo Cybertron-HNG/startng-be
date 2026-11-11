@@ -34,6 +34,7 @@ EVENTS: dict[str, tuple[str, ...]] = {
     "game_unhealthy": ("game", "reason"),  # H2
     "coins_earned": ("user_id", "amount", "reason"),  # wardrobe
     "wardrobe_item_unlocked": ("user_id", "item"),  # wardrobe
+    "quick_message_sent": ("id", "sender_id", "recipient_id", "preset"),  # canned messages
 }
 
 Handler = Callable[[dict], None]
