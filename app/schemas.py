@@ -197,6 +197,15 @@ class LeaderboardEntry(BaseModel):
     stats: dict[str, int | None]  # every stat, keyed like the game's startng.json
 
 
+class YourPlace(BaseModel):
+    """Where the signed-in player stands on a game's board, with the players just above them."""
+
+    rank: int | None  # None when the player has no score here
+    you: LeaderboardEntry | None
+    above: list[LeaderboardEntry]  # up to two players just ahead, nearest last
+    total: int  # how many players are on the board
+
+
 class PlayerOut(BaseModel):
     """What a game knows about its player: never the email."""
 
