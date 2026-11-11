@@ -95,6 +95,34 @@ def adjust(db: Session, user_id: int, amount: int, ref: str) -> int:
     return wallet.balance
 
 
+def total_for(db: Session, user_id: int, reasons: tuple[str, ...]) -> int:
+    """The sum of a player's ledger rows with these reasons (for example coins from admins, which tips can't pass on)."""
+    return db.scalar(select(func.coalesce(func.sum(CoinEntry.amount), 0)).where(
+        CoinEntry.user_id == user_id, CoinEntry.reason.in_(reasons))) or 0
+
+
+def transfer(db: Session, from_id: int, to_id: int, amount: int, ref: str, out_reason: str, in_reason: str,
+             keep: tuple[str, ...] = ()) -> int:
+    """Move coins from one player to another in one commit: a negative row for the sender, a positive one for the
+    receiver. `keep` names ledger reasons whose coins the sender can't pass on. Raises ShopError when they don't have
+    enough. Returns the sender's new balance. Both wallets are locked in the same order every time, so two transfers
+    between the same players can't deadlock."""
+    if amount <= 0 or from_id == to_id:
+        raise ValueError("a transfer needs a positive amount between two players")
+    wallets = {uid: _locked_wallet(db, uid) for uid in sorted((from_id, to_id))}
+    spendable = wallets[from_id].balance - max(0, total_for(db, from_id, keep)) if keep else wallets[from_id].balance
+    if spendable < amount:
+        db.rollback()
+        raise ShopError(f"You need {amount - max(0, spendable)} more coins")
+    day = today()
+    db.add(CoinEntry(user_id=from_id, amount=-amount, reason=out_reason, ref=ref[:120], day=day))
+    db.add(CoinEntry(user_id=to_id, amount=amount, reason=in_reason, ref=ref[:120], day=day))
+    wallets[from_id].balance -= amount
+    wallets[to_id].balance += amount
+    db.commit()
+    return wallets[from_id].balance
+
+
 def ledger(db: Session, user_id: int, limit: int = 50) -> list[CoinEntry]:
     return list(db.scalars(select(CoinEntry).where(CoinEntry.user_id == user_id).order_by(CoinEntry.id.desc()).limit(limit)))
 
