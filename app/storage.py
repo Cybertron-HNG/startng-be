@@ -67,6 +67,8 @@ def content_type_for(path: str) -> str:
 
 
 def game_url(name: str) -> str:
+    if name == "hangout":
+        return f"{settings.site_url.rstrip('/')}/hangout"
     return f"https://{name}.{settings.games_base_domain}"
 
 

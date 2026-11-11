@@ -136,7 +136,7 @@ def game_page(name: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$"), db: Sessio
                      path=f"/games/{name}", image=_site() + SHARE_IMAGE, body=body, noindex=True)
         return Response(page, status_code=404, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=60"})
 
-    title = _title(game.name)
+    title = "The Hangout" if game.name == "hangout" else _title(game.name)
     by = _player_name(game.owner, "a builder")
     description = game.description or f"Play {title} free in your browser on start.ng, a game by {by}."
     image = _cover_url(game) or _site() + SHARE_IMAGE
