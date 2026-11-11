@@ -64,6 +64,8 @@ class Game(Base):
     meets_standards: Mapped[bool | None] = mapped_column(Boolean)
     # Whether the live version loads the start.ng Kit (https://start.ng/kit.js, PRD M1), set with meets_standards.
     uses_kit: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Total download size of the published files in bytes
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Hidden from start.ng while admins look at it (app/admin.py): "reported" (a player reported it), "flagged"
     # (an admin flagged it) or "blocked" (its developer is blocked). None = listed as usual.
     hidden: Mapped[str | None] = mapped_column(String(20), index=True)
