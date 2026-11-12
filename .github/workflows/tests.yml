@@ -38,4 +38,4 @@ jobs:
       # The tests use an in-memory SQLite database and never call GitHub, so no secrets or services are needed.
       - name: Run tests
         shell: bash
-        run: .venv/bin/python -m pytest -q
+        run: .venv/bin/python -m pytest -q -o faulthandler_timeout=120
