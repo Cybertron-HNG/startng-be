@@ -45,6 +45,7 @@ FEATURES: list[str] = [
     "tags",  # tags and category pages (Chloe)
     "game_pages",  # about, how to play, FAQ and walkthrough pages of games (Chloe)
     "events",  # event spotlight: an event with pictures and details takes over the homepage (Tolu)
+    "majors",  # partner tournaments with prizes, made from a template (Kaka)
 ]
 
 _loaded: dict[str, ModuleType] = {}

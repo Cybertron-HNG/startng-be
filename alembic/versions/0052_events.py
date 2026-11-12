@@ -1,14 +1,14 @@
 """events: events and event_images
 
 Revision ID: 0052
-Revises: 0049
-(Open PRs take 0050 (live) and 0051 (jams). Whichever merges after them: set down_revision to the newest one first.)
+Revises: 0050 (majors)
+(Open PRs live and jams also number from 0050: whichever merges after this, point its down_revision at the newest.)
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0052"
-down_revision = "0049"
+down_revision = "0050"
 branch_labels = None
 depends_on = None
 
