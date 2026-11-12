@@ -1,6 +1,6 @@
 """Majors: the rules, and what other features may call.
 
-An admin makes one as a draft (a partner, prizes, 1 to 20 games that have leaderboards, a window of 1 hour to 45
+An admin makes one as a draft (a partner, prizes, 1 to 50 games that have leaderboards, a window of 1 hour to 45
 days), looks at it, then publishes it. Players enter on its page; an entrant's runs on its games inside the window
 count, and each game gives points by place (the daily tournament's 10/7/5/3/1). Most points wins, and the top
 places take the prizes. Standings are worked out when someone looks, so nothing runs on a timer.
@@ -17,13 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ... import events, tournaments
+from ... import events, flags, tournaments
 from ... import leaderboard as boards
 from ...db import SessionLocal
 from ...models import Game, User
 from .models import Major, MajorEntry, MajorGame, MajorScore
 
-MAX_GAMES = 20
+MAX_GAMES = 50  # the admin picks how many (1 to this); every page view works out all the standings, so keep it sane
 MIN_LENGTH = timedelta(hours=1)
 MAX_LENGTH = timedelta(days=45)
 RESERVED_SLUGS = {"new", "admin", "template", "templates"}
@@ -95,15 +95,16 @@ def _http(url: str | None, what: str) -> str | None:
     return url
 
 
-def _check(db: Session, fields: dict, games: list[str], at: datetime) -> tuple[dict, list[str]]:
-    """The fields ready to save, and the game names in order. Raises Refused with what to fix."""
+def _check(db: Session, fields: dict, games: list[str], at: datetime, current_end: datetime | None = None) -> tuple[dict, list[str]]:
+    """The fields ready to save, and the game names in order. Raises Refused with what to fix. `current_end` is the
+    saved end of a major being changed: keeping it is fine even once it has passed (fixing the words afterwards)."""
     f = dict(fields)
     if f["slug"] in RESERVED_SLUGS:
         raise Refused("slug", "That address is taken by start.ng. Pick another.")
     f["starts_at"], f["ends_at"] = tournaments.utc(f["starts_at"]), tournaments.utc(f["ends_at"])
     if not MIN_LENGTH <= f["ends_at"] - f["starts_at"] <= MAX_LENGTH:
         raise Refused("duration", "A major runs from 1 hour to 45 days.")
-    if f["ends_at"] <= at:
+    if f["ends_at"] <= at and f["ends_at"] != current_end:
         raise Refused("ends_at", "The end can't be in the past.")
     for key, what in (("partner_url", "partner's link"), ("partner_logo_url", "logo"), ("cta_url", "button's link")):
         f[key] = _http(f.get(key), what)
@@ -147,7 +148,7 @@ def update(db: Session, m: Major, fields: dict, games: list[str], at: datetime |
     """Change a major. Once it has started, its games, start and address stay as they are: players are already
     competing on them. The words, prizes and end can still change."""
     at = at or tournaments.now()
-    f, names = _check(db, fields, games, at)
+    f, names = _check(db, fields, games, at, current_end=tournaments.utc(m.ends_at))
     started = state(m, at) != "upcoming"
     if started:
         if names != [g.game_name for g in m.games]:
@@ -243,6 +244,8 @@ def record_run(db: Session, user_id: int, game: Game, stats: dict, schema: list[
 
 @events.subscribe("score_submitted")
 def on_score_submitted(payload: dict) -> None:
+    if not flags.is_on("majors"):  # switched off: runs stop counting, like every other route of the feature
+        return
     with SessionLocal() as db:
         game = db.get(Game, payload["game"])
         if game is None:

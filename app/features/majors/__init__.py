@@ -1,6 +1,6 @@
 """Majors: big public tournaments run with a partner (a festival, a company, a community), with real prizes.
 
-A major is data, not code: a title, the partner, the prizes, up to 20 games and a window. So the next collaboration
+A major is data, not code: a title, the partner, the prizes, 1 to 50 games (the admin picks how many) and a window. So the next collaboration
 is a copy of the last one with the words changed (see `templates/` and "Use as a template" on the admin page).
 Players enter on the major's own page, start.ng/majors/<slug>; from then on their runs in its games count, with the
 daily tournament's 10/7/5/3/1 points per game. Nothing here gives global points, XP or coins."""
