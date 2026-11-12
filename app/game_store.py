@@ -4,6 +4,7 @@ On the server this is the R2 games bucket, through app.storage. Without the R2 k
 LOCAL_GAMES_DIR set, it's a local folder laid out the same way (the Worker's dev-server.js serves
 it), so publishing can be tried on a laptop. Name and path rules are app.storage's either way.
 """
+import os
 import shutil
 from pathlib import Path
 from typing import Protocol
@@ -57,7 +58,19 @@ class LocalGameStore:
         self.root = Path(root).resolve()
 
     def _dir(self, game: str) -> Path:
-        return self.root / storage.validate_game_name(game)
+        root = os.path.realpath(self.root)
+        folder = os.path.realpath(os.path.join(root, storage.validate_game_name(game)))
+        if not folder.startswith(root + os.sep):
+            raise storage.StorageError("Invalid game name")
+        return Path(folder)
+
+    def _file(self, game: str, path: str) -> Path:
+        """A file inside the game's folder; anything that resolves outside it is refused."""
+        folder = os.path.realpath(self._dir(game))
+        target = os.path.realpath(os.path.join(folder, storage.clean_path(path)))
+        if not target.startswith(folder + os.sep):
+            raise storage.StorageError("Invalid file path")
+        return Path(target)
 
     def paths(self, game: str) -> list[str]:
         folder = self._dir(game)
@@ -68,8 +81,9 @@ class LocalGameStore:
     def put_game(self, game: str, files: dict[str, bytes]) -> None:
         folder = self._dir(game)
         cleaned = {storage.clean_path(p): data for p, data in files.items()}  # check all before writing
+        targets = {path: self._file(game, path) for path in cleaned}
         for path, data in cleaned.items():
-            target = folder / path
+            target = targets[path]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
 
@@ -77,7 +91,7 @@ class LocalGameStore:
         self.put_game(game, {path: data})
 
     def delete_file(self, game: str, path: str) -> None:
-        (self._dir(game) / storage.clean_path(path)).unlink(missing_ok=True)
+        self._file(game, path).unlink(missing_ok=True)
 
     def delete_game(self, game: str) -> None:
         shutil.rmtree(self._dir(game), ignore_errors=True)
@@ -96,7 +110,7 @@ class LocalGameStore:
         return {p.relative_to(folder).as_posix(): p.stat().st_size for p in folder.rglob("*") if p.is_file()} if folder.exists() else {}
 
     def read_file(self, game: str, path: str) -> bytes | None:
-        target = self._dir(game) / storage.clean_path(path)
+        target = self._file(game, path)
         return target.read_bytes() if target.is_file() else None
 
 
