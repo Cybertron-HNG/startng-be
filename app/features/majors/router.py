@@ -104,6 +104,8 @@ def leave(slug: str, user: User = Depends(current_user), db: Session = Depends(g
     if service.state(m) != "upcoming":
         raise ApiError(status.HTTP_400_BAD_REQUEST, "started", "It has started, so you can't leave now.")
     mine = service.entry(db, m, user.id)
+    if mine is not None and mine.removed:  # leaving and entering again would wipe an admin's decision
+        raise ApiError(status.HTTP_400_BAD_REQUEST, "removed", "An admin has taken you out of this major, so you can't leave or enter it again.")
     if mine is not None:
         db.delete(mine)
         db.commit()

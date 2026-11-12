@@ -69,7 +69,7 @@ Every new feature lives in its own folder with one owner, so nobody edits the sa
 community), with real prizes for the top places. It is data, not code, so the next collaboration is a copy with the
 words changed.
 - **What it holds:** an address (`start.ng/majors/<slug>`), a title and tagline, the partner (name, link, logo), a
-  button to the partner ("Get tickets"), prizes by place (1 to 10), 1 to 20 games that have leaderboards, a start and
+  button to the partner ("Get tickets"), prizes by place (1 to 10), 1 to 50 games that have leaderboards (the admin picks how many), a start and
   an end (1 hour to 45 days).
 - **How it runs:** an admin makes it as a draft, looks at it, then publishes it. Players enter on its page (before it
   starts, or while it runs). An entrant's runs on its games inside the window count; their best run in each game is

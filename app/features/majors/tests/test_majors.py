@@ -251,3 +251,58 @@ def test_off_until_the_flag_is_on(env, monkeypatch):
     monkeypatch.setattr(settings, "features", "")
     assert client.get("/majors").status_code == 404
     assert client.post("/admin/majors", json=body(), headers=tokens["boss"]).status_code == 404
+
+
+def _add_games(names):
+    db = next(app.dependency_overrides[get_db]())
+    owner = db.query(User).filter(User.email == "ada@example.com").one()
+    db.add_all([Game(name=n, owner_id=owner.id, repo_url=f"https://github.com/ada/{n}", leaderboard=BOARD) for n in names])
+    db.commit()
+    db.close()
+
+
+def test_the_admin_chooses_how_many_games(env):
+    client, tokens, clock = env
+    many = [f"extra-{i}" for i in range(service.MAX_GAMES)]
+    _add_games(many)
+    assert make(client, tokens, games=["g0"])["games"] == ["g0"]  # one game is fine
+    r = client.post("/admin/majors", json=body(slug="big-one", games=many[:30]), headers=tokens["boss"])
+    assert r.status_code == 201 and len(r.json()["games"]) == 30  # more than 20 is fine too
+    r = client.post("/admin/majors", json=body(slug="too-big", games=[*many, "g0"]), headers=tokens["boss"])
+    assert r.status_code == 422  # over the limit
+
+
+def test_the_words_can_be_fixed_after_it_ends(env):
+    client, tokens, clock = env
+    make(client, tokens)
+    clock.at = NOW + timedelta(days=20)  # well after the end
+    r = client.put("/admin/majors/techemberfest", json=body(tagline="Congratulations to the winners!"), headers=tokens["boss"])
+    assert r.status_code == 200, r.text
+    assert r.json()["tagline"] == "Congratulations to the winners!"
+    # Moving the end to another time in the past is still refused.
+    r = client.put("/admin/majors/techemberfest", json=body(ends_at=(NOW + timedelta(days=9)).isoformat()), headers=tokens["boss"])
+    assert r.json()["errors"][0]["code"] in ("ends_at", "started")
+
+
+def test_a_removed_player_cannot_leave_and_enter_again(env):
+    client, tokens, clock = env
+    make(client, tokens)
+    enter(client, tokens, "ada")
+    ada = client.get("/admin/majors/techemberfest/entries", headers=tokens["boss"]).json()[0]
+    client.post(f"/admin/majors/techemberfest/entries/{ada['player_id']}/remove", json={"note": "Second account"}, headers=tokens["boss"])
+    r = client.delete("/majors/techemberfest/entry", headers=tokens["ada"])
+    assert r.status_code == 400 and r.json()["errors"][0]["code"] == "removed"
+    assert client.get("/majors/techemberfest", headers=tokens["ada"]).json()["removed"] is True
+
+
+def test_runs_stop_counting_while_the_flag_is_off(env, monkeypatch):
+    client, tokens, clock = env
+    make(client, tokens)
+    enter(client, tokens, "ada")
+    clock.at = NOW + timedelta(days=2)
+    monkeypatch.setattr(settings, "features", "")
+    play(client, tokens, "ada", "g0", 100)  # the score itself still saves; the major just doesn't hear it
+    monkeypatch.setattr(settings, "features", "majors")
+    assert client.get("/majors/techemberfest").json()["standings"] == []
+    play(client, tokens, "ada", "g0", 120)
+    assert [s["name"] for s in client.get("/majors/techemberfest").json()["standings"]] == ["Ada"]
