@@ -157,7 +157,7 @@ def test_indie_game_page_is_rendered_for_crawlers(env):
     res = client.get(f"/pages/creators/{game_id}")
     assert res.status_code == 200
     text = res.text
-    assert "<title>Moon Garden · Play free on start.ng</title>" in text
+    assert "<title>Moon Garden by Ada · Play free on start.ng</title>" in text
     assert f'rel="canonical" href="https://start.ng/creators/{game_id}-moon-garden"' in text
     assert f'content="https://api.start.ng/indie/{game_id}/cover.webp"' in text
     assert "Grow plants &lt;i&gt;fast&lt;/i&gt; &amp; win." in text and "<i>fast</i>" not in text
