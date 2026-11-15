@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from ... import events, flags, tournaments
 from ...config import settings
 from ...models import Tournament, TournamentPoints
+from ...names import title_of
 from ...routers.games import _cover_url, _player_name
 from . import service
 from .models import Announcement
@@ -29,7 +30,7 @@ REMIND_BEFORE = timedelta(minutes=10)  # the reminder goes out this long before 
 
 
 def _title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("-"))
+    return title_of(name)
 
 
 def ordinal(n: int) -> str:

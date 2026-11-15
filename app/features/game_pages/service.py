@@ -13,6 +13,7 @@ from ...publish import PublishError, download_repo, parse_repo_url, read_brief
 from ...db import SessionLocal
 from ...game_store import get_game_store
 from ...models import Game
+from ...names import title_of
 from . import generate as gen
 from .facts import read_facts
 from .models import GamePage
@@ -62,7 +63,7 @@ def _similar_to(db: Session, page: GamePage, facts_title: str) -> str | None:
     mine = gen.shingles(page.body, facts_title)
     rows = db.execute(select(GamePage.game_name, GamePage.body).where(GamePage.kind == page.kind, GamePage.game_name != page.game_name, GamePage.status.in_(["draft", "approved"]))).all()
     for other_game, body in rows:
-        other_title = " ".join(w.capitalize() for w in other_game.split("-"))
+        other_title = title_of(other_game)
         if gen.similarity(mine, gen.shingles(body, other_title)) >= SIMILAR:
             return other_game
     return None

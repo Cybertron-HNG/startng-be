@@ -354,3 +354,12 @@ def test_request_text_has_no_line_breaks_in_a_log_line():
 
     assert _plain("lane-dash\r\nINFO fake entry") == "lane-dashINFO fake entry"
     assert _plain("lane-dash") == "lane-dash"
+
+
+def test_game_names_keep_their_capitals():
+    from app.names import title_of
+
+    assert title_of("cork-fc") == "Cork FC"
+    assert title_of("tower-3d") == "Tower 3D"
+    assert title_of("hq-trivia-ui") == "HQ Trivia UI"
+    assert title_of("lane-dash") == "Lane Dash"
